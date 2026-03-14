@@ -3,6 +3,7 @@ import https from 'https';
 import path from 'path';
 import { Api, Bot } from 'grammy';
 
+import { getCurrentAuthMode, switchAuthMode } from '../auth-switch.js';
 import { ASSISTANT_NAME, TRIGGER_PATTERN } from '../config.js';
 import { readEnvFile } from '../env.js';
 import { resolveGroupFolderPath } from '../group-folder.js';
@@ -86,6 +87,49 @@ export class TelegramChannel implements Channel {
     // Command to check bot status
     this.bot.command('ping', (ctx) => {
       ctx.reply(`${ASSISTANT_NAME} is online.`);
+    });
+
+    // Command to view or switch auth mode
+    this.bot.command('auth', async (ctx) => {
+      const args = ctx.message?.text?.split(/\s+/).slice(1) || [];
+      const current = getCurrentAuthMode();
+
+      if (args.length === 0) {
+        const label = current === 'api-key' ? 'API Key' : 'OAuth (Subscription)';
+        ctx.reply(
+          `Auth mode: *${label}*\n\nSwitch with:\n\`/auth api\` — use API key\n\`/auth oauth\` — use subscription`,
+          { parse_mode: 'Markdown' },
+        );
+        return;
+      }
+
+      const target = args[0].toLowerCase();
+      if (target !== 'api' && target !== 'oauth') {
+        ctx.reply('Usage: `/auth api` or `/auth oauth`', {
+          parse_mode: 'Markdown',
+        });
+        return;
+      }
+
+      const newMode = target === 'api' ? 'api-key' : 'oauth';
+      if (newMode === current) {
+        const label = current === 'api-key' ? 'API Key' : 'OAuth';
+        ctx.reply(`Already using ${label}.`);
+        return;
+      }
+
+      switchAuthMode(newMode as 'api-key' | 'oauth');
+      const label = newMode === 'api-key' ? 'API Key' : 'OAuth (Subscription)';
+      ctx.reply(
+        `Switched to *${label}*. Restarting service...`,
+        { parse_mode: 'Markdown' },
+      );
+
+      // Restart the service so the credential proxy picks up the new mode
+      logger.info({ newMode }, 'Auth mode changed, restarting service');
+      setTimeout(() => {
+        process.exit(0); // systemd will restart us
+      }, 1000);
     });
 
     this.bot.on('message:text', async (ctx) => {
