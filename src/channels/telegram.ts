@@ -3,7 +3,11 @@ import https from 'https';
 import path from 'path';
 import { Api, Bot } from 'grammy';
 
-import { getCurrentAuthMode, switchAuthMode } from '../auth-switch.js';
+import {
+  getCurrentAuthMode,
+  hasValidOAuthCredentials,
+  switchAuthMode,
+} from '../auth-switch.js';
 import { ASSISTANT_NAME, TRIGGER_PATTERN } from '../config.js';
 import { readEnvFile } from '../env.js';
 import { resolveGroupFolderPath } from '../group-folder.js';
@@ -95,9 +99,13 @@ export class TelegramChannel implements Channel {
       const current = getCurrentAuthMode();
 
       if (args.length === 0) {
-        const label = current === 'api-key' ? 'API Key' : 'OAuth (Subscription)';
+        const label =
+          current === 'api-key' ? 'API Key' : 'OAuth (Subscription)';
+        const oauthStatus = hasValidOAuthCredentials()
+          ? 'valid'
+          : 'not found or expired';
         ctx.reply(
-          `Auth mode: *${label}*\n\nSwitch with:\n\`/auth api\` — use API key\n\`/auth oauth\` — use subscription`,
+          `Auth mode: *${label}*\nOAuth credentials: ${oauthStatus}\n\nSwitch with:\n\`/auth api\` — use API key\n\`/auth oauth\` — use subscription`,
           { parse_mode: 'Markdown' },
         );
         return;
@@ -118,12 +126,20 @@ export class TelegramChannel implements Channel {
         return;
       }
 
+      // Check OAuth credentials before switching
+      if (newMode === 'oauth' && !hasValidOAuthCredentials()) {
+        ctx.reply(
+          'No valid OAuth credentials found.\nRun `claude login` on the server first, then try again.',
+          { parse_mode: 'Markdown' },
+        );
+        return;
+      }
+
       switchAuthMode(newMode as 'api-key' | 'oauth');
       const label = newMode === 'api-key' ? 'API Key' : 'OAuth (Subscription)';
-      ctx.reply(
-        `Switched to *${label}*. Restarting service...`,
-        { parse_mode: 'Markdown' },
-      );
+      ctx.reply(`Switched to *${label}*. Restarting service...`, {
+        parse_mode: 'Markdown',
+      });
 
       // Restart the service so the credential proxy picks up the new mode
       logger.info({ newMode }, 'Auth mode changed, restarting service');
