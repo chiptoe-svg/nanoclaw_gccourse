@@ -1,15 +1,8 @@
 name: Sync upstream & merge-forward skill branches
 
+# Disabled on fork — requires GitHub App secrets (APP_ID, APP_PRIVATE_KEY).
+# Use /update-nanoclaw in Claude Code instead.
 on:
-  # Triggered by upstream repo via repository_dispatch
-  repository_dispatch:
-    types: [upstream-main-updated]
-  # Fallback: run on a schedule in case dispatch isn't configured
-  schedule:
-    - cron: '0 */6 * * *'  # every 6 hours
-  # Also run when fork's main is pushed directly
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
