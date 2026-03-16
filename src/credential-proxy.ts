@@ -336,10 +336,15 @@ export function startCredentialProxy(
               { url: req.url },
               'Upstream 401 — refreshing OAuth token and retrying',
             );
-            // Force-invalidate the cache so ensureTokenFresh will refresh.
+            // Force refresh — bypass expiresAt check. A 401 from the API
+            // is authoritative: the token is bad regardless of local expiry
+            // (e.g. server-side revocation while expiresAt is still future).
             tokenCache = { cacheExpiresAt: 0 };
-            await ensureTokenFresh();
-            const newToken = tokenCache.value;
+            const creds = readFullOAuthCredentials();
+            if (creds?.refreshToken) {
+              await doRefresh(creds.refreshToken, Date.now());
+            }
+            const newToken = tokenCache.value ?? (await getOauthToken());
             const retryHeaders = { ...headers };
             if (newToken) {
               retryHeaders['authorization'] = `Bearer ${newToken}`;
