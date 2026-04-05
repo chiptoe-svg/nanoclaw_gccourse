@@ -210,6 +210,16 @@ function buildVolumeMounts(
     mounts.push(...validatedMounts);
   }
 
+  // Mount web hosting directory so agents can create and deploy websites
+  const sitesDir = '/var/www/sites';
+  if (fs.existsSync(sitesDir)) {
+    mounts.push({
+      hostPath: sitesDir,
+      containerPath: '/var/www/sites',
+      readonly: false,
+    });
+  }
+
   // Mount Google Workspace CLI credentials (read-only) if available
   const gwsCredentials = path.join(
     process.env.HOME || '/home/node',
