@@ -44,21 +44,29 @@ cd ~/nanoclaw
 claude
 ```
 
-Then give it this prompt:
+Then paste this prompt:
 
 ```
-Pull the latest changes from https://github.com/chiptoe-svg/nanoclaw_gccourse.git main, install dependencies, rebuild, enable the Agent Playground, and restart NanoClaw. Here's exactly what to do:
+Pull the latest from my instructor's repo and set up the playground. Here's what to do:
 
-1. git pull https://github.com/chiptoe-svg/nanoclaw_gccourse.git main
-2. npm install
-3. npm run build
-4. Add Environment=PLAYGROUND_ENABLED=1 to ~/.config/systemd/user/nanoclaw.service (under the [Service] section, after the existing Environment lines)
-5. systemctl --user daemon-reload
-6. systemctl --user restart nanoclaw
-7. Verify NanoClaw is running: systemctl --user status nanoclaw
-8. Verify the playground is listening: ss -tlnp | grep 3002
+git pull https://github.com/chiptoe-svg/nanoclaw_gccourse.git main
 
-Also update the main agent's persona (the CLAUDE.md file in the group folder that has is_main=1 in the database — likely groups/telegram_main/CLAUDE.md) — add this section:
+If there are merge conflicts, resolve them:
+- For src/transcription.ts and src/channels/telegram.ts: keep MY version (local) if I already have voice transcription working, otherwise take theirs
+- For everything else: take the incoming (upstream) version
+- For package-lock.json: just delete it and let npm regenerate it
+
+After the merge is clean:
+
+1. npm install
+2. npm run build
+3. Add Environment=PLAYGROUND_ENABLED=1 to ~/.config/systemd/user/nanoclaw.service (under [Service], after the existing Environment lines — skip if already there)
+4. systemctl --user daemon-reload
+5. systemctl --user restart nanoclaw
+6. Verify: systemctl --user status nanoclaw
+7. Verify: ss -tlnp | grep 3002
+
+Also update the main agent's persona (the CLAUDE.md in whichever group folder has is_main=1 in the database) — add this section if it doesn't already have it:
 
 ## Web Hosting
 
