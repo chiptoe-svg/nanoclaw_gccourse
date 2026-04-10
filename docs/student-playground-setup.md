@@ -58,7 +58,7 @@ Pull the latest changes from https://github.com/chiptoe-svg/nanoclaw_gccourse.gi
 7. Verify NanoClaw is running: systemctl --user status nanoclaw
 8. Verify the playground is listening: ss -tlnp | grep 3002
 
-Also update groups/global/CLAUDE.md — add this section:
+Also update the main agent's persona (the CLAUDE.md file in the group folder that has is_main=1 in the database — likely groups/telegram_main/CLAUDE.md) — add this section:
 
 ## Web Hosting
 
