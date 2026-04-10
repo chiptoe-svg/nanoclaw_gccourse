@@ -33,8 +33,16 @@ import {
   writeGlobalClaude,
 } from './draft.js';
 import { resolveGroupFolderPath } from '../group-folder.js';
-import { importLibrarySkill, listLibrary, previewLibrarySkill } from './library.js';
-import { listPersonas, loadPersonaIntoDraft, previewPersona } from './personas.js';
+import {
+  importLibrarySkill,
+  listLibrary,
+  previewLibrarySkill,
+} from './library.js';
+import {
+  listPersonas,
+  loadPersonaIntoDraft,
+  previewPersona,
+} from './personas.js';
 import {
   addSource,
   importSourceSkill,
@@ -47,9 +55,11 @@ import { DRAFT_ATTACHMENTS_DIR } from './paths.js';
 import { invalidateSession, runDraftTurn, stopAllDraftRuns } from './run.js';
 import {
   createSkill,
-  deleteDraftSkill,
+  deleteSkill,
   isValidSkillName,
+  listAgentCreatedSkills,
   listSkills,
+  promoteAgentSkill,
   readSkill,
   saveSkill,
 } from './skills.js';
@@ -70,7 +80,10 @@ function json(res: Response, obj: unknown, status = 200): void {
   res.end(JSON.stringify(obj));
 }
 
-export async function startPlaygroundServer(port = 3002, host = '0.0.0.0'): Promise<http.Server> {
+export async function startPlaygroundServer(
+  port = 3002,
+  host = '0.0.0.0',
+): Promise<http.Server> {
   ensureDraftInitialized();
   loadState(); // side-effect: creates state.json if missing
   startTraceWatcher();
@@ -150,7 +163,11 @@ export async function startPlaygroundServer(port = 3002, host = '0.0.0.0'): Prom
     const knownHash = String(req.body?.knownHash ?? '');
     const result = writeGlobalClaude(content, knownHash);
     if (!result.ok) {
-      json(res, { ok: false, error: 'external_change', currentHash: result.conflict }, 409);
+      json(
+        res,
+        { ok: false, error: 'external_change', currentHash: result.conflict },
+        409,
+      );
       return;
     }
     // Global content change affects all containers — drop the draft's
@@ -178,7 +195,7 @@ export async function startPlaygroundServer(port = 3002, host = '0.0.0.0'): Prom
       res.status(404).end('not found');
       return;
     }
-    res.download(abs, path.basename(abs));
+    res.sendFile(abs);
   });
   app.put('/api/draft/trace-level', (req, res) => {
     const level = String(req.body?.level ?? 'summary');
@@ -201,7 +218,11 @@ export async function startPlaygroundServer(port = 3002, host = '0.0.0.0'): Prom
       const result = await runDraftTurn(text);
       json(res, result);
     } catch (err) {
-      json(res, { error: err instanceof Error ? err.message : String(err) }, 500);
+      json(
+        res,
+        { error: err instanceof Error ? err.message : String(err) },
+        500,
+      );
     }
   });
   app.post('/api/draft/attachments', (req, res) => {
@@ -217,7 +238,10 @@ export async function startPlaygroundServer(port = 3002, host = '0.0.0.0'): Prom
       if (!name || !data) continue;
       // Strip path components for safety.
       const safe = path.basename(name).replace(/[^A-Za-z0-9._-]/g, '_');
-      fs.writeFileSync(path.join(DRAFT_ATTACHMENTS_DIR, safe), Buffer.from(data, 'base64'));
+      fs.writeFileSync(
+        path.join(DRAFT_ATTACHMENTS_DIR, safe),
+        Buffer.from(data, 'base64'),
+      );
       saved.push(safe);
     }
     json(res, { saved });
@@ -260,9 +284,23 @@ export async function startPlaygroundServer(port = 3002, host = '0.0.0.0'): Prom
       json(res, { error: String(err) }, 400);
     }
   });
+  // Agent-created skills (written by the agent during playground chat)
+  app.get('/api/skills/agent-created', (_req, res) => {
+    json(res, { skills: listAgentCreatedSkills() });
+  });
+  app.post('/api/skills/agent-created/:name/promote', (req, res) => {
+    try {
+      promoteAgentSkill(req.params.name);
+      invalidateSession();
+      json(res, { ok: true });
+    } catch (err) {
+      json(res, { error: err instanceof Error ? err.message : String(err) }, 400);
+    }
+  });
+
   app.delete('/api/skills/:name', (req, res) => {
     try {
-      deleteDraftSkill(req.params.name);
+      deleteSkill(req.params.name);
       invalidateSession();
       json(res, { ok: true });
     } catch (err) {
@@ -316,7 +354,11 @@ export async function startPlaygroundServer(port = 3002, host = '0.0.0.0'): Prom
       });
       json(res, { ok: true, source });
     } catch (err) {
-      json(res, { error: err instanceof Error ? err.message : String(err) }, 400);
+      json(
+        res,
+        { error: err instanceof Error ? err.message : String(err) },
+        400,
+      );
     }
   });
   app.delete('/api/skill-sources/:id', (req, res) => {
@@ -324,32 +366,47 @@ export async function startPlaygroundServer(port = 3002, host = '0.0.0.0'): Prom
       removeSource(req.params.id);
       json(res, { ok: true });
     } catch (err) {
-      json(res, { error: err instanceof Error ? err.message : String(err) }, 400);
+      json(
+        res,
+        { error: err instanceof Error ? err.message : String(err) },
+        400,
+      );
     }
   });
   app.get('/api/skill-sources/:sourceId/skill/:skillName/file', (req, res) => {
     const filePath = String(req.query.path ?? 'SKILL.md');
-    const file = readSourceFile(req.params.sourceId, req.params.skillName, filePath);
+    const file = readSourceFile(
+      req.params.sourceId,
+      req.params.skillName,
+      filePath,
+    );
     if (!file) {
       json(res, { error: 'not found' }, 404);
       return;
     }
     json(res, file);
   });
-  app.post('/api/skill-sources/:sourceId/skill/:skillName/import', (req, res) => {
-    try {
-      importSourceSkill(
-        req.params.sourceId,
-        req.params.skillName,
-        req.body?.overwrite === true,
-        DRAFT_SKILLS_DIR,
-      );
-      invalidateSession();
-      json(res, { ok: true });
-    } catch (err) {
-      json(res, { error: err instanceof Error ? err.message : String(err) }, 400);
-    }
-  });
+  app.post(
+    '/api/skill-sources/:sourceId/skill/:skillName/import',
+    (req, res) => {
+      try {
+        importSourceSkill(
+          req.params.sourceId,
+          req.params.skillName,
+          req.body?.overwrite === true,
+          DRAFT_SKILLS_DIR,
+        );
+        invalidateSession();
+        json(res, { ok: true });
+      } catch (err) {
+        json(
+          res,
+          { error: err instanceof Error ? err.message : String(err) },
+          400,
+        );
+      }
+    },
+  );
 
   // --- Library (legacy single-source — kept for backward compat) ---
   app.get('/api/library', (req, res) => {
@@ -370,7 +427,11 @@ export async function startPlaygroundServer(port = 3002, host = '0.0.0.0'): Prom
   });
   app.post('/api/library/:category/:name/import', (req, res) => {
     try {
-      importLibrarySkill(req.params.category, req.params.name, req.body?.overwrite === true);
+      importLibrarySkill(
+        req.params.category,
+        req.params.name,
+        req.body?.overwrite === true,
+      );
       invalidateSession();
       json(res, { ok: true });
     } catch (err) {

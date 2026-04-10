@@ -97,7 +97,7 @@ function addMessage(role, text, files) {
       const a = document.createElement('a');
       a.className = 'file-chip';
       a.href = BASE + '/api/draft/files?path=' + encodeURIComponent(f.path);
-      a.download = f.path.split('/').pop();
+      a.target = '_blank';
       a.innerHTML = `📎 ${escapeHtml(f.path)} <span class="size">${formatSize(f.size)}</span>`;
       chips.appendChild(a);
     }
@@ -465,6 +465,7 @@ async function loadSkills() {
   // Library's "already added" filter depends on the skills list, so
   // re-render the library tree too.
   if (cachedLibrary.length > 0) rerenderLibraryTree();
+  loadAgentCreatedSkills();
 }
 function updateSkillsLabel() {
   // "(draft)" suffix while any skill has unpromoted local edits / additions.
@@ -514,7 +515,7 @@ $('save-skill-btn').addEventListener('click', async () => {
 });
 $('delete-skill-btn').addEventListener('click', async () => {
   if (!state.selectedSkill) return;
-  if (!confirm(`Delete draft overlay for "${state.selectedSkill}"?`)) return;
+  if (!confirm(`Remove "${state.selectedSkill}" from the skill library? You can re-add it later from Available skills.`)) return;
   await api('DELETE', `/api/skills/${encodeURIComponent(state.selectedSkill)}`);
   $('skill-editor').hidden = true;
   state.selectedSkill = null;
@@ -533,6 +534,45 @@ $('new-skill-btn').addEventListener('click', async () => {
   }
 });
 $('refresh-skills-btn').addEventListener('click', loadSkills);
+
+// --- Agent-created skills ---
+async function loadAgentCreatedSkills() {
+  try {
+    const res = await api('GET', '/api/skills/agent-created');
+    const skills = res.skills || [];
+    const section = $('agent-skills-section');
+    const ul = $('agent-skills-list');
+    if (skills.length === 0) {
+      section.hidden = true;
+      return;
+    }
+    section.hidden = false;
+    ul.innerHTML = '';
+    for (const s of skills) {
+      const li = document.createElement('li');
+      li.innerHTML = `
+        <span>${escapeHtml(s.name)}</span>
+        <button class="promote-btn" data-name="${escapeHtml(s.name)}">Add to library</button>
+      `;
+      li.title = s.description || '';
+      ul.appendChild(li);
+    }
+    ul.querySelectorAll('.promote-btn').forEach((btn) => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const name = btn.dataset.name;
+        try {
+          await api('POST', `/api/skills/agent-created/${encodeURIComponent(name)}/promote`);
+          await loadSkills();
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+    });
+  } catch {
+    // Silently ignore — agent skills are a nice-to-have
+  }
+}
 
 // ============================================================
 // Multi-source skill library — Skills mode middle column
@@ -740,14 +780,6 @@ $('add-source-btn').addEventListener('click', async () => {
   }
 });
 
-$('append-skill-btn').addEventListener('click', () => {
-  if (!state.selectedLibrarySkill) return;
-  if (!state.selectedSkill) {
-    alert('Open a skill on the left first (or create a new one), then append into it.');
-    return;
-  }
-  insertIntoTextarea($('skill-editor-content'), state.selectedLibrarySkill.content, null);
-});
 $('library-inline-import-btn').addEventListener('click', async () => {
   const sel = state.selectedLibrarySkill;
   if (!sel) return;

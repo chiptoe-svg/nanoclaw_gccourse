@@ -12,6 +12,7 @@ import { RegisteredGroup } from './types.js';
 
 export interface IpcDeps {
   sendMessage: (jid: string, text: string) => Promise<void>;
+  sendFile?: (jid: string, filePath: string, caption?: string) => Promise<void>;
   registeredGroups: () => Record<string, RegisteredGroup>;
   registerGroup: (jid: string, group: RegisteredGroup) => void;
   syncGroups: (force: boolean) => Promise<void>;
@@ -22,6 +23,30 @@ export interface IpcDeps {
     availableGroups: AvailableGroup[],
     registeredJids: Set<string>,
   ) => void;
+}
+
+/**
+ * Map a container-internal file path back to the host filesystem.
+ * Container mounts:
+ *   /workspace/group → groups/<folder>/
+ *   /workspace/project → <project root> (main only, read-only)
+ *   /var/www/sites → /var/www/sites
+ */
+function mapContainerPathToHost(
+  containerPath: string,
+  groupFolder: string,
+): string | null {
+  const GROUPS_DIR = path.resolve(process.cwd(), 'groups');
+  if (containerPath.startsWith('/workspace/group/')) {
+    const rel = containerPath.slice('/workspace/group/'.length);
+    if (rel.includes('..')) return null;
+    return path.join(GROUPS_DIR, groupFolder, rel);
+  }
+  if (containerPath.startsWith('/var/www/sites/')) {
+    if (containerPath.includes('..')) return null;
+    return containerPath; // same path on host
+  }
+  return null;
 }
 
 let ipcWatcherRunning = false;
@@ -90,6 +115,44 @@ export function startIpcWatcher(deps: IpcDeps): void {
                     { chatJid: data.chatJid, sourceGroup },
                     'Unauthorized IPC message attempt blocked',
                   );
+                }
+              } else if (
+                data.type === 'file' &&
+                data.chatJid &&
+                data.filePath
+              ) {
+                const targetGroup = registeredGroups[data.chatJid];
+                if (
+                  isMain ||
+                  (targetGroup && targetGroup.folder === sourceGroup)
+                ) {
+                  // Map container path back to host path.
+                  // Container mounts: /workspace/group → groups/<folder>/
+                  const hostPath = mapContainerPathToHost(
+                    data.filePath,
+                    sourceGroup,
+                  );
+                  if (hostPath && deps.sendFile) {
+                    await deps.sendFile(data.chatJid, hostPath, data.caption);
+                    logger.info(
+                      { chatJid: data.chatJid, sourceGroup, file: hostPath },
+                      'IPC file sent',
+                    );
+                  } else if (!hostPath) {
+                    logger.warn(
+                      {
+                        chatJid: data.chatJid,
+                        sourceGroup,
+                        containerPath: data.filePath,
+                      },
+                      'Could not map container file path to host',
+                    );
+                  } else {
+                    logger.warn(
+                      { chatJid: data.chatJid },
+                      'Channel does not support sendFile',
+                    );
+                  }
                 }
               }
               fs.unlinkSync(filePath);

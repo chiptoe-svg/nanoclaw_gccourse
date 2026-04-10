@@ -14,11 +14,6 @@
       <button class="mode-btn" data-mode="persona">Agent Persona</button>
       <button class="mode-btn" data-mode="skills">Skills</button>
     </nav>
-    <select id="trace-level" title="Trace verbosity">
-      <option value="minimal">minimal</option>
-      <option value="summary" selected>summary</option>
-      <option value="full">full</option>
-    </select>
     <button id="apply-btn" disabled>Apply to Main</button>
     <button id="reset-btn">Reset from Main</button>
     <button id="logout-btn" class="ghost">Log out</button>
@@ -49,6 +44,11 @@
       <section id="trace-pane" class="pane">
         <header class="pane-header">
           <span>Execution trace</span>
+          <select id="trace-level" title="Trace verbosity">
+            <option value="minimal">minimal</option>
+            <option value="summary" selected>summary</option>
+            <option value="full">full</option>
+          </select>
           <button id="trace-clear" class="ghost">Clear</button>
         </header>
         <div id="trace-list"></div>
@@ -136,6 +136,12 @@
         <div id="skills-list-wrap">
           <ul id="skills-list"></ul>
         </div>
+        <div id="agent-skills-section" hidden>
+          <div class="col-header" style="border-top: 1px solid #2e3138;">
+            <strong>Agent-created skills</strong>
+          </div>
+          <ul id="agent-skills-list"></ul>
+        </div>
         <div id="skill-editor" hidden>
           <div class="row">
             <strong id="skill-editor-name"></strong>
@@ -145,7 +151,7 @@
           <textarea id="skill-editor-content" spellcheck="false"></textarea>
           <div class="row">
             <button id="save-skill-btn">Save</button>
-            <button id="delete-skill-btn" class="ghost danger">Delete draft</button>
+            <button id="delete-skill-btn" class="ghost danger">Remove from library</button>
           </div>
         </div>
       </section>
@@ -176,8 +182,7 @@
               <span id="library-viewer-badge" class="tag"></span>
             </div>
             <div class="row">
-              <button id="library-inline-import-btn" title="Add this skill to your draft">Add to draft</button>
-              <button id="append-skill-btn" class="ghost" title="Rarely needed: insert at cursor in the open skill editor">Append to open editor</button>
+              <button id="library-inline-import-btn" title="Add this skill to your agent's skill library">Add to library</button>
             </div>
           </header>
           <pre id="library-viewer-content" class="viewer-content"></pre>
