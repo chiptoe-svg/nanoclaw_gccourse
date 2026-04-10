@@ -10,6 +10,7 @@ import {
   TRIGGER_PATTERN,
 } from './config.js';
 import { startCredentialProxy } from './credential-proxy.js';
+import { startPlaygroundServer, stopPlayground } from './playground/server.js';
 import './channels/index.js';
 import {
   getChannelFactory,
@@ -504,10 +505,27 @@ async function main(): Promise<void> {
     PROXY_BIND_HOST,
   );
 
+  // Start the Agent Playground HTTP server (opt-in via PLAYGROUND_ENABLED=1).
+  // Caddy reverse-proxies /playground/* to 127.0.0.1:PLAYGROUND_PORT.
+  let playgroundServer: import('http').Server | null = null;
+  if (process.env.PLAYGROUND_ENABLED === '1') {
+    try {
+      const port = parseInt(process.env.PLAYGROUND_PORT || '3002', 10);
+      const host = process.env.PLAYGROUND_HOST || '0.0.0.0';
+      playgroundServer = await startPlaygroundServer(port, host);
+    } catch (err) {
+      logger.error({ err }, 'Playground server failed to start');
+    }
+  }
+
   // Graceful shutdown handlers
   const shutdown = async (signal: string) => {
     logger.info({ signal }, 'Shutdown signal received');
     proxyServer.close();
+    if (playgroundServer) {
+      stopPlayground();
+      playgroundServer.close();
+    }
     await queue.shutdown(10000);
     for (const ch of channels) await ch.disconnect();
     process.exit(0);

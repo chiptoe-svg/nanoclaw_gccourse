@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>NanoClaw Agent Playground</title>
+  <link rel="stylesheet" href="static/style.css" />
+</head>
+<body data-mode="test">
+  <header id="topbar">
+    <div class="title">Main Agent Playground</div>
+    <div class="status" id="status-badge">● unsaved changes</div>
+    <nav id="mode-switcher">
+      <button class="mode-btn active" data-mode="test">Test</button>
+      <button class="mode-btn" data-mode="persona">Agent Persona</button>
+      <button class="mode-btn" data-mode="skills">Skills</button>
+    </nav>
+    <select id="trace-level" title="Trace verbosity">
+      <option value="minimal">minimal</option>
+      <option value="summary" selected>summary</option>
+      <option value="full">full</option>
+    </select>
+    <button id="apply-btn" disabled>Apply to Main</button>
+    <button id="reset-btn">Reset from Main</button>
+    <button id="logout-btn" class="ghost">Log out</button>
+  </header>
+
+  <main id="workspace">
+    <!-- ============ TEST MODE ============ -->
+    <div class="mode active" id="mode-test">
+      <section id="chat-pane" class="pane">
+        <header class="pane-header">
+          <span>Chat</span>
+          <button id="new-session-btn" class="ghost">New session</button>
+        </header>
+        <div id="messages"></div>
+        <div id="attachments-list"></div>
+        <form id="chat-form">
+          <textarea id="chat-input" placeholder="Message the draft agent…" rows="3"></textarea>
+          <div class="row">
+            <label class="file-pick">
+              Attach
+              <input type="file" id="file-input" multiple />
+            </label>
+            <button type="submit" id="send-btn">Send</button>
+          </div>
+        </form>
+      </section>
+
+      <section id="trace-pane" class="pane">
+        <header class="pane-header">
+          <span>Execution trace</span>
+          <button id="trace-clear" class="ghost">Clear</button>
+        </header>
+        <div id="trace-list"></div>
+      </section>
+    </div>
+
+    <!-- ============ AGENT PERSONA MODE ============ -->
+    <div class="mode" id="mode-persona">
+      <!-- Left: editor with Agent/Global sub-tabs -->
+      <section class="col col-editor">
+        <header class="subtabs">
+          <button class="subtab active" data-subtab="agent">Agent</button>
+          <button class="subtab" data-subtab="global">Global</button>
+        </header>
+
+        <div class="subtab-content active" data-subtab="agent">
+          <div class="subtitle">Draft persona (<code>groups/draft/CLAUDE.md</code>)</div>
+          <textarea id="persona-editor" spellcheck="false"></textarea>
+          <div class="row">
+            <button id="save-persona-btn">Save persona</button>
+            <button id="diff-btn" class="ghost">Diff vs main</button>
+            <span id="persona-hint" class="hint"></span>
+          </div>
+          <pre id="diff-view" hidden></pre>
+        </div>
+
+        <div class="subtab-content" data-subtab="global">
+          <div class="subtitle">
+            <code>groups/global/CLAUDE.md</code> — additional system context loaded into
+            every non-main container. Changes affect the live main agent on its next run.
+          </div>
+          <textarea id="global-editor" spellcheck="false"></textarea>
+          <div class="row">
+            <button id="save-global-btn">Save global</button>
+            <span id="global-hint" class="hint"></span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Middle: folder tree of personas library -->
+      <section class="col col-tree">
+        <div class="col-header">
+          <strong>Persona library</strong>
+          <button id="refresh-personas-btn" class="ghost icon" title="Refresh">↻</button>
+        </div>
+        <input type="text" id="personas-filter" placeholder="Search…" />
+        <div id="personas-tree" class="file-tree"></div>
+      </section>
+
+      <!-- Right: wide file viewer -->
+      <section class="col col-viewer">
+        <div id="persona-viewer-empty" class="viewer-empty">
+          Select a persona from the tree to view its full contents.
+        </div>
+        <div id="persona-viewer" class="viewer" hidden>
+          <header class="viewer-header">
+            <span class="emoji" id="persona-viewer-emoji"></span>
+            <div class="viewer-title">
+              <strong id="persona-viewer-name"></strong>
+              <div id="persona-viewer-path" class="viewer-path"></div>
+            </div>
+            <div class="row">
+              <button id="append-persona-btn" title="Append the full persona at the cursor position in the draft">Append</button>
+              <button id="append-selection-btn" class="ghost" title="Append just the selected text">Append selection</button>
+              <button id="load-persona-btn" class="ghost danger" title="Replace the draft persona entirely">Overwrite draft</button>
+            </div>
+          </header>
+          <div id="persona-viewer-desc" class="viewer-desc"></div>
+          <pre id="persona-viewer-content" class="viewer-content"></pre>
+        </div>
+      </section>
+    </div>
+
+    <!-- ============ SKILLS MODE ============ -->
+    <div class="mode" id="mode-skills">
+      <!-- Left: skills list + active skill editor -->
+      <section class="col col-editor">
+        <div class="col-header">
+          <strong id="skills-label">Global skills</strong>
+          <div class="row">
+            <button id="new-skill-btn">+ New</button>
+            <button id="refresh-skills-btn" class="ghost icon" title="Refresh">↻</button>
+          </div>
+        </div>
+        <div id="skills-list-wrap">
+          <ul id="skills-list"></ul>
+        </div>
+        <div id="skill-editor" hidden>
+          <div class="row">
+            <strong id="skill-editor-name"></strong>
+            <span id="skill-editor-origin" class="tag"></span>
+            <button id="skill-editor-close" class="ghost">×</button>
+          </div>
+          <textarea id="skill-editor-content" spellcheck="false"></textarea>
+          <div class="row">
+            <button id="save-skill-btn">Save</button>
+            <button id="delete-skill-btn" class="ghost danger">Delete draft</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Middle: folder tree of skills library -->
+      <section class="col col-tree">
+        <div class="col-header">
+          <strong>Available skills</strong>
+          <div class="row">
+            <button id="add-source-btn" class="ghost icon" title="Add source (git repo)">+</button>
+            <button id="refresh-library-inline-btn" class="ghost icon" title="Refresh">↻</button>
+          </div>
+        </div>
+        <input type="text" id="library-filter" placeholder="Search…" />
+        <div id="library-tree" class="file-tree"></div>
+      </section>
+
+      <!-- Right: wide file viewer -->
+      <section class="col col-viewer">
+        <div id="library-viewer-empty" class="viewer-empty">
+          Select a skill from the library to view its full contents.
+        </div>
+        <div id="library-viewer" class="viewer" hidden>
+          <header class="viewer-header">
+            <div class="viewer-title">
+              <strong id="library-viewer-name"></strong>
+              <div id="library-viewer-path" class="viewer-path"></div>
+              <span id="library-viewer-badge" class="tag"></span>
+            </div>
+            <div class="row">
+              <button id="library-inline-import-btn" title="Add this skill to your draft">Add to draft</button>
+              <button id="append-skill-btn" class="ghost" title="Rarely needed: insert at cursor in the open skill editor">Append to open editor</button>
+            </div>
+          </header>
+          <pre id="library-viewer-content" class="viewer-content"></pre>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script src="static/app.js"></script>
+</body>
+</html>

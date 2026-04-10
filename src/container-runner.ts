@@ -158,6 +158,30 @@ function buildVolumeMounts(
       fs.cpSync(srcDir, dstDir, { recursive: true });
     }
   }
+
+  // Playground draft group: overlay draft-only skills from
+  // .nanoclaw/playground/draft/skills/*. These take precedence over the
+  // shared baseline so students can iterate without mutating container/skills.
+  if (group.folder === 'draft') {
+    const draftSkillsSrc = path.join(
+      process.cwd(),
+      '.nanoclaw',
+      'playground',
+      'draft',
+      'skills',
+    );
+    if (fs.existsSync(draftSkillsSrc)) {
+      for (const skillDir of fs.readdirSync(draftSkillsSrc)) {
+        const srcDir = path.join(draftSkillsSrc, skillDir);
+        if (!fs.statSync(srcDir).isDirectory()) continue;
+        const dstDir = path.join(skillsDst, skillDir);
+        // Remove the shared version first so renamed/removed files inside
+        // the draft skill don't leave stale leftovers.
+        fs.rmSync(dstDir, { recursive: true, force: true });
+        fs.cpSync(srcDir, dstDir, { recursive: true });
+      }
+    }
+  }
   mounts.push({
     hostPath: groupSessionsDir,
     containerPath: '/home/node/.claude',
@@ -192,6 +216,12 @@ function buildVolumeMounts(
     'agent-runner-src',
   );
   if (!fs.existsSync(groupAgentRunnerDir) && fs.existsSync(agentRunnerSrc)) {
+    fs.cpSync(agentRunnerSrc, groupAgentRunnerDir, { recursive: true });
+  }
+  // Playground draft: always refresh from the project source so trace
+  // writer changes and any other runner tweaks land on every turn.
+  if (group.folder === 'draft' && fs.existsSync(agentRunnerSrc)) {
+    fs.rmSync(groupAgentRunnerDir, { recursive: true, force: true });
     fs.cpSync(agentRunnerSrc, groupAgentRunnerDir, { recursive: true });
   }
   mounts.push({

@@ -45,21 +45,10 @@ When you learn something important:
 - Split files larger than 500 lines into folders
 - Keep an index in your memory for the files you create
 
-## Web Hosting
-
-You can create and host websites. The server is at http://45.55.64.148
-
-To create a site, write HTML/CSS/JS files to `/var/www/sites/<site-name>/`.
-The site will be immediately available at `http://45.55.64.148/<site-name>/`.
-
-For example, creating `/var/www/sites/portfolio/index.html` makes it live at
-`http://45.55.64.148/portfolio/`.
-
-Keep sites self-contained (inline CSS/JS or relative paths). No build tools needed — just static files.
 
 ## Message Formatting
 
-NEVER use markdown. Only use WhatsApp/Telegram formatting:
+NEVER use markdown. Only use Telegram formatting:
 - *single asterisks* for bold (NEVER **double asterisks**)
 - _underscores_ for italic
 - • bullet points

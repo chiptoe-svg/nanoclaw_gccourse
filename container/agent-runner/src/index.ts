@@ -18,6 +18,7 @@ import fs from 'fs';
 import path from 'path';
 import { query, HookCallback, PreCompactHookInput } from '@anthropic-ai/claude-agent-sdk';
 import { fileURLToPath } from 'url';
+import { traceEvent } from './trace.js';
 
 interface MessageImage {
   base64: string;
@@ -67,6 +68,10 @@ interface SDKUserMessage {
 const IPC_INPUT_DIR = '/workspace/ipc/input';
 const IPC_INPUT_CLOSE_SENTINEL = path.join(IPC_INPUT_DIR, '_close');
 const IPC_POLL_MS = 500;
+
+// Trace writer: imported from ./trace.ts. Writes structured events to
+// /workspace/ipc/trace.jsonl for the playground's trace pane.
+// Fully best-effort — failures are silently swallowed.
 
 /**
  * Push-based async iterable for streaming user messages to the SDK.
@@ -374,6 +379,7 @@ async function runQuery(
   } else {
     stream.push(prompt);
   }
+  traceEvent({ type: 'user_message', text: prompt });
 
   // Poll IPC for follow-up messages and _close sentinel during the query
   let ipcPolling = true;
@@ -475,6 +481,52 @@ async function runQuery(
     if (message.type === 'system' && message.subtype === 'init') {
       newSessionId = message.session_id;
       log(`Session initialized: ${newSessionId}`);
+      traceEvent({
+        type: 'system_prompt',
+        sessionId: newSessionId,
+        text: (message as { tools?: unknown }).tools
+          ? `tools: ${JSON.stringify((message as { tools?: unknown }).tools)}`
+          : undefined,
+      });
+    }
+
+    // Structured trace: extract tool uses, results, and assistant text from
+    // the SDK's assistant/user message content blocks.
+    if (message.type === 'assistant') {
+      const content = (message as { message?: { content?: unknown } }).message?.content;
+      if (Array.isArray(content)) {
+        for (const block of content) {
+          const b = block as { type?: string; text?: string; name?: string; input?: unknown; id?: string };
+          if (b.type === 'text' && b.text) {
+            traceEvent({ type: 'assistant_message', text: b.text });
+          } else if (b.type === 'tool_use' && b.name) {
+            traceEvent({ type: 'tool_call', name: b.name, args: b.input, id: b.id });
+            // Skill invocations light up the UI's skill list.
+            if (b.name === 'Skill') {
+              const input = b.input as { skill?: string; name?: string } | undefined;
+              const skill = input?.skill || input?.name;
+              if (skill) traceEvent({ type: 'skill_invoked', name: skill });
+            }
+          } else if (b.type === 'thinking' && (b as { thinking?: string }).thinking) {
+            traceEvent({ type: 'thinking', text: (b as { thinking?: string }).thinking });
+          }
+        }
+      }
+    }
+
+    if (message.type === 'user') {
+      const content = (message as { message?: { content?: unknown } }).message?.content;
+      if (Array.isArray(content)) {
+        for (const block of content) {
+          const b = block as { type?: string; content?: unknown; tool_use_id?: string };
+          if (b.type === 'tool_result') {
+            const output = typeof b.content === 'string'
+              ? b.content
+              : JSON.stringify(b.content);
+            traceEvent({ type: 'tool_result', toolUseId: b.tool_use_id, output });
+          }
+        }
+      }
     }
 
     if (message.type === 'system' && (message as { subtype?: string }).subtype === 'task_notification') {
@@ -486,6 +538,13 @@ async function runQuery(
       resultCount++;
       const textResult = 'result' in message ? (message as { result?: string }).result : null;
       log(`Result #${resultCount}: subtype=${message.subtype}${textResult ? ` text=${textResult.slice(0, 200)}` : ''}`);
+      const usage = (message as { usage?: { input_tokens?: number; output_tokens?: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number } }).usage;
+      traceEvent({
+        type: 'session_end',
+        resultCount,
+        inputTokens: (usage?.input_tokens || 0) + (usage?.cache_creation_input_tokens || 0) + (usage?.cache_read_input_tokens || 0),
+        outputTokens: usage?.output_tokens || 0,
+      });
       writeOutput({
         status: 'success',
         result: textResult || null,

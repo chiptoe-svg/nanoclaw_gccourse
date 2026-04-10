@@ -1,0 +1,426 @@
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  font-family: -apple-system, system-ui, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+  color: #e6e6e6;
+  background: #1c1e22;
+  display: flex;
+  flex-direction: column;
+}
+
+code { font-family: "SF Mono", Consolas, monospace; font-size: 12px; background: #24272c; padding: 1px 5px; border-radius: 3px; }
+
+/* --- login page --- */
+.login-body { align-items: center; justify-content: center; }
+.login-box {
+  background: #2a2d33;
+  border-radius: 8px;
+  padding: 32px;
+  width: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: auto;
+}
+.login-box h1 { margin: 0; font-size: 18px; }
+.login-box input {
+  padding: 10px;
+  background: #1c1e22;
+  border: 1px solid #444;
+  color: #e6e6e6;
+  border-radius: 4px;
+  font-size: 14px;
+}
+.login-box button { padding: 10px; background: #4a9eff; border: 0; color: #fff; border-radius: 4px; cursor: pointer; font-weight: 600; }
+.error { color: #ff6b6b; min-height: 18px; }
+
+/* --- topbar --- */
+#topbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  background: #24272c;
+  border-bottom: 1px solid #333;
+  flex-shrink: 0;
+}
+#topbar .title { font-weight: 600; }
+#topbar .status { font-size: 12px; color: #ffb84a; }
+#topbar .status.clean { color: #7dd87d; }
+#topbar .status.conflict { color: #ff6b6b; }
+#topbar select { background: #1c1e22; color: #e6e6e6; border: 1px solid #444; border-radius: 4px; padding: 4px; }
+#topbar button { background: #4a9eff; border: 0; color: #fff; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 13px; }
+#topbar button:disabled { background: #3a4048; cursor: not-allowed; color: #888; }
+#topbar button.ghost { background: transparent; color: #aaa; border: 1px solid #444; }
+
+/* Mode switcher — big segmented control */
+#mode-switcher {
+  display: flex;
+  background: #1c1e22;
+  border: 1px solid #333;
+  border-radius: 6px;
+  overflow: hidden;
+  margin-left: auto;
+}
+#mode-switcher .mode-btn {
+  background: transparent;
+  color: #aaa;
+  padding: 6px 16px;
+  font-size: 13px;
+  border: 0;
+  border-radius: 0;
+  cursor: pointer;
+  font-weight: 500;
+}
+#mode-switcher .mode-btn:hover { background: #24272c; color: #ddd; }
+#mode-switcher .mode-btn.active { background: #4a9eff; color: #fff; }
+#mode-switcher .mode-btn + .mode-btn { border-left: 1px solid #333; }
+
+/* --- workspace + modes --- */
+#workspace { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.mode { flex: 1; min-height: 0; display: none; gap: 1px; background: #2e3138; }
+.mode.active { display: grid; }
+#mode-test.active { grid-template-columns: 1fr 1fr; }
+#mode-persona.active,
+#mode-skills.active { grid-template-columns: minmax(280px, 1fr) 260px minmax(400px, 1.8fr); }
+
+/* Column shell used by persona/skills modes */
+.col { background: #1c1e22; display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: hidden; }
+.col-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: #24272c;
+  border-bottom: 1px solid #2e3138;
+  flex-shrink: 0;
+  justify-content: space-between;
+}
+.col-header strong { font-weight: 600; font-size: 13px; }
+.col-editor { padding: 0; }
+.col-editor > .subtabs,
+.col-editor > .col-header { flex-shrink: 0; }
+.col-editor > .subtab-content,
+.col-editor > ul,
+.col-editor > #skill-editor { padding: 12px; }
+
+/* Sub-tabs (Agent/Global inside persona mode) */
+.subtabs { display: flex; background: #24272c; border-bottom: 1px solid #2e3138; }
+.subtab {
+  flex: 1;
+  padding: 10px;
+  background: transparent;
+  border: 0;
+  color: #888;
+  cursor: pointer;
+  font-size: 13px;
+  border-bottom: 2px solid transparent;
+}
+.subtab.active { color: #fff; border-bottom-color: #4a9eff; }
+.subtab-content { display: none; flex: 1; min-height: 0; flex-direction: column; gap: 8px; overflow: auto; }
+.subtab-content.active { display: flex; }
+
+/* Tree column (narrow persona/skill list) */
+.col-tree { padding: 0; }
+.col-tree #personas-filter,
+.col-tree #library-filter {
+  margin: 10px 12px;
+  padding: 6px 10px;
+  background: #1c1e22;
+  color: #e6e6e6;
+  border: 1px solid #333;
+  border-radius: 4px;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.col-tree #personas-filter:focus,
+.col-tree #library-filter:focus { outline: none; border-color: #4a9eff; }
+.file-tree { flex: 1; overflow-y: auto; padding: 0 4px 10px 4px; min-height: 0; }
+.tree-group { margin-bottom: 2px; }
+.tree-group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+  user-select: none;
+  font-weight: 600;
+  color: #c8c8c8;
+  font-size: 12px;
+  text-transform: capitalize;
+  border-radius: 4px;
+}
+.tree-group-header:hover { background: #24272c; }
+.tree-group-header .chevron {
+  color: #666;
+  font-size: 9px;
+  display: inline-block;
+  transition: transform 0.1s;
+  width: 9px;
+}
+.tree-group.open .tree-group-header .chevron { transform: rotate(90deg); }
+.tree-group-header .count { color: #666; font-size: 10px; margin-left: auto; font-weight: normal; }
+.tree-group-body { display: none; }
+.tree-group.open .tree-group-body { display: block; }
+.tree-file {
+  padding: 5px 10px 5px 28px;
+  font-size: 12px;
+  cursor: pointer;
+  color: #aaa;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  border-radius: 4px;
+  margin: 1px 2px;
+}
+.tree-file:hover { background: #24272c; color: #fff; }
+.tree-file.selected { background: #2d3a4a; color: #fff; box-shadow: inset 2px 0 0 #4a9eff; }
+.tree-file .emoji { font-size: 14px; line-height: 1; flex-shrink: 0; }
+.tree-file .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* --- Multi-source skill tree (Source → Skill folder → Files) --- */
+.tree-source { margin-bottom: 6px; }
+.tree-source-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  cursor: pointer;
+  user-select: none;
+  font-weight: 700;
+  color: #d8d8d8;
+  font-size: 12px;
+  background: #1f2228;
+  border-radius: 4px;
+}
+.tree-source-header:hover { background: #262a31; }
+.tree-source-header .chevron { color: #888; font-size: 9px; transition: transform 0.1s; }
+.tree-source.open .tree-source-header .chevron { transform: rotate(90deg); }
+.tree-source-header .count { color: #666; font-size: 10px; margin-left: auto; font-weight: normal; }
+.tree-source-header .remove {
+  color: #666;
+  font-size: 14px;
+  padding: 0 4px;
+  cursor: pointer;
+  display: none;
+}
+.tree-source-header:hover .remove { display: inline; }
+.tree-source-header .remove:hover { color: #ff6b6b; }
+.tree-source-body { display: none; padding-left: 4px; }
+.tree-source.open .tree-source-body { display: block; }
+.tree-source-error {
+  color: #ff6b6b;
+  font-size: 11px;
+  padding: 6px 12px;
+  font-style: italic;
+}
+
+.tree-skill { margin: 1px 0; }
+.tree-skill-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px 4px 16px;
+  cursor: pointer;
+  color: #c0c0c0;
+  font-size: 12px;
+  border-radius: 3px;
+}
+.tree-skill-header:hover { background: #24272c; color: #fff; }
+.tree-skill-header.selected { background: #2d3a4a; color: #fff; box-shadow: inset 2px 0 0 #4a9eff; }
+.tree-skill-header .chevron { color: #666; font-size: 8px; width: 8px; transition: transform 0.1s; flex-shrink: 0; }
+.tree-skill.open .tree-skill-header .chevron { transform: rotate(90deg); }
+.tree-skill-header .icon { color: #7a8a95; font-size: 11px; }
+.tree-skill-header .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-skill-body { display: none; padding-left: 16px; }
+.tree-skill.open .tree-skill-body { display: block; }
+
+.tree-leaf {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px 3px 32px;
+  cursor: pointer;
+  color: #888;
+  font-size: 11px;
+  font-family: "SF Mono", Consolas, monospace;
+  border-radius: 3px;
+}
+.tree-leaf:hover { background: #24272c; color: #fff; }
+.tree-leaf.selected { background: #2d3a4a; color: #fff; box-shadow: inset 2px 0 0 #4a9eff; }
+.tree-leaf .icon { color: #556270; font-size: 10px; }
+.tree-leaf.dir { color: #9ab; font-style: italic; }
+
+/* Wide viewer column */
+.col-viewer { background: #16181c; }
+.viewer-empty {
+  margin: auto;
+  color: #666;
+  font-style: italic;
+  text-align: center;
+  padding: 40px;
+}
+.viewer { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.viewer-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: #1c1e22;
+  border-bottom: 1px solid #2e3138;
+  flex-shrink: 0;
+}
+.viewer-header .emoji { font-size: 26px; line-height: 1; }
+.viewer-header .viewer-title { flex: 1; min-width: 0; }
+.viewer-header .viewer-title strong { display: block; font-size: 15px; color: #fff; }
+.viewer-header .viewer-path { color: #666; font-size: 11px; font-family: "SF Mono", Consolas, monospace; }
+.viewer-desc { padding: 10px 16px; color: #8a9ba8; font-size: 12px; border-bottom: 1px solid #2e3138; background: #1a1c20; }
+.viewer-content {
+  flex: 1;
+  overflow: auto;
+  margin: 0;
+  padding: 16px 20px;
+  white-space: pre-wrap;
+  font-family: "SF Mono", Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #d0d4d8;
+  background: #16181c;
+}
+
+/* --- Test mode (chat + trace) --- */
+.pane { background: #1c1e22; display: flex; flex-direction: column; min-height: 0; }
+.pane-header {
+  padding: 8px 12px;
+  background: #24272c;
+  border-bottom: 1px solid #333;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+button { cursor: pointer; border: 0; background: #4a9eff; color: #fff; padding: 6px 12px; border-radius: 4px; font-size: 13px; }
+button.ghost { background: transparent; color: #aaa; border: 1px solid #444; }
+button.ghost.icon { padding: 4px 8px; font-size: 14px; }
+button.danger { color: #ff6b6b; border-color: #663a3a; }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+.row { display: flex; gap: 8px; align-items: center; }
+.subtitle { color: #888; font-size: 12px; line-height: 1.4; padding: 4px 0; }
+.hint { color: #7dd87d; font-size: 12px; }
+.hint.warn { color: #ffb84a; }
+.hint.error { color: #ff6b6b; }
+
+/* Chat pane */
+#messages { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.msg { padding: 8px 12px; border-radius: 8px; max-width: 85%; white-space: pre-wrap; word-wrap: break-word; }
+.msg.user { background: #2d3a4a; align-self: flex-end; }
+.msg.assistant { background: #2a2d33; align-self: flex-start; }
+.msg.error { background: #3a2a2a; color: #ff9b9b; align-self: flex-start; }
+#attachments-list { padding: 0 12px; display: flex; gap: 4px; flex-wrap: wrap; }
+.attachment-chip { background: #2d3a4a; padding: 2px 6px; border-radius: 12px; font-size: 11px; }
+#chat-form { padding: 12px; border-top: 1px solid #333; display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; }
+#chat-input { background: #24272c; color: #e6e6e6; border: 1px solid #333; border-radius: 4px; padding: 8px; resize: vertical; font-family: inherit; font-size: 14px; }
+.file-pick { color: #888; font-size: 12px; cursor: pointer; }
+.file-pick input { display: none; }
+
+/* Agent-produced file chips under chat replies */
+.file-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #2a3a4a;
+  color: #cde8ff;
+  padding: 4px 10px;
+  border-radius: 14px;
+  font-size: 12px;
+  text-decoration: none;
+  border: 1px solid #3a5a7a;
+}
+.file-chip:hover { background: #304a64; }
+.file-chip .size { color: #8ab4d8; font-size: 10px; }
+
+/* Trace pane */
+#trace-list { flex: 1; overflow-y: auto; padding: 8px; font-family: "SF Mono", Consolas, monospace; font-size: 12px; }
+.event { border-left: 3px solid #333; padding: 4px 8px; margin-bottom: 4px; background: #24272c; }
+.event.system_prompt { border-color: #888; }
+.event.user_message { border-color: #4a9eff; }
+.event.tool_call { border-color: #ffb84a; }
+.event.tool_result { border-color: #7dd87d; }
+.event.skill_invoked { border-color: #c77dff; }
+.event.assistant_message { border-color: #4a9eff; }
+.event.thinking { border-color: #555; color: #888; font-style: italic; }
+.event.session_end { border-color: #7dd87d; color: #7dd87d; }
+.event .type { font-weight: 600; color: #aaa; }
+.event details summary { cursor: pointer; color: #888; }
+.event pre { margin: 4px 0 0 0; white-space: pre-wrap; word-wrap: break-word; color: #bbb; }
+
+/* Persona/skills editor textareas */
+#persona-editor, #skill-editor-content, #global-editor {
+  flex: 1;
+  min-height: 200px;
+  background: #24272c;
+  color: #e6e6e6;
+  border: 1px solid #333;
+  border-radius: 4px;
+  padding: 12px;
+  font-family: "SF Mono", Consolas, monospace;
+  font-size: 13px;
+  resize: none;
+}
+#diff-view { background: #24272c; padding: 12px; white-space: pre-wrap; font-size: 12px; max-height: 300px; overflow: auto; }
+
+/* Skills list (left column of skills mode)
+   - Always-visible scrollbar (scrollbar-gutter: stable) so it's obvious
+     the list extends beyond the visible rows.
+   - Bordered container with a fixed height region so the list feels
+     like a list (not collapsed to content height). */
+#skills-list-wrap {
+  margin: 10px 12px;
+  border: 1px solid #333;
+  border-radius: 4px;
+  background: #1c1e22;
+  flex: 1 1 0;
+  min-height: 120px;
+  max-height: 50%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+#skills-list {
+  list-style: none;
+  padding: 4px;
+  margin: 0;
+  overflow-y: scroll;
+  scrollbar-gutter: stable;
+  flex: 1;
+}
+#skills-list li {
+  padding: 6px 10px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 12px;
+  color: #ddd;
+}
+#skills-list li:hover { background: #24272c; }
+#skills-list li.selected { background: #2d3a4a; color: #fff; box-shadow: inset 2px 0 0 #4a9eff; }
+#skills-list li.activated { color: #c77dff; }
+#skills-list li.activated::before { content: '● '; }
+#skills-list-empty {
+  padding: 20px 12px;
+  color: #666;
+  font-style: italic;
+  font-size: 12px;
+  text-align: center;
+}
+
+.tag { display: inline-block; padding: 2px 6px; background: #333; color: #aaa; font-size: 11px; border-radius: 10px; margin-left: 6px; }
+.tag.compat-compatible { background: #2d4a2d; color: #7dd87d; }
+.tag.compat-partial { background: #4a402d; color: #ffb84a; }
+.tag.compat-incompatible { background: #4a2d2d; color: #ff6b6b; }
+
+#skill-editor { flex: 1; display: flex; flex-direction: column; gap: 8px; min-height: 0; padding: 0 12px 12px 12px; }
