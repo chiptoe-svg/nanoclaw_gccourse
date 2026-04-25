@@ -49,10 +49,7 @@ function snapshotDraft(draftName: string): void {
   fs.rmSync(paths.backupDir, { recursive: true, force: true });
   fs.mkdirSync(paths.backupDir, { recursive: true });
   if (fs.existsSync(paths.personaFile)) {
-    fs.copyFileSync(
-      paths.personaFile,
-      path.join(paths.backupDir, 'CLAUDE.md'),
-    );
+    fs.copyFileSync(paths.personaFile, path.join(paths.backupDir, 'CLAUDE.md'));
   }
   if (fs.existsSync(paths.skillsDir)) {
     fs.cpSync(paths.skillsDir, path.join(paths.backupDir, 'skills'), {
@@ -87,7 +84,13 @@ function clearSnapshot(draftName: string): void {
 
 export type StartResult =
   | { ok: true; draftName: string }
-  | { ok: false; error: 'session_already_active' | 'invalid_draft_name' | 'draft_not_found' };
+  | {
+      ok: false;
+      error:
+        | 'session_already_active'
+        | 'invalid_draft_name'
+        | 'draft_not_found';
+    };
 
 export function startDraftSession(draftName: string): StartResult {
   if (activeDraft) {
@@ -142,7 +145,10 @@ export function endDraftSession(action: 'save' | 'cancel'): EndResult {
       { err, draftName, action },
       'Failed to end playground session',
     );
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
   }
 
   stopTraceWatcher();

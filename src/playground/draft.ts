@@ -173,7 +173,11 @@ export function applyDraft(draftName: string): {
     { draftName, backupPath, promoted, targetFolder: paths.targetFolder },
     'Applied draft to target',
   );
-  return { backupPath, skillsPromoted: promoted, targetFolder: paths.targetFolder };
+  return {
+    backupPath,
+    skillsPromoted: promoted,
+    targetFolder: paths.targetFolder,
+  };
 }
 
 /**

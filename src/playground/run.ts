@@ -199,11 +199,7 @@ export async function runDraftTurn(
   const preSnapshot = snapshotDraftFiles(draftName);
 
   if (files.length > 0) {
-    const groupAttachments = path.join(
-      'groups',
-      draftName,
-      'attachments',
-    );
+    const groupAttachments = path.join('groups', draftName, 'attachments');
     fs.mkdirSync(groupAttachments, { recursive: true });
     const { attachmentsDir } = getDraftPaths(draftName);
     for (const name of files) {

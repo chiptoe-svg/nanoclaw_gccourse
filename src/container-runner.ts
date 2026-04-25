@@ -295,6 +295,15 @@ function buildContainerArgs(
     args.push('-e', 'CLAUDE_CODE_OAUTH_TOKEN=placeholder');
   }
 
+  // OpenAI routing: containers hit the same credential proxy on its
+  // /openai prefix. The proxy swaps the placeholder for the real key
+  // from the host .env so OPENAI_API_KEY never enters the container.
+  args.push(
+    '-e',
+    `OPENAI_BASE_URL=http://${CONTAINER_HOST_GATEWAY}:${CREDENTIAL_PROXY_PORT}/openai/v1`,
+  );
+  args.push('-e', 'OPENAI_API_KEY=placeholder');
+
   // Runtime-specific args for host gateway resolution
   args.push(...hostGatewayArgs());
 

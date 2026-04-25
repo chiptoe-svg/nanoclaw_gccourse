@@ -207,9 +207,7 @@ export interface AgentCreatedSkill {
   description: string;
 }
 
-export function listAgentCreatedSkills(
-  draftName: string,
-): AgentCreatedSkill[] {
+export function listAgentCreatedSkills(draftName: string): AgentCreatedSkill[] {
   const { skillsDir } = getDraftPaths(draftName);
   const dir = agentSkillsDir(draftName);
   if (!fs.existsSync(dir)) return [];

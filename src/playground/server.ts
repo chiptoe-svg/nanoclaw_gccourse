@@ -114,7 +114,11 @@ function seedDefaultDrafts(): void {
  * Guard middleware — short-circuits with 409 if no session is active.
  * Applies to every route that touches per-draft state.
  */
-function requireSession(_req: Request, res: Response, next: NextFunction): void {
+function requireSession(
+  _req: Request,
+  res: Response,
+  next: NextFunction,
+): void {
   const active = getActiveDraft();
   if (!active) {
     json(res, { error: 'no_active_draft' }, 409);
