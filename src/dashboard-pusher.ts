@@ -17,12 +17,7 @@ import fs from 'fs';
 import http from 'http';
 import path from 'path';
 
-import {
-  ASSISTANT_NAME,
-  DATA_DIR,
-  PROJECT_ROOT,
-  STORE_DIR,
-} from './config.js';
+import { ASSISTANT_NAME, DATA_DIR, PROJECT_ROOT, STORE_DIR } from './config.js';
 import { getRegisteredChannelNames } from './channels/registry.js';
 import { getAllRegisteredGroups, getAllSessions } from './db.js';
 import { logger } from './logger.js';
@@ -61,13 +56,9 @@ export function startDashboardPusher(config: PusherConfig): void {
   const interval = config.intervalMs || 60000;
   getChannelsRef = config.getChannels;
 
-  push(config).catch((err) =>
-    logger.error({ err }, 'Dashboard push failed'),
-  );
+  push(config).catch((err) => logger.error({ err }, 'Dashboard push failed'));
   timer = setInterval(() => {
-    push(config).catch((err) =>
-      logger.error({ err }, 'Dashboard push failed'),
-    );
+    push(config).catch((err) => logger.error({ err }, 'Dashboard push failed'));
   }, interval);
 
   startLogTail(config);
@@ -86,11 +77,7 @@ export function stopDashboardPusher(): void {
   }
 }
 
-function postJson(
-  config: PusherConfig,
-  urlPath: string,
-  data: unknown,
-): void {
+function postJson(config: PusherConfig, urlPath: string, data: unknown): void {
   const body = JSON.stringify(data);
   const req = http.request({
     hostname: '127.0.0.1',
@@ -594,9 +581,7 @@ function collectActivity() {
   try {
     const db = new Database(dbPath, { readonly: true });
     const rows = db
-      .prepare(
-        `SELECT timestamp, is_from_me FROM messages WHERE timestamp > ?`,
-      )
+      .prepare(`SELECT timestamp, is_from_me FROM messages WHERE timestamp > ?`)
       .all(cutoff) as Array<{ timestamp: string; is_from_me: number }>;
     for (const row of rows) {
       const key = row.timestamp.slice(0, 13);
