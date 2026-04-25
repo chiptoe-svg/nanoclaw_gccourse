@@ -57,6 +57,8 @@ function setMode(mode) {
   } else if (mode === 'skills') {
     loadSkills();
     loadLibraryTree();
+  } else if (mode === 'live-trace') {
+    initLiveTrace();
   }
 }
 for (const btn of document.querySelectorAll('#mode-switcher .mode-btn')) {
@@ -67,6 +69,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === '1') { e.preventDefault(); setMode('test'); }
   else if (e.key === '2') { e.preventDefault(); setMode('persona'); }
   else if (e.key === '3') { e.preventDefault(); setMode('skills'); }
+  else if (e.key === '4') { e.preventDefault(); setMode('live-trace'); }
 });
 
 // ============================================================
@@ -841,14 +844,14 @@ function connectTrace() {
 function handleTraceEvent(raw) {
   let event;
   try { event = JSON.parse(raw); } catch { return; }
-  renderEvent(event);
+  renderEvent(event, $('trace-list'));
   if (event.type === 'skill_invoked' && event.name) {
     state.activatedSkills.add(event.name);
     if (state.cachedSkills) renderSkills(state.cachedSkills);
   }
 }
 
-function renderEvent(e) {
+function renderEvent(e, target) {
   const div = document.createElement('div');
   div.className = `event ${e.type || 'unknown'}`;
   const ts = e.ts ? new Date(e.ts).toLocaleTimeString() : '';
@@ -873,12 +876,99 @@ function renderEvent(e) {
     body = `<div class="type">${ts} ${escapeHtml(e.type || 'event')}</div><pre>${escapeHtml(JSON.stringify(e, null, 2))}</pre>`;
   }
   div.innerHTML = body;
-  $('trace-list').appendChild(div);
-  $('trace-list').scrollTop = $('trace-list').scrollHeight;
+  target.appendChild(div);
+  target.scrollTop = target.scrollHeight;
 }
 
 $('trace-clear').addEventListener('click', () => {
   $('trace-list').innerHTML = '';
+});
+
+// ============================================================
+// Live Trace (any group)
+// ============================================================
+const liveTrace = {
+  ws: null,
+  group: null,
+  groupsLoaded: false,
+  reconnectTimer: null,
+};
+
+async function initLiveTrace() {
+  if (!liveTrace.groupsLoaded) {
+    try {
+      const data = await api('GET', '/api/groups');
+      const select = $('live-trace-group');
+      select.innerHTML = '';
+      const seen = new Set();
+      const opts = [];
+      if (data.activeDraft) {
+        opts.push({ value: data.activeDraft, label: `${data.activeDraft} (draft)` });
+        seen.add(data.activeDraft);
+      }
+      for (const g of (data.groups || [])) {
+        if (seen.has(g.folder)) continue;
+        opts.push({ value: g.folder, label: `${g.name} (${g.folder})` });
+        seen.add(g.folder);
+      }
+      for (const o of opts) {
+        const el = document.createElement('option');
+        el.value = o.value;
+        el.textContent = o.label;
+        select.appendChild(el);
+      }
+      liveTrace.groupsLoaded = true;
+      if (opts.length > 0) {
+        liveTrace.group = opts[0].value;
+        select.value = liveTrace.group;
+        connectLiveTrace(liveTrace.group);
+      } else {
+        $('live-trace-status').textContent = 'No groups available.';
+      }
+    } catch (err) {
+      $('live-trace-status').textContent = 'Failed to load groups: ' + err.message;
+    }
+  }
+}
+
+function connectLiveTrace(group) {
+  if (liveTrace.ws) {
+    try { liveTrace.ws.close(); } catch { /* ignore */ }
+    liveTrace.ws = null;
+  }
+  if (liveTrace.reconnectTimer) {
+    clearTimeout(liveTrace.reconnectTimer);
+    liveTrace.reconnectTimer = null;
+  }
+  $('live-trace-list').innerHTML = '';
+  $('live-trace-status').textContent = `connecting → ${group}`;
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const url = `${proto}://${location.host}${BASE}/ws/trace?group=${encodeURIComponent(group)}`;
+  const ws = new WebSocket(url);
+  liveTrace.ws = ws;
+  ws.onopen = () => { $('live-trace-status').textContent = `live → ${group}`; };
+  ws.onmessage = (ev) => {
+    let event;
+    try { event = JSON.parse(ev.data); } catch { return; }
+    renderEvent(event, $('live-trace-list'));
+  };
+  ws.onerror = () => { try { ws.close(); } catch { /* ignore */ } };
+  ws.onclose = () => {
+    if (liveTrace.ws !== ws) return;
+    $('live-trace-status').textContent = `disconnected → ${group} (retrying)`;
+    liveTrace.reconnectTimer = setTimeout(() => {
+      if (liveTrace.group === group) connectLiveTrace(group);
+    }, 2000);
+  };
+}
+
+$('live-trace-group').addEventListener('change', () => {
+  liveTrace.group = $('live-trace-group').value;
+  connectLiveTrace(liveTrace.group);
+});
+
+$('live-trace-clear').addEventListener('click', () => {
+  $('live-trace-list').innerHTML = '';
 });
 
 // ============================================================

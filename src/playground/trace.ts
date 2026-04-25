@@ -1,10 +1,12 @@
 /**
- * Trace file tail + WebSocket broadcast, scoped to the active draft.
+ * Trace file tail + WebSocket broadcast, scoped per group.
  *
- * When a draft session starts, startTraceWatcher(draftName) polls that
- * draft's trace.jsonl and broadcasts new lines to every connected
- * WebSocket client. stopTraceWatcher() tears down the watcher when the
- * session ends. WebSocket subscribers persist across draft sessions.
+ * One watcher per group polls that group's trace.jsonl and broadcasts
+ * new lines to listeners subscribed to that group. The active playground
+ * draft is "pinned" so its watcher stays alive even with no WebSocket
+ * subscribers (so events keep getting persisted into the draft session's
+ * events.jsonl). Other groups' watchers are reference-counted and torn
+ * down when their last subscriber disconnects.
  */
 import fs from 'fs';
 import path from 'path';
@@ -16,43 +18,50 @@ import { getCurrentTraceSessionId } from './run.js';
 
 type Listener = (line: string) => void;
 
-const listeners = new Set<Listener>();
+interface Watcher {
+  interval: NodeJS.Timeout;
+  offset: number;
+  refCount: number;
+  pinned: boolean;
+}
 
+const INITIAL_BACKLOG = 200;
+
+const listenersByGroup = new Map<string, Set<Listener>>();
+const watchers = new Map<string, Watcher>();
 let activeDraftName: string | null = null;
-let watchInterval: NodeJS.Timeout | null = null;
-let readOffset = 0;
 
-export function subscribeTrace(listener: Listener): () => void {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
+function tracePath(group: string): string {
+  return path.join(resolveGroupIpcPath(group), 'trace.jsonl');
 }
 
-function broadcast(line: string): void {
-  for (const l of listeners) {
-    try {
-      l(line);
-    } catch (err) {
-      logger.debug({ err }, 'trace listener threw');
+function broadcast(group: string, line: string): void {
+  const set = listenersByGroup.get(group);
+  if (set) {
+    for (const l of set) {
+      try {
+        l(line);
+      } catch (err) {
+        logger.debug({ err }, 'trace listener threw');
+      }
     }
   }
-  const sessionId = getCurrentTraceSessionId();
-  if (activeDraftName && sessionId) {
-    const { sessionsDir } = getDraftPaths(activeDraftName);
-    const out = path.join(sessionsDir, sessionId, 'events.jsonl');
-    try {
-      fs.mkdirSync(path.dirname(out), { recursive: true });
-      fs.appendFileSync(out, line + '\n');
-    } catch (err) {
-      logger.debug({ err, sessionId }, 'failed to persist trace event');
+  if (group === activeDraftName) {
+    const sessionId = getCurrentTraceSessionId();
+    if (sessionId) {
+      const { sessionsDir } = getDraftPaths(group);
+      const out = path.join(sessionsDir, sessionId, 'events.jsonl');
+      try {
+        fs.mkdirSync(path.dirname(out), { recursive: true });
+        fs.appendFileSync(out, line + '\n');
+      } catch (err) {
+        logger.debug({ err, sessionId }, 'failed to persist trace event');
+      }
     }
   }
 }
 
-function tracePath(draftName: string): string {
-  return path.join(resolveGroupIpcPath(draftName), 'trace.jsonl');
-}
-
-function drainFrom(file: string, from: number): number {
+function drainFrom(group: string, file: string, from: number): number {
   if (!fs.existsSync(file)) return from;
   const stat = fs.statSync(file);
   if (stat.size < from) from = 0;
@@ -66,7 +75,7 @@ function drainFrom(file: string, from: number): number {
     const lines = text.split('\n');
     const last = lines.pop() ?? '';
     for (const line of lines) {
-      if (line.trim()) broadcast(line);
+      if (line.trim()) broadcast(group, line);
     }
     return from + (len - Buffer.byteLength(last, 'utf-8'));
   } finally {
@@ -74,30 +83,99 @@ function drainFrom(file: string, from: number): number {
   }
 }
 
-export function startTraceWatcher(draftName: string): void {
-  stopTraceWatcher();
-  activeDraftName = draftName;
-
-  const file = tracePath(draftName);
+function ensureWatcher(group: string): Watcher {
+  const existing = watchers.get(group);
+  if (existing) return existing;
+  const file = tracePath(group);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   if (!fs.existsSync(file)) fs.writeFileSync(file, '');
-  readOffset = fs.statSync(file).size;
-
-  watchInterval = setInterval(() => {
+  const w: Watcher = {
+    interval: null as unknown as NodeJS.Timeout,
+    offset: fs.statSync(file).size,
+    refCount: 0,
+    pinned: false,
+  };
+  w.interval = setInterval(() => {
     try {
-      readOffset = drainFrom(file, readOffset);
+      w.offset = drainFrom(group, file, w.offset);
     } catch (err) {
-      logger.debug({ err }, 'trace tail error');
+      logger.debug({ err, group }, 'trace tail error');
     }
   }, 250);
-  watchInterval.unref();
+  w.interval.unref();
+  watchers.set(group, w);
+  return w;
+}
+
+function maybeStopWatcher(group: string): void {
+  const w = watchers.get(group);
+  if (!w) return;
+  if (w.refCount > 0 || w.pinned) return;
+  clearInterval(w.interval);
+  watchers.delete(group);
+}
+
+function replayBacklog(group: string, listener: Listener): void {
+  try {
+    const file = tracePath(group);
+    if (!fs.existsSync(file)) return;
+    const lines = fs
+      .readFileSync(file, 'utf-8')
+      .split('\n')
+      .filter((l) => l.trim());
+    for (const l of lines.slice(-INITIAL_BACKLOG)) {
+      try {
+        listener(l);
+      } catch {
+        /* listener errors are non-fatal */
+      }
+    }
+  } catch (err) {
+    logger.debug({ err, group }, 'failed to replay trace backlog');
+  }
+}
+
+export function subscribeTrace(group: string, listener: Listener): () => void {
+  let set = listenersByGroup.get(group);
+  if (!set) {
+    set = new Set();
+    listenersByGroup.set(group, set);
+  }
+  set.add(listener);
+  const w = ensureWatcher(group);
+  w.refCount++;
+  replayBacklog(group, listener);
+  return () => {
+    set!.delete(listener);
+    if (set!.size === 0) listenersByGroup.delete(group);
+    w.refCount = Math.max(0, w.refCount - 1);
+    maybeStopWatcher(group);
+  };
+}
+
+export function startTraceWatcher(draftName: string): void {
+  if (activeDraftName && activeDraftName !== draftName) {
+    const prev = watchers.get(activeDraftName);
+    if (prev) {
+      prev.pinned = false;
+      maybeStopWatcher(activeDraftName);
+    }
+  }
+  activeDraftName = draftName;
+  const w = ensureWatcher(draftName);
+  w.pinned = true;
 }
 
 export function stopTraceWatcher(): void {
-  if (watchInterval) {
-    clearInterval(watchInterval);
-    watchInterval = null;
+  if (!activeDraftName) return;
+  const w = watchers.get(activeDraftName);
+  if (w) {
+    w.pinned = false;
+    maybeStopWatcher(activeDraftName);
   }
   activeDraftName = null;
-  readOffset = 0;
+}
+
+export function getActiveDraftName(): string | null {
+  return activeDraftName;
 }

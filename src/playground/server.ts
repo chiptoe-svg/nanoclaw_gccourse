@@ -75,7 +75,7 @@ import {
   saveSkill,
 } from './skills.js';
 import { loadAuthState, updateDraftState } from './state.js';
-import { subscribeTrace } from './trace.js';
+import { getActiveDraftName, subscribeTrace } from './trace.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -171,6 +171,14 @@ export async function startPlaygroundServer(
       drafts: listAvailableDrafts(),
       active: getActiveDraft(),
     });
+  });
+  app.get('/api/groups', (_req, res) => {
+    const groups = Object.values(getAllRegisteredGroups()).map((g) => ({
+      folder: g.folder,
+      name: g.name,
+    }));
+    groups.sort((a, b) => a.name.localeCompare(b.name));
+    json(res, { groups, activeDraft: getActiveDraft() });
   });
   app.post('/api/session/start', (req, res) => {
     const draft = String(req.body?.draft ?? '');
@@ -558,8 +566,15 @@ export async function startPlaygroundServer(
       wss.emit('connection', ws, req);
     });
   });
-  wss.on('connection', (ws) => {
-    const unsubscribe = subscribeTrace((line) => {
+  wss.on('connection', (ws, req) => {
+    const url = new URL(req.url ?? '/ws/trace', 'http://localhost');
+    const requested = url.searchParams.get('group');
+    const group = requested ?? getActiveDraftName();
+    if (!group) {
+      ws.close(1008, 'no_group');
+      return;
+    }
+    const unsubscribe = subscribeTrace(group, (line) => {
       try {
         ws.send(line);
       } catch {

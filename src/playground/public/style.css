@@ -84,6 +84,10 @@ code { font-family: "SF Mono", Consolas, monospace; font-size: 12px; background:
 #mode-test.active { grid-template-columns: 1fr 1fr; }
 #mode-persona.active,
 #mode-skills.active { grid-template-columns: 1fr 260px 1fr; }
+#mode-live-trace.active { grid-template-columns: 1fr; }
+#live-trace-list { flex: 1; overflow-y: auto; padding: 8px; font-family: "SF Mono", Consolas, monospace; font-size: 12px; }
+#live-trace-group { margin-left: 8px; }
+#live-trace-status { margin-left: auto; color: #888; font-size: 11px; }
 
 /* Column shell used by persona/skills modes */
 .col { background: #1c1e22; display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: hidden; }

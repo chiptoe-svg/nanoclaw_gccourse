@@ -35,6 +35,7 @@
         <button class="mode-btn active" data-mode="test">Test</button>
         <button class="mode-btn" data-mode="persona">Agent Persona</button>
         <button class="mode-btn" data-mode="skills">Skills</button>
+        <button class="mode-btn" data-mode="live-trace">Live Trace</button>
       </nav>
       <button id="apply-btn" disabled title="Apply changes to the target group, keep editing">Apply</button>
       <button id="end-session-btn">End session…</button>
@@ -203,6 +204,18 @@
             </header>
             <pre id="library-viewer-content" class="viewer-content"></pre>
           </div>
+        </section>
+      </div>
+      <!-- ============ LIVE TRACE MODE ============ -->
+      <div class="mode" id="mode-live-trace">
+        <section id="live-trace-pane" class="pane">
+          <header class="pane-header">
+            <span>Live trace</span>
+            <select id="live-trace-group" title="Group to observe"></select>
+            <button id="live-trace-clear" class="ghost">Clear</button>
+            <span id="live-trace-status" class="hint"></span>
+          </header>
+          <div id="live-trace-list"></div>
         </section>
       </div>
     </main>
