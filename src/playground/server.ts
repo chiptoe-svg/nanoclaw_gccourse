@@ -129,7 +129,7 @@ function requireSession(
 
 export async function startPlaygroundServer(
   port = 3002,
-  host = '0.0.0.0',
+  host = '127.0.0.1',
 ): Promise<http.Server> {
   loadAuthState();
   seedDefaultDrafts();
