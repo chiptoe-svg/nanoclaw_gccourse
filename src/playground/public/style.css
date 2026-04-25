@@ -453,3 +453,95 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 #agent-skills-list .promote-btn:hover { background: #3a8eef; }
 
 #skill-editor { flex: 1; display: flex; flex-direction: column; gap: 8px; min-height: 0; padding: 0 12px 12px 12px; }
+
+/* The `hidden` HTML attribute must win over class-level display rules
+   (flex layouts below override it by default). */
+[hidden] { display: none !important; }
+
+/* --- picker (no active session) --- */
+.picker {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #1c1e22;
+  z-index: 50;
+}
+.picker-card {
+  background: #2a2d33;
+  border-radius: 8px;
+  padding: 32px 40px;
+  width: min(520px, 90vw);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.picker-card h1 { margin: 0; font-size: 20px; }
+.picker-lede { margin: 0; color: #aaa; font-size: 13px; }
+.picker-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.picker-list li {
+  background: #1c1e22;
+  border: 1px solid #3a4048;
+  border-radius: 6px;
+  padding: 12px 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.picker-list li:hover { border-color: #4a9eff; background: #24272c; }
+.picker-list .picker-name { font-weight: 600; }
+.picker-list .picker-target { font-size: 12px; color: #888; font-family: "SF Mono", Consolas, monospace; }
+.picker-empty { color: #888; font-size: 13px; padding: 12px; background: #1c1e22; border-radius: 6px; }
+.picker-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+.picker-footer button {
+  background: transparent;
+  color: #aaa;
+  border: 1px solid #444;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+/* --- end-session dialog --- */
+.dialog {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 60;
+}
+.dialog-card {
+  background: #2a2d33;
+  border-radius: 8px;
+  padding: 24px 28px;
+  width: min(440px, 90vw);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.dialog-card h2 { margin: 0; font-size: 16px; }
+.dialog-card p { margin: 0; color: #aaa; font-size: 13px; }
+.dialog-actions { display: flex; flex-direction: column; gap: 8px; }
+.dialog-actions button {
+  padding: 10px 14px;
+  background: #4a9eff;
+  border: 0;
+  color: #fff;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+}
+.dialog-actions button.danger { background: #8a3a3a; }
+.dialog-actions button.ghost { background: transparent; color: #aaa; border: 1px solid #444; }
+
+#topbar .target-hint { color: #888; font-weight: normal; font-size: 12px; margin-left: 4px; }
+#topbar .target-hint span { color: #aaa; font-family: "SF Mono", Consolas, monospace; }
+

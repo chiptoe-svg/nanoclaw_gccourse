@@ -135,6 +135,9 @@ async function loadDraft() {
   state.status = s;
   $('persona-editor').value = s.persona;
   $('trace-level').value = s.traceLevel;
+  $('active-draft-name').textContent = s.draftName || '…';
+  $('active-target-name').textContent = s.targetFolder || '…';
+  $('persona-path-hint').textContent = `groups/${s.draftName}/CLAUDE.md`;
   renderStatus();
 }
 
@@ -208,22 +211,43 @@ $('diff-btn').addEventListener('click', async () => {
   view.hidden = !view.hidden;
 });
 
-// --- apply / reset ---
+// --- apply (in-session, keeps session open) ---
 $('apply-btn').addEventListener('click', async () => {
-  if (!confirm('Overwrite main persona and promote draft skills to container/skills/?')) return;
+  if (!confirm('Apply draft to target group now? You can keep editing afterward.')) return;
   try {
     const res = await api('POST', '/api/draft/apply');
-    alert(`Applied.\nBackup: ${res.backupPath}\nSkills promoted: ${(res.skillsPromoted || []).join(', ') || 'none'}`);
+    alert(`Applied to ${res.targetFolder}.\nBackup: ${res.backupPath}\nSkills promoted: ${(res.skillsPromoted || []).join(', ') || 'none'}`);
     await loadDraft();
   } catch (err) {
     alert(err.message);
   }
 });
-$('reset-btn').addEventListener('click', async () => {
-  if (!confirm('Discard all draft edits and re-sync from main?')) return;
-  await api('POST', '/api/draft/reset');
-  await loadDraft();
-  await loadSkills();
+
+// --- end session ---
+$('end-session-btn').addEventListener('click', () => {
+  $('end-session-dialog').hidden = false;
+});
+$('end-back-btn').addEventListener('click', () => {
+  $('end-session-dialog').hidden = true;
+});
+$('end-save-btn').addEventListener('click', async () => {
+  try {
+    await api('POST', '/api/session/end', { action: 'save' });
+    $('end-session-dialog').hidden = true;
+    await showPicker();
+  } catch (err) {
+    alert('Save failed: ' + err.message);
+  }
+});
+$('end-cancel-btn').addEventListener('click', async () => {
+  if (!confirm('Discard all edits made in this session?')) return;
+  try {
+    await api('POST', '/api/session/end', { action: 'cancel' });
+    $('end-session-dialog').hidden = true;
+    await showPicker();
+  } catch (err) {
+    alert('Cancel failed: ' + err.message);
+  }
 });
 
 $('trace-level').addEventListener('change', async () => {
@@ -858,14 +882,82 @@ $('trace-clear').addEventListener('click', () => {
 });
 
 // ============================================================
+// Session picker
+// ============================================================
+async function showPicker() {
+  $('workspace-root').hidden = true;
+  $('picker').hidden = false;
+  const list = $('picker-list');
+  list.innerHTML = '<li style="justify-content:center;color:#888;">Loading…</li>';
+  try {
+    const res = await api('GET', '/api/drafts');
+    const drafts = res.drafts || [];
+    list.innerHTML = '';
+    if (drafts.length === 0) {
+      $('picker-empty').hidden = false;
+      return;
+    }
+    $('picker-empty').hidden = true;
+    for (const d of drafts) {
+      const li = document.createElement('li');
+      li.innerHTML = `
+        <div>
+          <div class="picker-name">${escapeHtml(d.name)}</div>
+          <div class="picker-target">→ groups/${escapeHtml(d.target)}/</div>
+        </div>
+        <span class="picker-target">${d.hasPersona ? '' : '(empty)'}</span>
+      `;
+      li.addEventListener('click', () => startSession(d.name));
+      list.appendChild(li);
+    }
+  } catch (err) {
+    list.innerHTML = `<li style="color:#ff6b6b;">${escapeHtml(err.message)}</li>`;
+  }
+}
+
+async function startSession(draftName) {
+  try {
+    await api('POST', '/api/session/start', { draft: draftName });
+    await showWorkspace();
+  } catch (err) {
+    alert('Could not start session: ' + err.message);
+  }
+}
+
+async function showWorkspace() {
+  $('picker').hidden = true;
+  $('workspace-root').hidden = false;
+  await loadDraft();
+  if (!state.traceConnected) {
+    connectTrace();
+    state.traceConnected = true;
+  }
+  setMode('test');
+  // Reset chat pane for a fresh session
+  $('messages').innerHTML = '';
+  $('trace-list').innerHTML = '';
+  state.activatedSkills.clear();
+}
+
+$('picker-refresh-btn').addEventListener('click', () => showPicker());
+$('picker-logout-btn').addEventListener('click', async () => {
+  await api('POST', '/api/logout');
+  window.location.href = BASE + '/login';
+});
+
+// ============================================================
 // Boot
 // ============================================================
 (async () => {
   try {
-    await loadDraft();
-    connectTrace();
-    setMode('test');
+    const res = await api('GET', '/api/drafts');
+    if (res.active) {
+      await showWorkspace();
+    } else {
+      await showPicker();
+    }
   } catch (err) {
     console.error(err);
+    await showPicker();
   }
 })();

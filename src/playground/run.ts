@@ -1,27 +1,24 @@
 /**
- * Draft agent runner — calls runContainerAgent() directly with a synthetic
- * RegisteredGroup pointing at groups/draft/. Bypasses the channel message
- * loop and IPC watcher entirely.
+ * Draft agent runner — runs a single chat turn against an active draft.
+ * Takes the draft name and spawns a container rooted at groups/<draftName>/.
  *
- * A single-turn model for now: each chat message spawns a fresh container
- * (or shares one mid-turn via resume). The SDK sessionId is persisted in
- * memory across turns so the conversation resumes. The sessionId is
- * invalidated whenever the persona or skills change (host handles that via
- * `invalidateSession`).
- *
- * Trace capture: the draft group's IPC dir contains a trace.jsonl file
- * that the container writes to. A tail watcher (trace.ts) streams lines
- * to connected WebSocket clients.
+ * The SDK sessionId is kept in memory across turns so the conversation
+ * resumes. When the active draft changes (session start/end) or the
+ * persona/skills/global CLAUDE.md are edited, resetRunSingletons() or
+ * invalidateSession() are called.
  */
 import { ChildProcess } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 
-import { resolveGroupFolderPath, resolveGroupIpcPath } from '../group-folder.js';
+import {
+  resolveGroupFolderPath,
+  resolveGroupIpcPath,
+} from '../group-folder.js';
 import { logger } from '../logger.js';
 import { runContainerAgent, ContainerOutput } from '../container-runner.js';
 import { RegisteredGroup } from '../types.js';
-import { DRAFT_ATTACHMENTS_DIR, DRAFT_GROUP_FOLDER, DRAFT_SESSIONS_DIR } from './paths.js';
+import { getDraftPaths } from './paths.js';
 
 // In-memory draft session state. Not persisted across server restarts.
 let currentSessionId: string | undefined;
@@ -33,20 +30,28 @@ export function invalidateSession(): void {
   currentTraceSessionId = null;
 }
 
+/**
+ * Hard reset — drop the SDK session and kill any in-flight container.
+ * Called by the session manager when the active draft changes.
+ */
+export function resetRunSingletons(): void {
+  invalidateSession();
+  stopAllDraftRuns();
+}
+
 export function getCurrentTraceSessionId(): string | null {
   return currentTraceSessionId;
 }
 
-function syntheticDraftGroup(): RegisteredGroup {
+function syntheticDraftGroup(draftName: string): RegisteredGroup {
   return {
-    name: 'Playground Draft',
-    folder: DRAFT_GROUP_FOLDER,
+    name: `Playground ${draftName}`,
+    folder: draftName,
     trigger: '',
     added_at: new Date().toISOString(),
     isMain: false,
     requiresTrigger: false,
     containerConfig: {
-      // Playground turns are interactive — shorter timeout is fine.
       timeout: 600_000,
     },
   };
@@ -55,12 +60,11 @@ function syntheticDraftGroup(): RegisteredGroup {
 /**
  * Prepare a new trace session and reset the in-container trace.jsonl.
  */
-function startTraceSession(): string {
+function startTraceSession(draftName: string): string {
+  const paths = getDraftPaths(draftName);
   const sessionId = `s${Date.now()}`;
-  fs.mkdirSync(path.join(DRAFT_SESSIONS_DIR, sessionId), { recursive: true });
-  // The container writes to /workspace/ipc/trace.jsonl. Truncate the host-
-  // side file so this turn's trace is fresh.
-  const ipcDir = resolveGroupIpcPath(DRAFT_GROUP_FOLDER);
+  fs.mkdirSync(path.join(paths.sessionsDir, sessionId), { recursive: true });
+  const ipcDir = resolveGroupIpcPath(draftName);
   fs.mkdirSync(ipcDir, { recursive: true });
   const tracePath = path.join(ipcDir, 'trace.jsonl');
   fs.writeFileSync(tracePath, '');
@@ -68,30 +72,27 @@ function startTraceSession(): string {
   return sessionId;
 }
 
-/**
- * Collect any files currently in the attachments directory, return them
- * inline as base64 MessageImage objects for the container. (NanoClaw's
- * container pipeline already supports images; other file types pass
- * through as attachments the agent can read from /workspace/group/
- * attachments/ — copied below.)
- */
-function collectAttachments(): {
+function collectAttachments(draftName: string): {
   images: { base64: string; mimeType: string }[];
   files: string[];
 } {
+  const { attachmentsDir } = getDraftPaths(draftName);
   const images: { base64: string; mimeType: string }[] = [];
   const files: string[] = [];
-  if (!fs.existsSync(DRAFT_ATTACHMENTS_DIR)) return { images, files };
-  for (const name of fs.readdirSync(DRAFT_ATTACHMENTS_DIR)) {
-    const full = path.join(DRAFT_ATTACHMENTS_DIR, name);
+  if (!fs.existsSync(attachmentsDir)) return { images, files };
+  for (const name of fs.readdirSync(attachmentsDir)) {
+    const full = path.join(attachmentsDir, name);
     if (!fs.statSync(full).isFile()) continue;
     const ext = path.extname(name).toLowerCase();
     if (['.png', '.jpg', '.jpeg', '.webp', '.gif'].includes(ext)) {
       const mimeType =
-        ext === '.png' ? 'image/png'
-        : ext === '.webp' ? 'image/webp'
-        : ext === '.gif' ? 'image/gif'
-        : 'image/jpeg';
+        ext === '.png'
+          ? 'image/png'
+          : ext === '.webp'
+            ? 'image/webp'
+            : ext === '.gif'
+              ? 'image/gif'
+              : 'image/jpeg';
       images.push({
         base64: fs.readFileSync(full).toString('base64'),
         mimeType,
@@ -103,11 +104,15 @@ function collectAttachments(): {
   return { images, files };
 }
 
-function clearAttachments(): void {
-  if (!fs.existsSync(DRAFT_ATTACHMENTS_DIR)) return;
-  for (const name of fs.readdirSync(DRAFT_ATTACHMENTS_DIR)) {
+function clearAttachments(draftName: string): void {
+  const { attachmentsDir } = getDraftPaths(draftName);
+  if (!fs.existsSync(attachmentsDir)) return;
+  for (const name of fs.readdirSync(attachmentsDir)) {
     try {
-      fs.rmSync(path.join(DRAFT_ATTACHMENTS_DIR, name), { force: true, recursive: true });
+      fs.rmSync(path.join(attachmentsDir, name), {
+        force: true,
+        recursive: true,
+      });
     } catch {
       /* ignore */
     }
@@ -121,22 +126,20 @@ export interface RunResult {
   files: Array<{ path: string; size: number }>;
 }
 
-// Directory basenames inside groups/draft/ that should NEVER appear as
-// agent-produced files (they're host-managed bookkeeping).
 const FILE_SNAPSHOT_EXCLUDE = new Set([
   'logs',
   '.history',
   'memory',
   'conversations',
-  'attachments', // host-uploaded attachments, not agent output
-  'CLAUDE.md',   // the persona itself
+  'attachments',
+  'CLAUDE.md',
 ]);
 
-type Snapshot = Map<string, number>; // relative path -> mtimeMs
+type Snapshot = Map<string, number>;
 
-function snapshotDraftFiles(): Snapshot {
+function snapshotDraftFiles(draftName: string): Snapshot {
   const out: Snapshot = new Map();
-  const draftGroupDir = resolveGroupFolderPath(DRAFT_GROUP_FOLDER);
+  const draftGroupDir = resolveGroupFolderPath(draftName);
   if (!fs.existsSync(draftGroupDir)) return out;
   const walk = (absDir: string, relDir: string) => {
     let entries: fs.Dirent[];
@@ -165,8 +168,12 @@ function snapshotDraftFiles(): Snapshot {
   return out;
 }
 
-function diffSnapshots(before: Snapshot, after: Snapshot): Array<{ path: string; size: number }> {
-  const draftGroupDir = resolveGroupFolderPath(DRAFT_GROUP_FOLDER);
+function diffSnapshots(
+  draftName: string,
+  before: Snapshot,
+  after: Snapshot,
+): Array<{ path: string; size: number }> {
+  const draftGroupDir = resolveGroupFolderPath(draftName);
   const changed: Array<{ path: string; size: number }> = [];
   for (const [rel, mtime] of after.entries()) {
     const prior = before.get(rel);
@@ -179,28 +186,29 @@ function diffSnapshots(before: Snapshot, after: Snapshot): Array<{ path: string;
       }
     }
   }
-  // Most recently touched first
   return changed.sort((a, b) => a.path.localeCompare(b.path));
 }
 
-/**
- * Run a single draft chat turn. Returns the first assistant reply.
- */
-export async function runDraftTurn(prompt: string): Promise<RunResult> {
-  const traceSessionId = startTraceSession();
-  const group = syntheticDraftGroup();
-  const { images, files } = collectAttachments();
-  const preSnapshot = snapshotDraftFiles();
+export async function runDraftTurn(
+  draftName: string,
+  prompt: string,
+): Promise<RunResult> {
+  const traceSessionId = startTraceSession(draftName);
+  const group = syntheticDraftGroup(draftName);
+  const { images, files } = collectAttachments(draftName);
+  const preSnapshot = snapshotDraftFiles(draftName);
 
-  // If non-image files were dropped, copy them into the draft group's
-  // working directory so the agent can read them. (Image payloads go
-  // inline as multimodal content blocks.)
   if (files.length > 0) {
-    const groupAttachments = path.join('groups', DRAFT_GROUP_FOLDER, 'attachments');
+    const groupAttachments = path.join(
+      'groups',
+      draftName,
+      'attachments',
+    );
     fs.mkdirSync(groupAttachments, { recursive: true });
+    const { attachmentsDir } = getDraftPaths(draftName);
     for (const name of files) {
       fs.copyFileSync(
-        path.join(DRAFT_ATTACHMENTS_DIR, name),
+        path.join(attachmentsDir, name),
         path.join(groupAttachments, name),
       );
     }
@@ -215,7 +223,7 @@ export async function runDraftTurn(prompt: string): Promise<RunResult> {
     if (closeWritten) return;
     closeWritten = true;
     try {
-      const ipcDir = resolveGroupIpcPath(DRAFT_GROUP_FOLDER);
+      const ipcDir = resolveGroupIpcPath(draftName);
       fs.mkdirSync(path.join(ipcDir, 'input'), { recursive: true });
       fs.writeFileSync(path.join(ipcDir, 'input', '_close'), '');
     } catch (err) {
@@ -229,8 +237,8 @@ export async function runDraftTurn(prompt: string): Promise<RunResult> {
       {
         prompt,
         sessionId: currentSessionId,
-        groupFolder: DRAFT_GROUP_FOLDER,
-        chatJid: 'playground:draft',
+        groupFolder: draftName,
+        chatJid: `playground:${draftName}`,
         isMain: false,
         assistantName: 'Draft',
         images: images.length > 0 ? images : undefined,
@@ -247,10 +255,6 @@ export async function runDraftTurn(prompt: string): Promise<RunResult> {
           lastError = chunk.error;
         }
         if (chunk.result) {
-          // First text result = reply. Ask the container to exit
-          // immediately — otherwise its runQuery loop waits for a
-          // follow-up IPC message and the HTTP request hangs until
-          // IDLE_TIMEOUT fires on the host side.
           reply = chunk.result;
           writeClose();
         }
@@ -260,16 +264,15 @@ export async function runDraftTurn(prompt: string): Promise<RunResult> {
     lastError = err instanceof Error ? err.message : String(err);
   }
 
-  clearAttachments();
-  // Safety net — close even if no result was seen (error path).
+  clearAttachments(draftName);
   writeClose();
 
   if (output?.status === 'error' && output.error) {
     lastError = output.error;
   }
 
-  const postSnapshot = snapshotDraftFiles();
-  const createdFiles = diffSnapshots(preSnapshot, postSnapshot);
+  const postSnapshot = snapshotDraftFiles(draftName);
+  const createdFiles = diffSnapshots(draftName, preSnapshot, postSnapshot);
 
   return {
     sessionId: traceSessionId,
@@ -279,9 +282,6 @@ export async function runDraftTurn(prompt: string): Promise<RunResult> {
   };
 }
 
-/**
- * Graceful shutdown — kill any in-flight draft container.
- */
 export function stopAllDraftRuns(): void {
   for (const proc of activeProcesses) {
     try {

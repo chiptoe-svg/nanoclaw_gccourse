@@ -1,26 +1,25 @@
 /**
- * Trace file tail + WebSocket broadcast.
+ * Trace file tail + WebSocket broadcast, scoped to the active draft.
  *
- * The draft container writes structured events to
- * /workspace/ipc/trace.jsonl inside the container. On the host, this maps
- * to {DATA_DIR}/ipc/draft/trace.jsonl. We watch the file for appends and
- * broadcast new lines to every connected WebSocket client, while also
- * copying each event into the current trace session's events.jsonl file
- * so a reload can replay past turns.
+ * When a draft session starts, startTraceWatcher(draftName) polls that
+ * draft's trace.jsonl and broadcasts new lines to every connected
+ * WebSocket client. stopTraceWatcher() tears down the watcher when the
+ * session ends. WebSocket subscribers persist across draft sessions.
  */
 import fs from 'fs';
 import path from 'path';
 
 import { resolveGroupIpcPath } from '../group-folder.js';
 import { logger } from '../logger.js';
-import { DRAFT_GROUP_FOLDER, DRAFT_SESSIONS_DIR } from './paths.js';
+import { getDraftPaths } from './paths.js';
 import { getCurrentTraceSessionId } from './run.js';
 
 type Listener = (line: string) => void;
 
 const listeners = new Set<Listener>();
 
-let watchStarted = false;
+let activeDraftName: string | null = null;
+let watchInterval: NodeJS.Timeout | null = null;
 let readOffset = 0;
 
 export function subscribeTrace(listener: Listener): () => void {
@@ -37,8 +36,9 @@ function broadcast(line: string): void {
     }
   }
   const sessionId = getCurrentTraceSessionId();
-  if (sessionId) {
-    const out = path.join(DRAFT_SESSIONS_DIR, sessionId, 'events.jsonl');
+  if (activeDraftName && sessionId) {
+    const { sessionsDir } = getDraftPaths(activeDraftName);
+    const out = path.join(sessionsDir, sessionId, 'events.jsonl');
     try {
       fs.mkdirSync(path.dirname(out), { recursive: true });
       fs.appendFileSync(out, line + '\n');
@@ -48,14 +48,13 @@ function broadcast(line: string): void {
   }
 }
 
-function tracePath(): string {
-  return path.join(resolveGroupIpcPath(DRAFT_GROUP_FOLDER), 'trace.jsonl');
+function tracePath(draftName: string): string {
+  return path.join(resolveGroupIpcPath(draftName), 'trace.jsonl');
 }
 
 function drainFrom(file: string, from: number): number {
   if (!fs.existsSync(file)) return from;
   const stat = fs.statSync(file);
-  // File was truncated (new turn) — reset.
   if (stat.size < from) from = 0;
   if (stat.size === from) return from;
   const fd = fs.openSync(file, 'r');
@@ -65,8 +64,6 @@ function drainFrom(file: string, from: number): number {
     fs.readSync(fd, buf, 0, len, from);
     const text = buf.toString('utf-8');
     const lines = text.split('\n');
-    // Keep the last (potentially partial) line unprocessed — we'll re-read
-    // it next tick once the writer finishes.
     const last = lines.pop() ?? '';
     for (const line of lines) {
       if (line.trim()) broadcast(line);
@@ -77,26 +74,30 @@ function drainFrom(file: string, from: number): number {
   }
 }
 
-/**
- * Start the watcher. Idempotent — safe to call multiple times.
- */
-export function startTraceWatcher(): void {
-  if (watchStarted) return;
-  watchStarted = true;
+export function startTraceWatcher(draftName: string): void {
+  stopTraceWatcher();
+  activeDraftName = draftName;
 
-  const file = tracePath();
+  const file = tracePath(draftName);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   if (!fs.existsSync(file)) fs.writeFileSync(file, '');
   readOffset = fs.statSync(file).size;
 
-  // Poll every 250ms. Cheap; we only care about a file that grows during
-  // a draft turn, and fs.watch is unreliable for append-only logs across
-  // platforms.
-  setInterval(() => {
+  watchInterval = setInterval(() => {
     try {
       readOffset = drainFrom(file, readOffset);
     } catch (err) {
       logger.debug({ err }, 'trace tail error');
     }
-  }, 250).unref();
+  }, 250);
+  watchInterval.unref();
+}
+
+export function stopTraceWatcher(): void {
+  if (watchInterval) {
+    clearInterval(watchInterval);
+    watchInterval = null;
+  }
+  activeDraftName = null;
+  readOffset = 0;
 }

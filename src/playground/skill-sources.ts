@@ -32,13 +32,13 @@ export interface SkillSource {
 }
 
 export interface SkillFolderEntry {
-  name: string;         // skill folder name (== the skill's identifier)
-  description: string;  // from SKILL.md frontmatter
+  name: string; // skill folder name (== the skill's identifier)
+  description: string; // from SKILL.md frontmatter
   files: SkillFileEntry[]; // contents of the skill folder
 }
 
 export interface SkillFileEntry {
-  path: string;         // relative to the skill folder
+  path: string; // relative to the skill folder
   size: number;
   isDir: boolean;
 }
@@ -69,7 +69,10 @@ function loadRegistry(): SkillSource[] {
     if (!Array.isArray(parsed)) throw new Error('registry not an array');
     return parsed.filter(
       (s): s is SkillSource =>
-        s && typeof s.id === 'string' && typeof s.name === 'string' && typeof s.repo === 'string',
+        s &&
+        typeof s.id === 'string' &&
+        typeof s.name === 'string' &&
+        typeof s.repo === 'string',
     );
   } catch (err) {
     logger.warn({ err }, 'Skill source registry corrupt, reseeding');
@@ -99,14 +102,21 @@ function ensureCloned(source: SkillSource, refresh = false): void {
   const gitDir = path.join(dir, '.git');
   if (fs.existsSync(gitDir)) {
     if (refresh) {
-      const res = spawnSync('git', ['-C', dir, 'pull', '--ff-only'], { encoding: 'utf-8' });
+      const res = spawnSync('git', ['-C', dir, 'pull', '--ff-only'], {
+        encoding: 'utf-8',
+      });
       if (res.status !== 0) {
-        logger.warn({ id: source.id, stderr: res.stderr }, 'Source refresh failed');
+        logger.warn(
+          { id: source.id, stderr: res.stderr },
+          'Source refresh failed',
+        );
       }
     }
     return;
   }
-  const res = spawnSync('git', ['clone', '--depth', '1', source.repo, dir], { encoding: 'utf-8' });
+  const res = spawnSync('git', ['clone', '--depth', '1', source.repo, dir], {
+    encoding: 'utf-8',
+  });
   if (res.status !== 0) {
     throw new Error(`Clone failed: ${res.stderr}`);
   }
@@ -200,7 +210,11 @@ export function listAllSources(refresh = false): SourceListing[] {
       const skills = walkSource(source);
       out.push({ source, skills });
     } catch (err) {
-      out.push({ source, skills: [], error: err instanceof Error ? err.message : String(err) });
+      out.push({
+        source,
+        skills: [],
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
   return out;
@@ -256,7 +270,8 @@ export function addSource(input: {
 export function removeSource(id: string): void {
   if (id === 'anthropic') throw new Error('cannot remove the default source');
   const sources = loadRegistry();
-  if (!sources.some((s) => s.id === id)) throw new Error(`unknown source: ${id}`);
+  if (!sources.some((s) => s.id === id))
+    throw new Error(`unknown source: ${id}`);
   saveRegistry(sources.filter((s) => s.id !== id));
   const dir = path.join(SOURCES_ROOT, id);
   if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
@@ -290,7 +305,10 @@ export function readSourceFile(
   const stat = fs.statSync(abs);
   // Cap at 512KB to keep the UI snappy.
   if (stat.size > 512 * 1024) {
-    return { content: `(file too large — ${stat.size} bytes)`, size: stat.size };
+    return {
+      content: `(file too large — ${stat.size} bytes)`,
+      size: stat.size,
+    };
   }
   return { content: fs.readFileSync(abs, 'utf-8'), size: stat.size };
 }

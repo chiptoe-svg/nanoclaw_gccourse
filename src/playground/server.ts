@@ -3,10 +3,15 @@
  *
  * Binds to 127.0.0.1:<port> (default 3002) so Caddy can reverse-proxy
  * `/playground/*` to localhost. The server itself is unaware of the
- * `/playground/` prefix — Caddy's handle_path strips it. When reached
- * directly on localhost, paths start at `/`.
+ * `/playground/` prefix — Caddy's handle_path strips it.
+ *
+ * Session model (locked):
+ *   - GET /api/drafts                 → list drafts whose targets exist
+ *   - POST /api/session/start         → lock a draft for editing
+ *   - POST /api/session/end           → save (apply) or cancel (restore)
+ *   - All other /api/* routes require an active session.
  */
-import express, { Request, Response } from 'express';
+import express, { NextFunction, Request, Response } from 'express';
 import fs from 'fs';
 import http from 'http';
 import path from 'path';
@@ -14,6 +19,8 @@ import { fileURLToPath } from 'url';
 import { WebSocketServer } from 'ws';
 
 import { PROJECT_ROOT } from '../config.js';
+import { getAllRegisteredGroups } from '../db.js';
+import { resolveGroupFolderPath } from '../group-folder.js';
 import { logger } from '../logger.js';
 import {
   authCookieFromHeader,
@@ -23,26 +30,33 @@ import {
   requireAuth,
 } from './auth.js';
 import {
-  applyDraftToMain,
+  applyDraft,
   computePersonaDiff,
-  ensureDraftInitialized,
   getDraftStatus,
   getGlobalClaude,
-  resetDraftFromMain,
+  seedDraftFromTarget,
   writeDraftPersona,
   writeGlobalClaude,
 } from './draft.js';
-import { resolveGroupFolderPath } from '../group-folder.js';
 import {
   importLibrarySkill,
   listLibrary,
   previewLibrarySkill,
 } from './library.js';
+import { getDraftPaths } from './paths.js';
 import {
   listPersonas,
   loadPersonaIntoDraft,
   previewPersona,
 } from './personas.js';
+import { invalidateSession, runDraftTurn, stopAllDraftRuns } from './run.js';
+import {
+  endDraftSession,
+  getActiveDraft,
+  listAvailableDrafts,
+  requireActiveDraft,
+  startDraftSession,
+} from './session.js';
 import {
   addSource,
   importSourceSkill,
@@ -50,9 +64,6 @@ import {
   readSourceFile,
   removeSource,
 } from './skill-sources.js';
-import { DRAFT_SKILLS_DIR } from './paths.js';
-import { DRAFT_ATTACHMENTS_DIR } from './paths.js';
-import { invalidateSession, runDraftTurn, stopAllDraftRuns } from './run.js';
 import {
   createSkill,
   deleteSkill,
@@ -63,14 +74,11 @@ import {
   readSkill,
   saveSkill,
 } from './skills.js';
-import { loadState, updateState } from './state.js';
-import { startTraceWatcher, subscribeTrace } from './trace.js';
+import { loadAuthState, updateDraftState } from './state.js';
+import { subscribeTrace } from './trace.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-// Public assets live in src/playground/public/ (checked into the repo).
-// Resolving via PROJECT_ROOT works whether we're running via tsx (src/) or
-// compiled JS (dist/), because tsc won't copy the static files into dist/.
 const PUBLIC_DIR = fs.existsSync(path.join(__dirname, 'public'))
   ? path.join(__dirname, 'public')
   : path.join(PROJECT_ROOT, 'src', 'playground', 'public');
@@ -80,13 +88,47 @@ function json(res: Response, obj: unknown, status = 200): void {
   res.end(JSON.stringify(obj));
 }
 
+/**
+ * Bootstrap: create draft_<main-folder> if main is registered and its
+ * draft doesn't exist yet. Runs once at startup.
+ */
+function seedDefaultDrafts(): void {
+  try {
+    const groups = getAllRegisteredGroups();
+    for (const g of Object.values(groups)) {
+      if (!g.isMain) continue;
+      const created = seedDraftFromTarget(g.folder);
+      if (created) {
+        logger.info(
+          { created, targetFolder: g.folder },
+          'Seeded default draft from main group',
+        );
+      }
+    }
+  } catch (err) {
+    logger.warn({ err }, 'Default draft seed failed (continuing)');
+  }
+}
+
+/**
+ * Guard middleware — short-circuits with 409 if no session is active.
+ * Applies to every route that touches per-draft state.
+ */
+function requireSession(_req: Request, res: Response, next: NextFunction): void {
+  const active = getActiveDraft();
+  if (!active) {
+    json(res, { error: 'no_active_draft' }, 409);
+    return;
+  }
+  next();
+}
+
 export async function startPlaygroundServer(
   port = 3002,
   host = '0.0.0.0',
 ): Promise<http.Server> {
-  ensureDraftInitialized();
-  loadState(); // side-effect: creates state.json if missing
-  startTraceWatcher();
+  loadAuthState();
+  seedDefaultDrafts();
 
   const app = express();
   app.use(express.json({ limit: '10mb' }));
@@ -119,35 +161,75 @@ export async function startPlaygroundServer(
   });
   app.use('/static', express.static(PUBLIC_DIR));
 
+  // --- Session management (always allowed post-auth) ---
+  app.get('/api/drafts', (_req, res) => {
+    json(res, {
+      drafts: listAvailableDrafts(),
+      active: getActiveDraft(),
+    });
+  });
+  app.post('/api/session/start', (req, res) => {
+    const draft = String(req.body?.draft ?? '');
+    const result = startDraftSession(draft);
+    if (!result.ok) {
+      const status = result.error === 'session_already_active' ? 409 : 400;
+      json(res, { ok: false, error: result.error }, status);
+      return;
+    }
+    json(res, { ok: true, draftName: result.draftName });
+  });
+  app.post('/api/session/end', (req, res) => {
+    const action = String(req.body?.action ?? '');
+    if (action !== 'save' && action !== 'cancel') {
+      json(res, { ok: false, error: 'invalid_action' }, 400);
+      return;
+    }
+    const result = endDraftSession(action);
+    if (!result.ok) {
+      json(res, result, 400);
+      return;
+    }
+    json(res, result);
+  });
+
+  // --- Gate every route below this line: must have active session ---
+  app.use('/api/draft', requireSession);
+  app.use('/api/skills', requireSession);
+  app.use('/api/personas', requireSession);
+  app.use('/api/skill-sources', requireSession);
+  app.use('/api/library', requireSession);
+  app.use('/api/global', requireSession);
+
   // --- Draft persona ---
   app.get('/api/draft', (_req, res) => {
     try {
-      json(res, getDraftStatus());
+      const draftName = requireActiveDraft();
+      json(res, getDraftStatus(draftName));
     } catch (err) {
       json(res, { error: String(err) }, 500);
     }
   });
   app.put('/api/draft/persona', (req, res) => {
+    const draftName = requireActiveDraft();
     const text = String(req.body?.text ?? '');
-    writeDraftPersona(text);
+    writeDraftPersona(draftName, text);
     invalidateSession();
     json(res, { ok: true });
   });
   app.get('/api/draft/diff', (_req, res) => {
-    json(res, computePersonaDiff());
+    const draftName = requireActiveDraft();
+    json(res, computePersonaDiff(draftName));
   });
   app.post('/api/draft/apply', (_req, res) => {
+    // Apply without ending the session. Used when the user wants to push
+    // changes to the target but keep editing.
     try {
-      const result = applyDraftToMain();
+      const draftName = requireActiveDraft();
+      const result = applyDraft(draftName);
       json(res, { ok: true, ...result });
     } catch (err) {
       json(res, { ok: false, error: String(err) }, 500);
     }
-  });
-  app.post('/api/draft/reset', (_req, res) => {
-    resetDraftFromMain();
-    invalidateSession();
-    json(res, { ok: true });
   });
 
   // --- Global CLAUDE.md (loaded into every non-main container) ---
@@ -170,22 +252,20 @@ export async function startPlaygroundServer(
       );
       return;
     }
-    // Global content change affects all containers — drop the draft's
-    // SDK session too so the next turn picks up the new global context.
     invalidateSession();
     json(res, result);
   });
 
-  // --- Agent-produced file downloads (path-confined to groups/draft/) ---
+  // --- Agent-produced file downloads (path-confined to the active draft) ---
   app.get('/api/draft/files', (req, res) => {
+    const draftName = requireActiveDraft();
     const rel = String(req.query.path ?? '');
     if (!rel || rel.includes('..')) {
       res.status(400).end('bad path');
       return;
     }
-    const draftDir = resolveGroupFolderPath('draft');
+    const draftDir = resolveGroupFolderPath(draftName);
     const abs = path.resolve(draftDir, rel);
-    // Confine to draft dir
     const relResolved = path.relative(draftDir, abs);
     if (relResolved.startsWith('..') || path.isAbsolute(relResolved)) {
       res.status(400).end('bad path');
@@ -198,24 +278,28 @@ export async function startPlaygroundServer(
     res.sendFile(abs);
   });
   app.put('/api/draft/trace-level', (req, res) => {
+    const draftName = requireActiveDraft();
     const level = String(req.body?.level ?? 'summary');
     if (!['minimal', 'summary', 'full'].includes(level)) {
       json(res, { error: 'invalid level' }, 400);
       return;
     }
-    updateState({ traceLevel: level as 'minimal' | 'summary' | 'full' });
+    updateDraftState(draftName, {
+      traceLevel: level as 'minimal' | 'summary' | 'full',
+    });
     json(res, { ok: true });
   });
 
   // --- Draft chat ---
   app.post('/api/draft/messages', async (req, res) => {
+    const draftName = requireActiveDraft();
     const text = String(req.body?.text ?? '');
     if (!text.trim()) {
       json(res, { error: 'empty message' }, 400);
       return;
     }
     try {
-      const result = await runDraftTurn(text);
+      const result = await runDraftTurn(draftName, text);
       json(res, result);
     } catch (err) {
       json(
@@ -226,20 +310,18 @@ export async function startPlaygroundServer(
     }
   });
   app.post('/api/draft/attachments', (req, res) => {
-    // Attachments are sent as JSON: { files: [{name, base64}] }
-    // Simpler than multer for teaching purposes; the UI base64-encodes
-    // before POST.
+    const draftName = requireActiveDraft();
+    const { attachmentsDir } = getDraftPaths(draftName);
     const files = Array.isArray(req.body?.files) ? req.body.files : [];
-    fs.mkdirSync(DRAFT_ATTACHMENTS_DIR, { recursive: true });
+    fs.mkdirSync(attachmentsDir, { recursive: true });
     const saved: string[] = [];
     for (const f of files) {
       const name = String(f?.name ?? '');
       const data = String(f?.base64 ?? '');
       if (!name || !data) continue;
-      // Strip path components for safety.
       const safe = path.basename(name).replace(/[^A-Za-z0-9._-]/g, '_');
       fs.writeFileSync(
-        path.join(DRAFT_ATTACHMENTS_DIR, safe),
+        path.join(attachmentsDir, safe),
         Buffer.from(data, 'base64'),
       );
       saved.push(safe);
@@ -249,15 +331,21 @@ export async function startPlaygroundServer(
 
   // --- Skills ---
   app.get('/api/skills', (_req, res) => {
-    json(res, { skills: listSkills() });
+    const draftName = requireActiveDraft();
+    json(res, { skills: listSkills(draftName) });
+  });
+  app.get('/api/skills/agent-created', (_req, res) => {
+    const draftName = requireActiveDraft();
+    json(res, { skills: listAgentCreatedSkills(draftName) });
   });
   app.get('/api/skills/:name', (req, res) => {
+    const draftName = requireActiveDraft();
     const name = req.params.name;
     if (!isValidSkillName(name)) {
       json(res, { error: 'invalid name' }, 400);
       return;
     }
-    const skill = readSkill(name);
+    const skill = readSkill(draftName, name);
     if (!skill) {
       json(res, { error: 'not found' }, 404);
       return;
@@ -265,8 +353,9 @@ export async function startPlaygroundServer(
     json(res, skill);
   });
   app.put('/api/skills/:name', (req, res) => {
+    const draftName = requireActiveDraft();
     try {
-      saveSkill(req.params.name, String(req.body?.content ?? ''));
+      saveSkill(draftName, req.params.name, String(req.body?.content ?? ''));
       invalidateSession();
       json(res, { ok: true });
     } catch (err) {
@@ -274,33 +363,35 @@ export async function startPlaygroundServer(
     }
   });
   app.post('/api/skills', (req, res) => {
+    const draftName = requireActiveDraft();
     try {
       const name = String(req.body?.name ?? '');
       const description = String(req.body?.description ?? '');
-      createSkill(name, description);
+      createSkill(draftName, name, description);
       invalidateSession();
       json(res, { ok: true });
     } catch (err) {
       json(res, { error: String(err) }, 400);
     }
   });
-  // Agent-created skills (written by the agent during playground chat)
-  app.get('/api/skills/agent-created', (_req, res) => {
-    json(res, { skills: listAgentCreatedSkills() });
-  });
   app.post('/api/skills/agent-created/:name/promote', (req, res) => {
+    const draftName = requireActiveDraft();
     try {
-      promoteAgentSkill(req.params.name);
+      promoteAgentSkill(draftName, req.params.name);
       invalidateSession();
       json(res, { ok: true });
     } catch (err) {
-      json(res, { error: err instanceof Error ? err.message : String(err) }, 400);
+      json(
+        res,
+        { error: err instanceof Error ? err.message : String(err) },
+        400,
+      );
     }
   });
-
   app.delete('/api/skills/:name', (req, res) => {
+    const draftName = requireActiveDraft();
     try {
-      deleteSkill(req.params.name);
+      deleteSkill(draftName, req.params.name);
       invalidateSession();
       json(res, { ok: true });
     } catch (err) {
@@ -326,8 +417,9 @@ export async function startPlaygroundServer(
     json(res, p);
   });
   app.post('/api/personas/:category/:name/load', (req, res) => {
+    const draftName = requireActiveDraft();
     try {
-      loadPersonaIntoDraft(req.params.category, req.params.name);
+      loadPersonaIntoDraft(draftName, req.params.category, req.params.name);
       invalidateSession();
       json(res, { ok: true });
     } catch (err) {
@@ -389,12 +481,14 @@ export async function startPlaygroundServer(
   app.post(
     '/api/skill-sources/:sourceId/skill/:skillName/import',
     (req, res) => {
+      const draftName = requireActiveDraft();
+      const { skillsDir } = getDraftPaths(draftName);
       try {
         importSourceSkill(
           req.params.sourceId,
           req.params.skillName,
           req.body?.overwrite === true,
-          DRAFT_SKILLS_DIR,
+          skillsDir,
         );
         invalidateSession();
         json(res, { ok: true });
@@ -426,8 +520,10 @@ export async function startPlaygroundServer(
     json(res, preview);
   });
   app.post('/api/library/:category/:name/import', (req, res) => {
+    const draftName = requireActiveDraft();
     try {
       importLibrarySkill(
+        draftName,
         req.params.category,
         req.params.name,
         req.body?.overwrite === true,

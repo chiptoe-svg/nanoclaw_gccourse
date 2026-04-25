@@ -15,7 +15,10 @@ const COOKIE_NAME = 'pg_auth';
 const COOKIE_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
 function sign(expiry: number, secret: string): string {
-  return crypto.createHmac('sha256', secret).update(String(expiry)).digest('hex');
+  return crypto
+    .createHmac('sha256', secret)
+    .update(String(expiry))
+    .digest('hex');
 }
 
 export function issueAuthCookie(res: Response): void {
@@ -71,7 +74,10 @@ export function checkPassword(password: string): boolean {
   const state = loadState();
   const provided = sha256(password);
   try {
-    return crypto.timingSafeEqual(Buffer.from(provided), Buffer.from(state.passwordHash));
+    return crypto.timingSafeEqual(
+      Buffer.from(provided),
+      Buffer.from(state.passwordHash),
+    );
   } catch {
     return false;
   }
@@ -81,7 +87,11 @@ export function checkPassword(password: string): boolean {
  * Middleware: redirect unauthenticated HTML requests to /login, return 401
  * for API requests.
  */
-export function requireAuth(req: Request, res: Response, next: NextFunction): void {
+export function requireAuth(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): void {
   if (isAuthenticated(req)) {
     next();
     return;
@@ -90,7 +100,11 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
     res.status(401).json({ error: 'unauthorized' });
     return;
   }
-  if (req.path === '/login' || req.path === '/login.html' || req.path.startsWith('/static/')) {
+  if (
+    req.path === '/login' ||
+    req.path === '/login.html' ||
+    req.path.startsWith('/static/')
+  ) {
     next();
     return;
   }
@@ -99,7 +113,9 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
   res.redirect('login');
 }
 
-export function authCookieFromHeader(cookieHeader: string | undefined): boolean {
+export function authCookieFromHeader(
+  cookieHeader: string | undefined,
+): boolean {
   const cookies = parseCookies(cookieHeader);
   const raw = cookies[COOKIE_NAME];
   if (!raw) return false;

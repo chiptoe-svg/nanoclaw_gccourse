@@ -87,7 +87,11 @@ function parseFrontmatter(md: string): Frontmatter {
   return out;
 }
 
-function scanPersonaDir(dir: string, category: string, out: PersonaEntry[]): void {
+function scanPersonaDir(
+  dir: string,
+  category: string,
+  out: PersonaEntry[],
+): void {
   if (!fs.existsSync(dir)) return;
   for (const file of fs.readdirSync(dir)) {
     if (!file.endsWith('.md')) continue;
@@ -117,9 +121,15 @@ export function listPersonas(refresh = false): PersonaEntry[] {
   //    Subdirectories are treated as categories.
   if (fs.existsSync(LOCAL_PERSONAS_DIR)) {
     scanPersonaDir(LOCAL_PERSONAS_DIR, 'nanoclaw', out);
-    for (const entry of fs.readdirSync(LOCAL_PERSONAS_DIR, { withFileTypes: true })) {
+    for (const entry of fs.readdirSync(LOCAL_PERSONAS_DIR, {
+      withFileTypes: true,
+    })) {
       if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
-      scanPersonaDir(path.join(LOCAL_PERSONAS_DIR, entry.name), entry.name, out);
+      scanPersonaDir(
+        path.join(LOCAL_PERSONAS_DIR, entry.name),
+        entry.name,
+        out,
+      );
     }
   }
 
@@ -188,9 +198,13 @@ export function previewPersona(
  * entire file (frontmatter + body) is written so nothing is lost — the
  * draft persona is free-form markdown.
  */
-export function loadPersonaIntoDraft(category: string, name: string): void {
+export function loadPersonaIntoDraft(
+  draftName: string,
+  category: string,
+  name: string,
+): void {
   const file = resolvePersonaFile(category, name);
   if (!file) throw new Error(`Persona not found: ${category}/${name}`);
   const content = fs.readFileSync(file, 'utf-8');
-  writeDraftPersona(content);
+  writeDraftPersona(draftName, content);
 }

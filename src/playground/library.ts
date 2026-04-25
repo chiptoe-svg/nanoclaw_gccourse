@@ -14,7 +14,7 @@ import fs from 'fs';
 import path from 'path';
 
 import { logger } from '../logger.js';
-import { DRAFT_SKILLS_DIR, LIBRARY_CACHE_DIR } from './paths.js';
+import { LIBRARY_CACHE_DIR, getDraftPaths } from './paths.js';
 import { isValidSkillName } from './skills.js';
 
 const LIBRARY_REPO = 'https://github.com/anthropics/skills.git';
@@ -69,11 +69,18 @@ function ensureClone(refresh = false): void {
   const gitDir = path.join(LIBRARY_CACHE_DIR, '.git');
   if (fs.existsSync(gitDir)) {
     if (refresh) {
-      const res = spawnSync('git', ['-C', LIBRARY_CACHE_DIR, 'pull', '--ff-only'], {
-        encoding: 'utf-8',
-      });
+      const res = spawnSync(
+        'git',
+        ['-C', LIBRARY_CACHE_DIR, 'pull', '--ff-only'],
+        {
+          encoding: 'utf-8',
+        },
+      );
       if (res.status !== 0) {
-        logger.warn({ stderr: res.stderr }, 'Library refresh failed (continuing with cache)');
+        logger.warn(
+          { stderr: res.stderr },
+          'Library refresh failed (continuing with cache)',
+        );
       }
     }
     return;
@@ -176,7 +183,9 @@ function findLibrarySkillDir(category: string, name: string): string | null {
  * `artifacts` tool. We now default to "compatible" unless a declared
  * tool is on the incompatible list.
  */
-function checkCompatibility(content: string): Pick<LibraryPreview, 'compatibility' | 'missing' | 'incompatible'> {
+function checkCompatibility(
+  content: string,
+): Pick<LibraryPreview, 'compatibility' | 'missing' | 'incompatible'> {
   const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
   if (!fmMatch) {
     return { compatibility: 'compatible', missing: [], incompatible: [] };
@@ -231,7 +240,10 @@ function checkCompatibility(content: string): Pick<LibraryPreview, 'compatibilit
   return { compatibility, missing, incompatible };
 }
 
-export function previewLibrarySkill(category: string, name: string): LibraryPreview | null {
+export function previewLibrarySkill(
+  category: string,
+  name: string,
+): LibraryPreview | null {
   const dir = findLibrarySkillDir(category, name);
   if (!dir) return null;
   const content = fs.readFileSync(path.join(dir, 'SKILL.md'), 'utf-8');
@@ -249,6 +261,7 @@ export function previewLibrarySkill(category: string, name: string): LibraryPrev
  * exists in draft/skills/ unless overwrite is set.
  */
 export function importLibrarySkill(
+  draftName: string,
   category: string,
   name: string,
   overwrite: boolean,
@@ -256,7 +269,8 @@ export function importLibrarySkill(
   if (!isValidSkillName(name)) throw new Error(`Invalid skill name: ${name}`);
   const src = findLibrarySkillDir(category, name);
   if (!src) throw new Error(`Library skill not found: ${category}/${name}`);
-  const dst = path.join(DRAFT_SKILLS_DIR, name);
+  const { skillsDir } = getDraftPaths(draftName);
+  const dst = path.join(skillsDir, name);
   if (fs.existsSync(dst)) {
     if (!overwrite) throw new Error(`Skill already exists in draft: ${name}`);
     fs.rmSync(dst, { recursive: true, force: true });
