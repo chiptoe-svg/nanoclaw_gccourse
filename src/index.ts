@@ -10,6 +10,8 @@ import {
   TRIGGER_PATTERN,
 } from './config.js';
 import { startCredentialProxy } from './credential-proxy.js';
+import { startDashboardPusher } from './dashboard-pusher.js';
+import { readEnvFile } from './env.js';
 import { startPlaygroundServer, stopPlayground } from './playground/server.js';
 import './channels/index.js';
 import {
@@ -634,6 +636,36 @@ async function main(): Promise<void> {
   if (channels.length === 0) {
     logger.fatal('No channels connected');
     process.exit(1);
+  }
+
+  // Dashboard (optional) — enable with DASHBOARD_ENABLED=1.
+  // The dashboard's own bearer-token auth is disabled here because it
+  // embeds the token in the HTML (so it isn't real auth anyway). Put the
+  // backend behind a reverse proxy with HTTP basic auth instead, and
+  // firewall the backend port to localhost.
+  const dashboardEnv = readEnvFile(['DASHBOARD_ENABLED', 'DASHBOARD_PORT']);
+  const dashboardEnabled =
+    (process.env.DASHBOARD_ENABLED || dashboardEnv.DASHBOARD_ENABLED) === '1';
+  const dashboardPort = parseInt(
+    process.env.DASHBOARD_PORT || dashboardEnv.DASHBOARD_PORT || '3110',
+    10,
+  );
+  if (dashboardEnabled) {
+    try {
+      const { startDashboard } = await import('@nanoco/nanoclaw-dashboard');
+      startDashboard({ port: dashboardPort });
+      startDashboardPusher({
+        port: dashboardPort,
+        secret: '',
+        intervalMs: 60000,
+        getChannels: () => channels,
+      });
+      logger.info({ port: dashboardPort }, 'Dashboard started');
+    } catch (err) {
+      logger.error({ err }, 'Dashboard failed to start');
+    }
+  } else {
+    logger.info('Dashboard disabled (set DASHBOARD_ENABLED=1)');
   }
 
   // Start subsystems (independently of connection handler)

@@ -19,6 +19,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@nanoco/nanoclaw-dashboard": "^0.3.0",
     "better-sqlite3": "^11.8.1",
     "cookie": "^1.1.1",
     "cron-parser": "^5.5.0",
