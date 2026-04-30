@@ -7,8 +7,8 @@ vi.mock('./env.js', () => ({
   readEnvFile: vi.fn(() => ({ ...mockEnv })),
 }));
 
-vi.mock('./logger.js', () => ({
-  logger: { info: vi.fn(), error: vi.fn(), debug: vi.fn(), warn: vi.fn() },
+vi.mock('./log.js', () => ({
+  log: { info: vi.fn(), error: vi.fn(), debug: vi.fn(), warn: vi.fn() },
 }));
 
 import { startCredentialProxy } from './credential-proxy.js';
