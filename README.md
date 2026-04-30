@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  An AI assistant that runs agents securely in their own containers. Lightweight, built to be easily understood and completely customized for your needs.
+  This fork is an AI assistant with just a few skills (google workspace, telegram, websearch, etc.) ready to be deployed and tested in an academic environment. It runs agents securely in their own containers, and is lightweight, built to be easily understood and completely customized for your needs.
 </p>
 
 <p align="center">
