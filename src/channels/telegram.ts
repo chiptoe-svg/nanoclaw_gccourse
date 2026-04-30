@@ -11,8 +11,6 @@
  *   - Voice transcription: detects audio attachments, transcribes via Whisper,
  *     injects transcript text into the message content.
  *   - /auth command: surfaces auth-mode status and switching to the user.
- *     TODO: wire auth-switch here after Bucket E is applied
- *     (src/auth-switch.ts does not yet exist in this worktree).
  *
  * Note on https.globalAgent: The fork passed `agent: https.globalAgent` to
  * grammy's baseFetchConfig to ensure the sandbox credential proxy intercepted
@@ -378,16 +376,9 @@ async function processAttachments(
 
 /**
  * Handle the /auth Telegram command.
- *
- * TODO: wire auth-switch here after Bucket E is applied.
- * `src/auth-switch.ts` does not yet exist in this worktree. When it does,
- * import { getCurrentAuthMode, hasValidOAuthCredentials, switchAuthMode }
- * and implement the full handler matching the v1 fork's /auth logic:
- *   - `/auth`         → show current mode + OAuth status
- *   - `/auth api`     → switch to API key
- *   - `/auth oauth`   → switch to OAuth (checks credentials first)
- * Also wire the auth-switch-pending.json restart flag and the post-restart
- * ready message that the v1 fork sent on bot startup.
+ * - `/auth`       → show current mode + OAuth status
+ * - `/auth api`   → switch to API key mode
+ * - `/auth oauth` → switch to OAuth mode (checks credentials first)
  *
  * Returns true if the message was consumed (short-circuit), false if not.
  */
@@ -398,24 +389,49 @@ async function handleAuthCommand(
 ): Promise<boolean> {
   if (!text.startsWith('/auth')) return false;
 
-  // auth-switch module not yet present — acknowledge the command gracefully
   const chatId = platformId.split(':').slice(1).join(':');
   if (!chatId) return false;
+
+  const { getCurrentAuthMode, hasValidOAuthCredentials, switchAuthMode } =
+    await import('../auth-switch.js');
+
+  const parts = text.trim().split(/\s+/);
+  const subcommand = parts[1]?.toLowerCase();
+
+  let reply: string;
+
+  if (!subcommand) {
+    const mode = getCurrentAuthMode();
+    const oauthOk = hasValidOAuthCredentials();
+    reply =
+      `Current mode: *${mode}*\n` +
+      `OAuth credentials: ${oauthOk ? '✅ valid' : '❌ missing or expired'}\n\n` +
+      `Use \`/auth api\` or \`/auth oauth\` to switch.`;
+  } else if (subcommand === 'api') {
+    await switchAuthMode('api-key');
+    reply = '✅ Switched to API key mode. Restarting…';
+  } else if (subcommand === 'oauth') {
+    if (!hasValidOAuthCredentials()) {
+      reply = '❌ No valid OAuth credentials found. Run `claude login` first.';
+    } else {
+      await switchAuthMode('oauth');
+      reply = '✅ Switched to OAuth mode. Restarting…';
+    }
+  } else {
+    reply = `Unknown subcommand: \`${subcommand}\`\nUsage: /auth | /auth api | /auth oauth`;
+  }
 
   try {
     await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text: 'Auth switching is not yet configured on this instance.\n(auth-switch module pending — Bucket E)',
-      }),
+      body: JSON.stringify({ chat_id: chatId, text: reply, parse_mode: 'Markdown' }),
     });
   } catch (err) {
-    log.warn('Failed to send /auth placeholder reply', { platformId, err });
+    log.warn('Failed to send /auth reply', { platformId, err });
   }
 
-  return true; // consumed — do not forward to router
+  return true;
 }
 
 /**
