@@ -57,6 +57,8 @@ import './modules/index.js';
 import type { ChannelAdapter, ChannelSetup } from './channels/adapter.js';
 import { initChannelAdapters, teardownChannelAdapters, getChannelAdapter } from './channels/channel-registry.js';
 
+let proxyServer: { close: () => void } | null = null;
+
 async function main(): Promise<void> {
   log.info('NanoClaw starting');
 
@@ -79,7 +81,7 @@ async function main(): Promise<void> {
   // 2b. Credential proxy — containers route API calls through this so they
   // never see real secrets. Binds to loopback only; containers reach it via
   // the host-gateway address injected by buildContainerArgs.
-  const proxyServer = await startCredentialProxy(CREDENTIAL_PROXY_PORT);
+  proxyServer = await startCredentialProxy(CREDENTIAL_PROXY_PORT);
 
   // 3. Channel adapters
   await initChannelAdapters((adapter: ChannelAdapter): ChannelSetup => {
@@ -184,7 +186,7 @@ async function shutdown(signal: string): Promise<void> {
   }
   stopDeliveryPolls();
   stopHostSweep();
-  proxyServer.close();
+  proxyServer?.close();
   try {
     await teardownChannelAdapters();
   } finally {

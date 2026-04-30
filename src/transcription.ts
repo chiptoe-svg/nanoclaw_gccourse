@@ -6,7 +6,7 @@
  * or the transcription fails.
  */
 import { readEnvFile } from './env.js';
-import { logger } from './logger.js';
+import { log } from './log.js';
 
 function getOpenAIKey(): string | null {
   const key =
@@ -28,7 +28,7 @@ export async function transcribeAudio(
 ): Promise<string | null> {
   const apiKey = getOpenAIKey();
   if (!apiKey) {
-    logger.warn('OPENAI_API_KEY not set — cannot transcribe voice message');
+    log.warn('OPENAI_API_KEY not set, cannot transcribe voice message');
     return null;
   }
 
@@ -67,24 +67,18 @@ export async function transcribeAudio(
 
     if (!res.ok) {
       const errText = await res.text().catch(() => '');
-      logger.error(
-        { status: res.status, body: errText.slice(0, 300) },
-        'OpenAI transcription failed',
-      );
+      log.error('OpenAI transcription failed', { status: res.status, body: errText.slice(0, 300) });
       return null;
     }
 
     const data = (await res.json()) as { text?: string };
     const text = data.text?.trim();
     if (text) {
-      logger.info({ chars: text.length }, 'Transcribed voice message');
+      log.info('Transcribed voice message', { chars: text.length });
     }
     return text || null;
   } catch (err) {
-    logger.error(
-      { err: err instanceof Error ? err.message : String(err) },
-      'Voice transcription error',
-    );
+    log.error('Voice transcription error', { err: err instanceof Error ? err.message : String(err) });
     return null;
   }
 }
