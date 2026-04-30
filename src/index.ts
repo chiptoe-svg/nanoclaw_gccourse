@@ -6,12 +6,13 @@
  */
 import path from 'path';
 
-import { DATA_DIR } from './config.js';
+import { DATA_DIR, CREDENTIAL_PROXY_PORT } from './config.js';
 import { enforceStartupBackoff, resetCircuitBreaker } from './circuit-breaker.js';
 import { migrateGroupsToClaudeLocal } from './claude-md-compose.js';
 import { initDb } from './db/connection.js';
 import { runMigrations } from './db/migrations/index.js';
 import { ensureContainerRuntimeRunning, cleanupOrphans } from './container-runtime.js';
+import { startCredentialProxy } from './credential-proxy.js';
 import { startActiveDeliveryPoll, startSweepDeliveryPoll, setDeliveryAdapter, stopDeliveryPolls } from './delivery.js';
 import { startHostSweep, stopHostSweep } from './host-sweep.js';
 import { routeInbound } from './router.js';
@@ -74,6 +75,11 @@ async function main(): Promise<void> {
   // 2. Container runtime
   ensureContainerRuntimeRunning();
   cleanupOrphans();
+
+  // 2b. Credential proxy — containers route API calls through this so they
+  // never see real secrets. Binds to loopback only; containers reach it via
+  // the host-gateway address injected by buildContainerArgs.
+  const proxyServer = await startCredentialProxy(CREDENTIAL_PROXY_PORT);
 
   // 3. Channel adapters
   await initChannelAdapters((adapter: ChannelAdapter): ChannelSetup => {
@@ -178,6 +184,7 @@ async function shutdown(signal: string): Promise<void> {
   }
   stopDeliveryPolls();
   stopHostSweep();
+  proxyServer.close();
   try {
     await teardownChannelAdapters();
   } finally {
