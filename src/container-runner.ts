@@ -333,6 +333,16 @@ function buildMounts(
     mounts.push(...providerContribution.mounts);
   }
 
+  // Mount web hosting directory so agents can create and deploy websites
+  const sitesDir = '/var/www/sites';
+  if (fs.existsSync(sitesDir)) {
+    mounts.push({
+      hostPath: sitesDir,
+      containerPath: '/var/www/sites',
+      readonly: false,
+    });
+  }
+
   return mounts;
 }
 
