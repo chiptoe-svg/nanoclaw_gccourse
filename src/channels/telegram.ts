@@ -2,12 +2,42 @@
  * Telegram channel adapter (v2) — uses Chat SDK bridge, with a pairing
  * interceptor wrapped around onInbound to verify chat ownership before
  * registration. See telegram-pairing.ts for the why.
+ *
+ * Fork customizations layered on top of v2 (Bucket D):
+ *   - Photo → image-vision: detects image attachments, resizes via processImage,
+ *     injects base64 into content so the agent receives multimodal input.
+ *   - PDF attachment routing: detects PDF file attachments, saves to the wired
+ *     agent group's workspace (groups/<folder>/attachments/).
+ *   - Voice transcription: detects audio attachments, transcribes via Whisper,
+ *     injects transcript text into the message content.
+ *   - /auth command: surfaces auth-mode status and switching to the user.
+ *     TODO: wire auth-switch here after Bucket E is applied
+ *     (src/auth-switch.ts does not yet exist in this worktree).
+ *
+ * Note on https.globalAgent: The fork passed `agent: https.globalAgent` to
+ * grammy's baseFetchConfig to ensure the sandbox credential proxy intercepted
+ * all outbound requests. In v2, @chat-adapter/telegram uses fetch() directly
+ * and does not expose an agent configuration point at this layer. If the
+ * OneCLI credential proxy requires intercepting Telegram API traffic, configure
+ * it at the Node.js fetch/undici dispatcher level in src/index.ts instead.
  */
+import fs from 'fs';
+import path from 'path';
+
 import { createTelegramAdapter } from '@chat-adapter/telegram';
 
 import { readEnvFile } from '../env.js';
 import { log } from '../log.js';
-import { createMessagingGroup, getMessagingGroupByPlatform, updateMessagingGroup } from '../db/messaging-groups.js';
+import { processImage } from '../image.js';
+import { transcribeAudio } from '../transcription.js';
+import { getAgentGroup } from '../db/agent-groups.js';
+import {
+  createMessagingGroup,
+  getMessagingGroupAgents,
+  getMessagingGroupByPlatform,
+  updateMessagingGroup,
+} from '../db/messaging-groups.js';
+import { resolveGroupFolderPath } from '../group-folder.js';
 import { grantRole, hasAnyOwner } from '../modules/permissions/db/user-roles.js';
 import { upsertUser } from '../modules/permissions/db/users.js';
 import { createChatSdkBridge, type ReplyContext } from './chat-sdk-bridge.js';
@@ -195,6 +225,229 @@ function createPairingInterceptor(
   };
 }
 
+// ---------------------------------------------------------------------------
+// Fork customization helpers (Bucket D)
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve the workspace folder for the first wired agent group reachable from
+ * a messaging group. Returns null if the messaging group is unknown or has no
+ * wired agent groups — processing is skipped for unregistered chats.
+ */
+function resolveWorkspaceForPlatform(platformId: string): string | null {
+  const mg = getMessagingGroupByPlatform('telegram', platformId);
+  if (!mg) return null;
+  const agents = getMessagingGroupAgents(mg.id);
+  if (agents.length === 0) return null;
+  // Use the highest-priority agent group's workspace.
+  const agentGroup = getAgentGroup(agents[0].agent_group_id);
+  if (!agentGroup) return null;
+  try {
+    return resolveGroupFolderPath(agentGroup.folder);
+  } catch {
+    return null;
+  }
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ContentRecord = Record<string, any>;
+
+/**
+ * Process fork-specific attachment types (image, audio/voice, PDF) on an
+ * already-downloaded chat-sdk InboundMessage. Mutates `content` in place so
+ * the enriched data reaches the router/agent.
+ *
+ * The Chat SDK bridge (chat-sdk-bridge.ts) fetches attachment data before
+ * serialising the message, so `content.attachments[].data` is already a
+ * base64-encoded Buffer. We re-decode it here, apply processing, and update
+ * the content fields the agent receives.
+ */
+async function processAttachments(
+  platformId: string,
+  message: InboundMessage,
+): Promise<InboundMessage> {
+  if (message.kind !== 'chat-sdk' || !message.content || typeof message.content !== 'object') {
+    return message;
+  }
+
+  const content = message.content as ContentRecord;
+  const attachments: ContentRecord[] = Array.isArray(content.attachments) ? content.attachments : [];
+  if (attachments.length === 0) return message;
+
+  const workspaceDir = resolveWorkspaceForPlatform(platformId);
+  const attachDir = workspaceDir ? path.join(workspaceDir, 'attachments') : null;
+
+  const updatedContent = { ...content };
+  let modified = false;
+
+  for (const att of attachments) {
+    const attType: string = att.type ?? '';
+    const rawData: string | undefined = att.data; // base64 string from bridge
+
+    // -----------------------------------------------------------------------
+    // Photo → image-vision
+    // -----------------------------------------------------------------------
+    if (attType === 'image' && rawData) {
+      try {
+        const buffer = Buffer.from(rawData, 'base64');
+        const msgId = message.id ?? `img_${Date.now()}`;
+
+        if (attachDir) {
+          fs.mkdirSync(attachDir, { recursive: true });
+          const savePath = path.join(attachDir, `photo_${msgId}.jpg`);
+          const processed = await processImage(buffer, savePath);
+
+          // Inject processed image into content for multimodal delivery
+          updatedContent.images = [
+            ...(Array.isArray(updatedContent.images) ? updatedContent.images : []),
+            { base64: processed.base64, mimeType: processed.mimeType },
+          ];
+          // Update text to reference the saved file
+          const caption = updatedContent.text ? ` ${updatedContent.text}` : '';
+          updatedContent.text = `[Photo: attachments/photo_${msgId}.jpg]${caption}`;
+        } else {
+          // No workspace yet (unregistered chat) — still pass base64 so the
+          // pairing flow can succeed; the agent won't be reached anyway.
+          updatedContent.images = [
+            ...(Array.isArray(updatedContent.images) ? updatedContent.images : []),
+            { base64: rawData, mimeType: 'image/jpeg' },
+          ];
+        }
+
+        log.info('Processed Telegram photo attachment', { platformId, msgId });
+        modified = true;
+      } catch (err) {
+        log.error('Telegram photo processing failed', { platformId, err });
+        updatedContent.text = `[Photo - failed to process]${updatedContent.text ? ' ' + updatedContent.text : ''}`;
+        modified = true;
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // Voice → transcription
+    // -----------------------------------------------------------------------
+    if (attType === 'audio' && rawData) {
+      try {
+        const buffer = Buffer.from(rawData, 'base64');
+        const transcript = await transcribeAudio(buffer, 'voice.ogg');
+        if (transcript) {
+          updatedContent.text = `[Voice: ${transcript}]`;
+          log.info('Telegram voice message transcribed', { platformId, chars: transcript.length });
+        } else {
+          updatedContent.text = '[Voice message - transcription unavailable]';
+        }
+        modified = true;
+      } catch (err) {
+        log.error('Telegram voice transcription failed', { platformId, err });
+        updatedContent.text = '[Voice message - transcription failed]';
+        modified = true;
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // PDF document routing — save to workspace
+    // -----------------------------------------------------------------------
+    if (attType === 'file' && att.mimeType === 'application/pdf' && rawData && attachDir) {
+      try {
+        const buffer = Buffer.from(rawData, 'base64');
+        fs.mkdirSync(attachDir, { recursive: true });
+
+        const rawName: string = att.name ?? 'document.pdf';
+        const safeName = rawName.replace(/[^a-zA-Z0-9._-]/g, '_');
+        const savePath = path.join(attachDir, safeName);
+        fs.writeFileSync(savePath, buffer);
+
+        log.info('Telegram PDF saved to workspace', { platformId, file: safeName, size: buffer.length });
+
+        updatedContent.text = `[PDF document saved: attachments/${safeName} (${Math.round(buffer.length / 1024)}KB)]`;
+        modified = true;
+      } catch (err) {
+        log.error('Telegram PDF save failed', { platformId, err });
+        // Fall through — content remains as the raw file placeholder
+      }
+    }
+  }
+
+  if (!modified) return message;
+
+  return {
+    ...message,
+    content: updatedContent,
+  };
+}
+
+/**
+ * Handle the /auth Telegram command.
+ *
+ * TODO: wire auth-switch here after Bucket E is applied.
+ * `src/auth-switch.ts` does not yet exist in this worktree. When it does,
+ * import { getCurrentAuthMode, hasValidOAuthCredentials, switchAuthMode }
+ * and implement the full handler matching the v1 fork's /auth logic:
+ *   - `/auth`         → show current mode + OAuth status
+ *   - `/auth api`     → switch to API key
+ *   - `/auth oauth`   → switch to OAuth (checks credentials first)
+ * Also wire the auth-switch-pending.json restart flag and the post-restart
+ * ready message that the v1 fork sent on bot startup.
+ *
+ * Returns true if the message was consumed (short-circuit), false if not.
+ */
+async function handleAuthCommand(
+  token: string,
+  platformId: string,
+  text: string,
+): Promise<boolean> {
+  if (!text.startsWith('/auth')) return false;
+
+  // auth-switch module not yet present — acknowledge the command gracefully
+  const chatId = platformId.split(':').slice(1).join(':');
+  if (!chatId) return false;
+
+  try {
+    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: 'Auth switching is not yet configured on this instance.\n(auth-switch module pending — Bucket E)',
+      }),
+    });
+  } catch (err) {
+    log.warn('Failed to send /auth placeholder reply', { platformId, err });
+  }
+
+  return true; // consumed — do not forward to router
+}
+
+/**
+ * Outer interceptor that applies fork customizations (attachment processing,
+ * /auth command) before forwarding to the pairing interceptor.
+ * Wraps the already-pairing-wrapped onInbound so the call chain is:
+ *   adapter → attachmentInterceptor → pairingInterceptor → hostOnInbound (router)
+ */
+function createAttachmentInterceptor(
+  token: string,
+  pairingOnInbound: ChannelSetup['onInbound'],
+): ChannelSetup['onInbound'] {
+  return async (platformId, threadId, message) => {
+    // Handle /auth command — consumes the message if matched
+    if (message.kind === 'chat-sdk' && message.content && typeof message.content === 'object') {
+      const c = message.content as ContentRecord;
+      const text: string = c.text ?? '';
+      if (text.startsWith('/auth')) {
+        const consumed = await handleAuthCommand(token, platformId, text);
+        if (consumed) return;
+      }
+    }
+
+    // Process attachments (photo, voice, PDF)
+    const enriched = await processAttachments(platformId, message);
+
+    await pairingOnInbound(platformId, threadId, enriched);
+  };
+}
+
+// ---------------------------------------------------------------------------
+
 registerChannelAdapter('telegram', {
   factory: () => {
     const env = readEnvFile(['TELEGRAM_BOT_TOKEN']);
@@ -217,11 +470,16 @@ registerChannelAdapter('telegram', {
     const wrapped: ChannelAdapter = {
       ...bridge,
       async setup(hostConfig: ChannelSetup) {
-        const intercepted: ChannelSetup = {
+        // Build interceptor chain: attachment processing → pairing → router
+        const pairingIntercepted: ChannelSetup = {
           ...hostConfig,
           onInbound: createPairingInterceptor(botUsernamePromise, hostConfig.onInbound, token),
         };
-        return withRetry(() => bridge.setup(intercepted), 'bridge.setup');
+        const attachmentIntercepted: ChannelSetup = {
+          ...pairingIntercepted,
+          onInbound: createAttachmentInterceptor(token, pairingIntercepted.onInbound),
+        };
+        return withRetry(() => bridge.setup(attachmentIntercepted), 'bridge.setup');
       },
     };
     return wrapped;
