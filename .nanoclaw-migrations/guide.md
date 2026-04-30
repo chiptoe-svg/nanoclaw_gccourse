@@ -1,8 +1,10 @@
 # NanoClaw Migration Guide
 
 Generated: 2026-04-30
+Upgraded: 2026-04-30
 Base (merge-base): fb66428eeb7561b663128d7712837a333a6c0b0d
 HEAD at generation: c4a6dda34eb5d85f1d1595d10bb2f8dd91113311
+HEAD after upgrade: c03b48790f9d1a4f62d825ca8bcebc11090ad594
 Upstream at generation: 941a75f65d1599f94e9376f8bda7c1a57fe253a7
 Fork origin: chiptoe-svg/nanoclaw_gccourse (v1.2.16 → v2.0.19)
 
