@@ -7,8 +7,6 @@ import { ChildProcess, execSync, spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 
-import { OneCLI } from '@onecli-sh/sdk';
-
 import {
   CONTAINER_IMAGE,
   CONTAINER_IMAGE_BASE,
@@ -16,12 +14,16 @@ import {
   CREDENTIAL_PROXY_PORT,
   DATA_DIR,
   GROUPS_DIR,
-  ONECLI_API_KEY,
-  ONECLI_URL,
   TIMEZONE,
 } from './config.js';
 import { readContainerConfig, writeContainerConfig } from './container-config.js';
-import { CONTAINER_RUNTIME_BIN, hostGatewayArgs, readonlyMountArgs, stopContainer } from './container-runtime.js';
+import {
+  CONTAINER_HOST_GATEWAY,
+  CONTAINER_RUNTIME_BIN,
+  hostGatewayArgs,
+  readonlyMountArgs,
+  stopContainer,
+} from './container-runtime.js';
 import { composeGroupClaudeMd } from './claude-md-compose.js';
 import { getAgentGroup } from './db/agent-groups.js';
 import { getDb, hasTable } from './db/connection.js';
@@ -46,8 +48,6 @@ import {
   writeSessionRouting,
 } from './session-manager.js';
 import type { AgentGroup, Session } from './types.js';
-
-const onecli = new OneCLI({ url: ONECLI_URL, apiKey: ONECLI_API_KEY });
 
 /** Active containers tracked by session ID. */
 const activeContainers = new Map<string, { process: ChildProcess; containerName: string }>();
@@ -456,6 +456,11 @@ async function buildContainerArgs(
   // API key mode: SDK sends x-api-key, proxy replaces with real key.
   // OAuth mode:   SDK exchanges placeholder token for temp API key,
   //               proxy injects real OAuth token on that exchange request.
+  // Native credential proxy: route container API calls to host:3001 with
+  // placeholder credentials. Proxy substitutes real keys/OAuth tokens.
+  args.push('-e', `ANTHROPIC_BASE_URL=http://${CONTAINER_HOST_GATEWAY}:${CREDENTIAL_PROXY_PORT}`);
+  args.push('-e', `OPENAI_BASE_URL=http://${CONTAINER_HOST_GATEWAY}:${CREDENTIAL_PROXY_PORT}/v1`);
+
   const authMode = detectAuthMode();
   if (authMode === 'api-key') {
     args.push('-e', 'ANTHROPIC_API_KEY=placeholder');
@@ -469,20 +474,6 @@ async function buildContainerArgs(
       args.push('-e', `${key}=${value}`);
     }
   }
-
-  // OneCLI gateway — injects HTTPS_PROXY + certs so container API calls
-  // are routed through the agent vault for credential injection. Treated as
-  // a transient hard failure: if we can't wire the gateway, we don't spawn.
-  // The caller (router or host-sweep) catches the throw, leaves the inbound
-  // message pending, and the next sweep tick retries.
-  if (agentIdentifier) {
-    await onecli.ensureAgent({ name: agentGroup.name, identifier: agentIdentifier });
-  }
-  const onecliApplied = await onecli.applyContainerConfig(args, { addHostMapping: false, agent: agentIdentifier });
-  if (!onecliApplied) {
-    throw new Error('OneCLI gateway not applied — refusing to spawn container without credentials');
-  }
-  log.info('OneCLI gateway applied', { containerName });
 
   // Host gateway
   args.push(...hostGatewayArgs());
