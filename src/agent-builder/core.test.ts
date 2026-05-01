@@ -88,10 +88,7 @@ describe('createDraft', () => {
     expect(draft.agent_provider).toBe('codex');
     expect(draft.model).toBe('gpt-5.5');
 
-    const draftPersona = fs.readFileSync(
-      path.join(TEST_DIR, 'groups', DRAFT_FOLDER, 'CLAUDE.local.md'),
-      'utf8',
-    );
+    const draftPersona = fs.readFileSync(path.join(TEST_DIR, 'groups', DRAFT_FOLDER, 'CLAUDE.local.md'), 'utf8');
     expect(draftPersona).toBe('# Original persona\n');
     expect(fs.existsSync(path.join(TEST_DIR, 'groups', DRAFT_FOLDER, 'container.json'))).toBe(true);
     expect(getAgentGroupByFolder(DRAFT_FOLDER)?.id).toBe(draft.id);
@@ -137,17 +134,11 @@ describe('applyDraft', () => {
   it('writes draft persona back to target and discards draft by default', () => {
     setupTargetGroup();
     createDraft(TARGET_FOLDER);
-    fs.writeFileSync(
-      path.join(TEST_DIR, 'groups', DRAFT_FOLDER, 'CLAUDE.local.md'),
-      '# Edited persona\n',
-    );
+    fs.writeFileSync(path.join(TEST_DIR, 'groups', DRAFT_FOLDER, 'CLAUDE.local.md'), '# Edited persona\n');
 
     applyDraft(DRAFT_FOLDER);
 
-    const targetPersona = fs.readFileSync(
-      path.join(TEST_DIR, 'groups', TARGET_FOLDER, 'CLAUDE.local.md'),
-      'utf8',
-    );
+    const targetPersona = fs.readFileSync(path.join(TEST_DIR, 'groups', TARGET_FOLDER, 'CLAUDE.local.md'), 'utf8');
     expect(targetPersona).toBe('# Edited persona\n');
     expect(getAgentGroupByFolder(DRAFT_FOLDER)).toBeUndefined();
     expect(fs.existsSync(path.join(TEST_DIR, 'groups', DRAFT_FOLDER))).toBe(false);
@@ -156,10 +147,7 @@ describe('applyDraft', () => {
   it('keeps the draft when keepDraft=true', () => {
     setupTargetGroup();
     createDraft(TARGET_FOLDER);
-    fs.writeFileSync(
-      path.join(TEST_DIR, 'groups', DRAFT_FOLDER, 'CLAUDE.local.md'),
-      '# Edited persona\n',
-    );
+    fs.writeFileSync(path.join(TEST_DIR, 'groups', DRAFT_FOLDER, 'CLAUDE.local.md'), '# Edited persona\n');
     applyDraft(DRAFT_FOLDER, { keepDraft: true });
     expect(getAgentGroupByFolder(DRAFT_FOLDER)).toBeDefined();
     expect(fs.existsSync(path.join(TEST_DIR, 'groups', DRAFT_FOLDER))).toBe(true);
@@ -189,10 +177,7 @@ describe('diffDraftAgainstTarget', () => {
   it('flags persona changes', () => {
     setupTargetGroup();
     createDraft(TARGET_FOLDER);
-    fs.writeFileSync(
-      path.join(TEST_DIR, 'groups', DRAFT_FOLDER, 'CLAUDE.local.md'),
-      '# Edited\n',
-    );
+    fs.writeFileSync(path.join(TEST_DIR, 'groups', DRAFT_FOLDER, 'CLAUDE.local.md'), '# Edited\n');
     const diff = diffDraftAgainstTarget(DRAFT_FOLDER);
     expect(diff.personaChanged).toBe(true);
     expect(diff.containerJsonChanged).toBe(false);
@@ -210,10 +195,7 @@ describe('getDraftStatus', () => {
   it('detects edited draft as dirty', () => {
     setupTargetGroup();
     createDraft(TARGET_FOLDER);
-    fs.writeFileSync(
-      path.join(TEST_DIR, 'groups', DRAFT_FOLDER, 'CLAUDE.local.md'),
-      '# Edited\n',
-    );
+    fs.writeFileSync(path.join(TEST_DIR, 'groups', DRAFT_FOLDER, 'CLAUDE.local.md'), '# Edited\n');
     expect(getDraftStatus(DRAFT_FOLDER).dirty).toBe(true);
   });
 

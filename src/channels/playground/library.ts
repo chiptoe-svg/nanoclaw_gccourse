@@ -83,10 +83,18 @@ function parseFrontmatter(md: string): Record<string, string> {
   return out;
 }
 
-function classifyTools(md: string): { compatibility: 'compatible' | 'partial' | 'incompatible'; missing: string[]; incompatible: string[] } {
+function classifyTools(md: string): {
+  compatibility: 'compatible' | 'partial' | 'incompatible';
+  missing: string[];
+  incompatible: string[];
+} {
   const fm = parseFrontmatter(md);
   const allowedRaw = fm['allowed-tools'] || '';
-  const tools = allowedRaw.split(/[,\s]+/).map((t) => t.trim()).filter(Boolean).map((t) => t.toLowerCase());
+  const tools = allowedRaw
+    .split(/[,\s]+/)
+    .map((t) => t.trim())
+    .filter(Boolean)
+    .map((t) => t.toLowerCase());
   const missing: string[] = [];
   const incompatible: string[] = [];
   for (const t of tools) {

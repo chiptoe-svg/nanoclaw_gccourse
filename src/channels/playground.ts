@@ -42,12 +42,7 @@ import { getActiveSessions, updateSession } from '../db/sessions.js';
 import { isContainerRunning, killContainer } from '../container-runner.js';
 import { readContainerConfig, writeContainerConfig } from '../container-config.js';
 import { getLibraryCacheStat, listLibrary } from './playground/library.js';
-import type {
-  ChannelAdapter,
-  ChannelSetup,
-  InboundEvent,
-  OutboundMessage,
-} from './adapter.js';
+import type { ChannelAdapter, ChannelSetup, InboundEvent, OutboundMessage } from './adapter.js';
 import { registerChannelAdapter } from './channel-registry.js';
 
 const PLATFORM_PREFIX = 'playground:';
@@ -86,7 +81,11 @@ function checkIdleExpiry(): boolean {
   log.info('Playground session idle-expired', { idleMinutes: Math.floor(idleMs / 60000) });
   cookieValue = null;
   for (const c of sseClients) {
-    try { c.res.end(); } catch { /* ignore */ }
+    try {
+      c.res.end();
+    } catch {
+      /* ignore */
+    }
   }
   sseClients.clear();
   return true;
@@ -230,7 +229,9 @@ function urlFor(host: string, key: string): string {
 
 export async function startPlaygroundServer(): Promise<{ url: string; alreadyRunning: boolean }> {
   if (!PLAYGROUND_ENABLED) {
-    throw new Error('PLAYGROUND_ENABLED is not set in env. Add PLAYGROUND_ENABLED=1 to .env or systemd unit and restart.');
+    throw new Error(
+      'PLAYGROUND_ENABLED is not set in env. Add PLAYGROUND_ENABLED=1 to .env or systemd unit and restart.',
+    );
   }
   // Always rotate magic token + cookie value on (re)start. Old links die.
   rotateCredentials();
@@ -264,7 +265,11 @@ export async function stopPlaygroundServer(): Promise<void> {
   if (!server) return;
   // Close all SSE connections.
   for (const c of sseClients) {
-    try { c.res.end(); } catch { /* ignore */ }
+    try {
+      c.res.end();
+    } catch {
+      /* ignore */
+    }
   }
   sseClients.clear();
   await new Promise<void>((resolve) => server!.close(() => resolve()));
@@ -494,7 +499,11 @@ async function route(req: http.IncomingMessage, res: http.ServerResponse, url: U
         if (s.agent_group_id !== draft.id) continue;
         updateSession(s.id, { agent_provider: provider });
         if (isContainerRunning(s.id)) {
-          try { killContainer(s.id, `provider switched to ${provider}`); } catch { /* best-effort */ }
+          try {
+            killContainer(s.id, `provider switched to ${provider}`);
+          } catch {
+            /* best-effort */
+          }
         }
       }
       return send(res, 200, { ok: true, provider });

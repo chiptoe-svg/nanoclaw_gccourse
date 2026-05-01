@@ -466,7 +466,8 @@ async function handleModelCommand(token: string, platformId: string, text: strin
 
   if (!arg) {
     const hints = hintsForProvider(group.agent_provider);
-    const list = hints.length > 0 ? hints.map((h) => `  • ${h.name} — ${h.note}`).join('\n') : '  (no hints for this provider)';
+    const list =
+      hints.length > 0 ? hints.map((h) => `  • ${h.name} — ${h.note}`).join('\n') : '  (no hints for this provider)';
     const effective = resolveEffectiveModel(group);
     const modelLine = group.model ? `Model: ${group.model}` : `Model: ${effective} (provider default)`;
     reply =
