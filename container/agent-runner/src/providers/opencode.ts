@@ -108,9 +108,6 @@ function buildOpenCodeConfig(options: ProviderOptions): Record<string, unknown> 
     '/workspace/agent/.claude-fragments/*.md',
     '/workspace/agent/CLAUDE.local.md',
   ];
-  if (process.env.NANOCLAW_IS_MAIN !== '1') {
-    instructions.push('/workspace/global/CLAUDE.md');
-  }
 
   return {
     ...(model ? { model } : {}),
