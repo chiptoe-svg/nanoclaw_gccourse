@@ -16,11 +16,7 @@ export type AuthMode = 'api-key' | 'oauth';
 
 const ENV_PATH = path.join(process.cwd(), '.env');
 
-const CLAUDE_CREDENTIALS_PATH = path.join(
-  process.env.HOME || '/home/node',
-  '.claude',
-  '.credentials.json',
-);
+const CLAUDE_CREDENTIALS_PATH = path.join(process.env.HOME || '/home/node', '.claude', '.credentials.json');
 
 /**
  * Detect current auth mode from .env file.
@@ -76,10 +72,7 @@ export function switchAuthMode(target: AuthMode): AuthMode {
       }
     } else {
       // Uncomment API key
-      if (
-        trimmed.startsWith('#ANTHROPIC_API_KEY=') ||
-        trimmed.startsWith('# ANTHROPIC_API_KEY=')
-      ) {
+      if (trimmed.startsWith('#ANTHROPIC_API_KEY=') || trimmed.startsWith('# ANTHROPIC_API_KEY=')) {
         result.push(line.replace(/^(\s*)#\s?/, '$1'));
       } else {
         result.push(line);

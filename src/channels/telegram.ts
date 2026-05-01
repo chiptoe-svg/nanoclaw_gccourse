@@ -260,10 +260,7 @@ type ContentRecord = Record<string, any>;
  * base64-encoded Buffer. We re-decode it here, apply processing, and update
  * the content fields the agent receives.
  */
-async function processAttachments(
-  platformId: string,
-  message: InboundMessage,
-): Promise<InboundMessage> {
+async function processAttachments(platformId: string, message: InboundMessage): Promise<InboundMessage> {
   if (message.kind !== 'chat-sdk' || !message.content || typeof message.content !== 'object') {
     return message;
   }
@@ -382,18 +379,13 @@ async function processAttachments(
  *
  * Returns true if the message was consumed (short-circuit), false if not.
  */
-async function handleAuthCommand(
-  token: string,
-  platformId: string,
-  text: string,
-): Promise<boolean> {
+async function handleAuthCommand(token: string, platformId: string, text: string): Promise<boolean> {
   if (!text.startsWith('/auth')) return false;
 
   const chatId = platformId.split(':').slice(1).join(':');
   if (!chatId) return false;
 
-  const { getCurrentAuthMode, hasValidOAuthCredentials, switchAuthMode } =
-    await import('../auth-switch.js');
+  const { getCurrentAuthMode, hasValidOAuthCredentials, switchAuthMode } = await import('../auth-switch.js');
 
   const parts = text.trim().split(/\s+/);
   const subcommand = parts[1]?.toLowerCase();

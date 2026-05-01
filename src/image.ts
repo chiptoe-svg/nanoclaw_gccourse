@@ -24,10 +24,7 @@ const JPEG_QUALITY = 80;
  * Process a raw image buffer: resize to fit within MAX_DIMENSION and encode as JPEG.
  * Returns base64 data and saves to the specified path.
  */
-export async function processImage(
-  buffer: Buffer,
-  savePath: string,
-): Promise<ImageAttachment> {
+export async function processImage(buffer: Buffer, savePath: string): Promise<ImageAttachment> {
   const dir = path.dirname(savePath);
   fs.mkdirSync(dir, { recursive: true });
 
@@ -62,9 +59,7 @@ export async function processImage(
 export async function downloadFile(url: string): Promise<Buffer> {
   const response = await fetch(url);
   if (!response.ok) {
-    throw new Error(
-      `Download failed: ${response.status} ${response.statusText}`,
-    );
+    throw new Error(`Download failed: ${response.status} ${response.statusText}`);
   }
   return Buffer.from(await response.arrayBuffer());
 }

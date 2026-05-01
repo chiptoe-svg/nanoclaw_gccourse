@@ -9,9 +9,7 @@ import { readEnvFile } from './env.js';
 import { log } from './log.js';
 
 function getOpenAIKey(): string | null {
-  const key =
-    process.env.OPENAI_API_KEY ||
-    readEnvFile(['OPENAI_API_KEY']).OPENAI_API_KEY;
+  const key = process.env.OPENAI_API_KEY || readEnvFile(['OPENAI_API_KEY']).OPENAI_API_KEY;
   return key || null;
 }
 
@@ -22,10 +20,7 @@ function getOpenAIKey(): string | null {
  * @param filename    Filename hint for the API (e.g. "voice.ogg")
  * @returns Transcribed text, or null on failure
  */
-export async function transcribeAudio(
-  audioBuffer: Buffer,
-  filename = 'voice.ogg',
-): Promise<string | null> {
+export async function transcribeAudio(audioBuffer: Buffer, filename = 'voice.ogg'): Promise<string | null> {
   const apiKey = getOpenAIKey();
   if (!apiKey) {
     log.warn('OPENAI_API_KEY not set, cannot transcribe voice message');
@@ -47,11 +42,7 @@ export async function transcribeAudio(
     parts.push(Buffer.from('\r\n'));
 
     // model field
-    parts.push(
-      Buffer.from(
-        `--${boundary}\r\nContent-Disposition: form-data; name="model"\r\n\r\nwhisper-1\r\n`,
-      ),
-    );
+    parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="model"\r\n\r\nwhisper-1\r\n`));
 
     parts.push(Buffer.from(`--${boundary}--\r\n`));
     const body = Buffer.concat(parts);

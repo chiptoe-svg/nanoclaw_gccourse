@@ -37,11 +37,7 @@ interface ClaudeCredentials {
   };
 }
 
-const CLAUDE_CREDENTIALS_PATH = path.join(
-  process.env.HOME || '/home/node',
-  '.claude',
-  '.credentials.json',
-);
+const CLAUDE_CREDENTIALS_PATH = path.join(process.env.HOME || '/home/node', '.claude', '.credentials.json');
 
 // Buffer: refresh 5 minutes before expiry
 const REFRESH_BUFFER_MS = 5 * 60 * 1000;
@@ -65,17 +61,13 @@ function getOAuthToken(envToken?: string): string | null {
   // Read from Claude CLI credentials
   try {
     if (!fs.existsSync(CLAUDE_CREDENTIALS_PATH)) return null;
-    const creds: ClaudeCredentials = JSON.parse(
-      fs.readFileSync(CLAUDE_CREDENTIALS_PATH, 'utf-8'),
-    );
+    const creds: ClaudeCredentials = JSON.parse(fs.readFileSync(CLAUDE_CREDENTIALS_PATH, 'utf-8'));
     if (!creds.claudeAiOauth?.accessToken) return null;
 
     cachedOAuthToken = creds.claudeAiOauth.accessToken;
     cachedExpiresAt = creds.claudeAiOauth.expiresAt;
 
-    const expiresIn = Math.round(
-      (cachedExpiresAt - Date.now()) / 1000 / 60 / 60,
-    );
+    const expiresIn = Math.round((cachedExpiresAt - Date.now()) / 1000 / 60 / 60);
     log.debug('Loaded OAuth token from Claude CLI credentials', {
       expiresInHours: expiresIn,
     });
@@ -87,10 +79,7 @@ function getOAuthToken(envToken?: string): string | null {
   }
 }
 
-export function startCredentialProxy(
-  port: number,
-  host = '127.0.0.1',
-): Promise<Server> {
+export function startCredentialProxy(port: number, host = '127.0.0.1'): Promise<Server> {
   const secrets = readEnvFile([
     'ANTHROPIC_API_KEY',
     'CLAUDE_CODE_OAUTH_TOKEN',
@@ -101,18 +90,12 @@ export function startCredentialProxy(
   ]);
 
   const authMode: AuthMode = secrets.ANTHROPIC_API_KEY ? 'api-key' : 'oauth';
-  const envOAuthToken =
-    secrets.CLAUDE_CODE_OAUTH_TOKEN || secrets.ANTHROPIC_AUTH_TOKEN;
+  const envOAuthToken = secrets.CLAUDE_CODE_OAUTH_TOKEN || secrets.ANTHROPIC_AUTH_TOKEN;
 
-  const anthropicUpstream = new URL(
-    secrets.ANTHROPIC_BASE_URL || 'https://api.anthropic.com',
-  );
-  const openaiUpstream = new URL(
-    secrets.OPENAI_BASE_URL || 'https://api.openai.com',
-  );
+  const anthropicUpstream = new URL(secrets.ANTHROPIC_BASE_URL || 'https://api.anthropic.com');
+  const openaiUpstream = new URL(secrets.OPENAI_BASE_URL || 'https://api.openai.com');
 
-  const requestFor = (isHttps: boolean) =>
-    isHttps ? httpsRequest : httpRequest;
+  const requestFor = (isHttps: boolean) => (isHttps ? httpsRequest : httpRequest);
 
   return new Promise((resolve, reject) => {
     const server = createServer((req, res) => {
@@ -128,18 +111,15 @@ export function startCredentialProxy(
         const isOpenAI = rawUrl.startsWith('/openai/') || rawUrl === '/openai';
 
         const upstreamUrl = isOpenAI ? openaiUpstream : anthropicUpstream;
-        const upstreamPath = isOpenAI
-          ? rawUrl.replace(/^\/openai/, '') || '/'
-          : rawUrl;
+        const upstreamPath = isOpenAI ? rawUrl.replace(/^\/openai/, '') || '/' : rawUrl;
         const isHttps = upstreamUrl.protocol === 'https:';
         const makeRequest = requestFor(isHttps);
 
-        const headers: Record<string, string | number | string[] | undefined> =
-          {
-            ...(req.headers as Record<string, string>),
-            host: upstreamUrl.host,
-            'content-length': body.length,
-          };
+        const headers: Record<string, string | number | string[] | undefined> = {
+          ...(req.headers as Record<string, string>),
+          host: upstreamUrl.host,
+          'content-length': body.length,
+        };
 
         // Strip hop-by-hop headers that must not be forwarded by proxies
         delete headers['connection'];
@@ -155,8 +135,7 @@ export function startCredentialProxy(
             res.end(
               JSON.stringify({
                 error: {
-                  message:
-                    'OPENAI_API_KEY is not set on the host. Add it to .env and restart nanoclaw.',
+                  message: 'OPENAI_API_KEY is not set on the host. Add it to .env and restart nanoclaw.',
                   type: 'proxy_misconfiguration',
                 },
               }),
