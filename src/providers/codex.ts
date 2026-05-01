@@ -11,10 +11,20 @@
  *   wake with container-appropriate MCP server paths, without racing
  *   other sessions or leaking per-session paths back to the host.
  *
- * Env passthrough covers the two knobs that are read at runtime:
- *   OPENAI_API_KEY  — fallback auth when auth.json isn't a subscription token
- *   CODEX_MODEL     — model override if the user wants something other than the default
- *   OPENAI_BASE_URL — rare, but supports API-compatible alternates
+ * Env passthrough is deliberately narrow:
+ *   CODEX_MODEL — model override the runner reads to pick the codex model.
+ *
+ * NOT passed through:
+ *   OPENAI_API_KEY  — would override the credential-proxy `placeholder` and
+ *     leak the real key into container env. The proxy substitutes the real
+ *     key on every request based on the placeholder, so the container
+ *     never needs to see it.
+ *   OPENAI_BASE_URL — would override the proxy URL we set in
+ *     container-runner.ts. Containers must route through the proxy.
+ *
+ * For Codex with ChatGPT subscription auth (the common path), the OAuth
+ * token in `auth.json` is the credential — neither OPENAI_API_KEY nor
+ * the proxy is involved on that codepath.
  */
 import fs from 'fs';
 import path from 'path';
@@ -37,10 +47,7 @@ registerProviderContainerConfig('codex', (ctx) => {
   }
 
   const env: Record<string, string> = {};
-  for (const key of ['OPENAI_API_KEY', 'CODEX_MODEL', 'OPENAI_BASE_URL'] as const) {
-    const value = ctx.hostEnv[key];
-    if (value) env[key] = value;
-  }
+  if (ctx.hostEnv.CODEX_MODEL) env.CODEX_MODEL = ctx.hostEnv.CODEX_MODEL;
 
   return {
     mounts: [{ hostPath: codexDir, containerPath: '/home/node/.codex', readonly: false }],
