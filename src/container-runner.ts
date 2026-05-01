@@ -459,7 +459,7 @@ async function buildContainerArgs(
   // Native credential proxy: route container API calls to host:3001 with
   // placeholder credentials. Proxy substitutes real keys/OAuth tokens.
   args.push('-e', `ANTHROPIC_BASE_URL=http://${CONTAINER_HOST_GATEWAY}:${CREDENTIAL_PROXY_PORT}`);
-  args.push('-e', `OPENAI_BASE_URL=http://${CONTAINER_HOST_GATEWAY}:${CREDENTIAL_PROXY_PORT}/v1`);
+  args.push('-e', `OPENAI_BASE_URL=http://${CONTAINER_HOST_GATEWAY}:${CREDENTIAL_PROXY_PORT}/openai/v1`);
 
   const authMode = detectAuthMode();
   if (authMode === 'api-key') {
@@ -467,6 +467,12 @@ async function buildContainerArgs(
   } else {
     args.push('-e', 'CLAUDE_CODE_OAUTH_TOKEN=placeholder');
   }
+
+  // OpenAI SDKs refuse to initialize without OPENAI_API_KEY set, even when
+  // OPENAI_BASE_URL overrides the endpoint. Placeholder satisfies the
+  // SDK's env check; the proxy substitutes the real key in the
+  // Authorization header before forwarding.
+  args.push('-e', 'OPENAI_API_KEY=placeholder');
 
   // Provider-contributed env vars (e.g. XDG_DATA_HOME, OPENCODE_*, NO_PROXY).
   if (providerContribution.env) {
