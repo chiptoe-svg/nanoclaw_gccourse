@@ -68,6 +68,7 @@ describe('session manager', () => {
       name: 'Test Agent',
       folder: 'test-agent',
       agent_provider: null,
+      model: null,
       created_at: now(),
     });
     createMessagingGroup({
@@ -219,6 +220,7 @@ describe('router', () => {
       name: 'Test Agent',
       folder: 'test-agent',
       agent_provider: null,
+      model: null,
       created_at: now(),
     });
     // Use 'public' policy so the router tests exercise routing, not the
@@ -362,6 +364,7 @@ describe('router', () => {
       name: 'Secondary Agent',
       folder: 'secondary-agent',
       agent_provider: null,
+      model: null,
       created_at: now(),
     });
     createMessagingGroupAgent({
@@ -459,6 +462,7 @@ describe('delivery', () => {
       name: 'Agent',
       folder: 'agent',
       agent_provider: null,
+      model: null,
       created_at: now(),
     });
     createMessagingGroup({

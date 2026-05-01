@@ -5,6 +5,7 @@ export interface AgentGroup {
   name: string;
   folder: string;
   agent_provider: string | null;
+  model: string | null;
   created_at: string;
 }
 

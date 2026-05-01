@@ -125,14 +125,15 @@ async function spawnContainer(session: Session): Promise<void> {
   // buildMounts, and buildContainerArgs so we don't re-read the file.
   const containerConfig = readContainerConfig(agentGroup.folder);
 
-  // Ensure container.json has the agent group identity fields the runner needs.
-  // Written at spawn time so the runner can read them from the RO mount.
-  ensureRuntimeFields(containerConfig, agentGroup);
-
   // Resolve the effective provider + any host-side contribution it declares
   // (extra mounts, env passthrough). Computed once and threaded through both
   // buildMounts and buildContainerArgs so side effects (mkdir, etc.) fire once.
   const { provider, contribution } = resolveProviderContribution(session, agentGroup, containerConfig);
+
+  // Ensure container.json has the agent group identity fields + the resolved
+  // provider so the in-container runner picks the right runtime. Written at
+  // spawn time so the runner can read them from the RO mount.
+  ensureRuntimeFields(containerConfig, agentGroup, provider);
 
   const mounts = buildMounts(agentGroup, session, containerConfig, contribution);
   const containerName = `nanoclaw-v2-${agentGroup.folder}-${Date.now()}`;
@@ -417,6 +418,7 @@ function syncSkillSymlinks(claudeDir: string, containerConfig: import('./contain
 function ensureRuntimeFields(
   containerConfig: import('./container-config.js').ContainerConfig,
   agentGroup: AgentGroup,
+  resolvedProvider: string,
 ): void {
   let dirty = false;
   if (containerConfig.agentGroupId !== agentGroup.id) {
@@ -429,6 +431,17 @@ function ensureRuntimeFields(
   }
   if (containerConfig.assistantName !== agentGroup.name) {
     containerConfig.assistantName = agentGroup.name;
+    dirty = true;
+  }
+  if (containerConfig.provider !== resolvedProvider) {
+    containerConfig.provider = resolvedProvider;
+    dirty = true;
+  }
+  // Sync the per-group model override from the DB. Null clears any
+  // stale value so the in-container provider falls back to env / default.
+  const desiredModel = agentGroup.model ?? undefined;
+  if (containerConfig.model !== desiredModel) {
+    containerConfig.model = desiredModel;
     dirty = true;
   }
   if (dirty) {

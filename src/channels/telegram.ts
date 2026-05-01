@@ -372,6 +372,162 @@ async function processAttachments(platformId: string, message: InboundMessage): 
 }
 
 /**
+ * Handle the /playground Telegram command.
+ *   /playground       → start the HTTP server (idempotent), reply with URL
+ *   /playground stop  → stop the server
+ *   /playground       → if already running, just reports the URL
+ *
+ * Returns true if consumed.
+ */
+async function handlePlaygroundCommand(token: string, platformId: string, text: string): Promise<boolean> {
+  if (!text.startsWith('/playground')) return false;
+
+  const chatId = platformId.split(':').slice(1).join(':');
+  if (!chatId) return false;
+
+  const { startPlaygroundServer, stopPlaygroundServer, getPlaygroundStatus } = await import('./playground.js');
+
+  const parts = text.trim().split(/\s+/);
+  const sub = parts[1]?.toLowerCase();
+
+  let reply: string;
+  try {
+    if (sub === 'stop') {
+      const status = getPlaygroundStatus();
+      if (!status.running) {
+        reply = 'Playground is not running.';
+      } else {
+        await stopPlaygroundServer();
+        reply = '✅ Playground stopped.';
+      }
+    } else if (!sub || sub === 'start') {
+      const { url, alreadyRunning } = await startPlaygroundServer();
+      reply = alreadyRunning ? `Playground already running at ${url}` : `✅ Playground started.\n${url}`;
+    } else if (sub === 'status') {
+      const status = getPlaygroundStatus();
+      reply = status.running ? `Running: ${status.url}` : 'Not running. Send /playground to start.';
+    } else {
+      reply = `Unknown subcommand: ${sub}\nUsage: /playground | /playground stop | /playground status`;
+    }
+  } catch (err) {
+    reply = `❌ Playground command failed: ${(err as Error).message}`;
+  }
+
+  await sendTelegram(token, chatId, reply);
+  return true;
+}
+
+/**
+ * Handle the /model Telegram command.
+ * - `/model`        → show current model (per agent group wired to this chat) + hint list
+ * - `/model <name>` → persist <name> as the group's model, kill running container
+ *                     so the next inbound spawns with the new model.
+ *
+ * Trust-first: any string is accepted. If the model is invalid, the
+ * provider's server-side rejection surfaces as the agent's reply.
+ *
+ * Returns true if consumed.
+ */
+async function handleModelCommand(token: string, platformId: string, text: string): Promise<boolean> {
+  if (!text.startsWith('/model')) return false;
+
+  const chatId = platformId.split(':').slice(1).join(':');
+  if (!chatId) return false;
+
+  const { getMessagingGroupByPlatform, getMessagingGroupAgents } = await import('../db/messaging-groups.js');
+  const { getAgentGroup } = await import('../db/agent-groups.js');
+  const { hintsForProvider, resolveEffectiveModel, setModel } = await import('../model-switch.js');
+  const { isContainerRunning, killContainer } = await import('../container-runner.js');
+  const { getActiveSessions } = await import('../db/sessions.js');
+
+  const mg = getMessagingGroupByPlatform('telegram', platformId);
+  const agents = mg ? getMessagingGroupAgents(mg.id) : [];
+  if (agents.length === 0) {
+    await sendTelegram(token, chatId, 'No agent group wired to this chat.');
+    return true;
+  }
+  if (agents.length > 1) {
+    await sendTelegram(
+      token,
+      chatId,
+      `${agents.length} agent groups wired to this chat — /model on multi-agent chats not yet supported.`,
+    );
+    return true;
+  }
+  const group = getAgentGroup(agents[0].agent_group_id);
+  if (!group) {
+    await sendTelegram(token, chatId, 'Agent group lookup failed.');
+    return true;
+  }
+
+  const parts = text.trim().split(/\s+/);
+  const arg = parts.slice(1).join(' ').trim();
+  let reply: string;
+
+  if (!arg) {
+    const hints = hintsForProvider(group.agent_provider);
+    const list = hints.length > 0 ? hints.map((h) => `  • ${h.name} — ${h.note}`).join('\n') : '  (no hints for this provider)';
+    const effective = resolveEffectiveModel(group);
+    const modelLine = group.model ? `Model: ${group.model}` : `Model: ${effective} (provider default)`;
+    reply =
+      `Group: ${group.name}\n` +
+      `Provider: ${group.agent_provider ?? 'claude (default)'}\n` +
+      `${modelLine}\n` +
+      `\n` +
+      `Suggested models:\n${list}\n` +
+      `\n` +
+      `Use /model <name> to switch. Any string is accepted; the server validates.`;
+  } else {
+    const newModel = arg === 'reset' || arg === 'default' ? null : arg;
+    const ok = setModel(group.folder, newModel);
+    if (!ok) {
+      reply = 'Failed to persist — group not found by folder.';
+    } else {
+      // Kill any running container for sessions in this group so the next
+      // inbound spawns fresh with the new model.
+      const sessions = getActiveSessions().filter((s) => s.agent_group_id === group.id);
+      for (const s of sessions) {
+        if (isContainerRunning(s.id)) {
+          try {
+            killContainer(s.id, 'model change');
+          } catch {
+            /* best-effort */
+          }
+        }
+      }
+      reply = newModel
+        ? `✅ Model set to \`${newModel}\`. Next message uses it. (Server rejects unknown models with a clear error.)`
+        : `✅ Model reset — group will use provider default.`;
+    }
+  }
+
+  await sendTelegram(token, chatId, reply);
+  return true;
+}
+
+/**
+ * Send a plain-text reply to a Telegram chat. No parse_mode — legacy
+ * Markdown collapses single newlines into spaces, MarkdownV2 requires
+ * escaping a long list of metacharacters; plain text is the most
+ * predictable for multi-line status replies.
+ */
+async function sendTelegram(token: string, chatId: string, text: string): Promise<void> {
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text }),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '<no body>');
+      log.warn('Telegram sendMessage non-2xx', { chatId, status: res.status, body });
+    }
+  } catch (err) {
+    log.warn('Telegram sendMessage threw', { chatId, err });
+  }
+}
+
+/**
  * Handle the /auth Telegram command.
  * - `/auth`       → show current mode + OAuth status
  * - `/auth api`   → switch to API key mode
@@ -437,12 +593,20 @@ function createAttachmentInterceptor(
   pairingOnInbound: ChannelSetup['onInbound'],
 ): ChannelSetup['onInbound'] {
   return async (platformId, threadId, message) => {
-    // Handle /auth command — consumes the message if matched
+    // Handle /auth and /model commands — consume the message if matched
     if (message.kind === 'chat-sdk' && message.content && typeof message.content === 'object') {
       const c = message.content as ContentRecord;
       const text: string = c.text ?? '';
       if (text.startsWith('/auth')) {
         const consumed = await handleAuthCommand(token, platformId, text);
+        if (consumed) return;
+      }
+      if (text.startsWith('/model')) {
+        const consumed = await handleModelCommand(token, platformId, text);
+        if (consumed) return;
+      }
+      if (text.startsWith('/playground')) {
+        const consumed = await handlePlaygroundCommand(token, platformId, text);
         if (consumed) return;
       }
     }

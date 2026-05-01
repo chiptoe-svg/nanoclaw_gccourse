@@ -106,7 +106,7 @@ export class CodexProvider implements AgentProvider {
 
   constructor(options: ProviderOptions = {}) {
     this.mcpServers = options.mcpServers ?? {};
-    this.model = (options.env?.CODEX_MODEL as string | undefined) ?? 'gpt-5.4-mini';
+    this.model = (options.env?.CODEX_MODEL as string | undefined) ?? 'gpt-5.5';
   }
 
   isSessionInvalid(err: unknown): boolean {
