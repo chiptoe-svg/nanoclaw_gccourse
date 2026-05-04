@@ -278,17 +278,14 @@ substitutions.
 
 ### Phase 7 — Verification + end-to-end smoke
 
-- [ ] Run `class-skeleton.ts --count 2 --names "Alice,Bob" --drive-parent
-      <test-folder> --kb /tmp/kb --wiki /tmp/wiki` against a throwaway
-      Drive folder.
-- [ ] DM both pairing codes from two real Telegram accounts; confirm:
-    - Drive folder appears, shared with the student email.
-    - `/workspace/drive/` is writable from inside container.
-    - Wiki commits attributed correctly.
-    - `/playground` edits land in `CLAUDE.local.md` only.
-    - Instructor's transcript view shows both students' conversations.
-- [ ] Verifier SQL from README returns expected rows.
-- [ ] Update `docs/class-setup.md` with any gotchas discovered.
+Runbook lives at [`plans/class-smoke-test.md`](class-smoke-test.md) —
+10-step walkthrough covering pre-flight, provisioning, two student
+pairings, drive bind-mount sanity, wiki attribution, playground 403s,
+instructor visibility, idempotency, failure-mode spot-checks, and
+cleanup. Cannot be auto-run from this seat (needs a real Google
+account + bot token + two real Telegram accounts). Run it once
+end-to-end before claiming the class feature is shippable, and update
+`docs/class-setup.md` with whatever gotchas surface.
 
 ### Phase 8 — Bundle as `/setup-class` skill (optional)
 
