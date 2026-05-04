@@ -2,6 +2,10 @@
 
 Personal Claude assistant. See [README.md](README.md) for philosophy and setup. Architecture lives in `docs/`.
 
+## Workflow Rule: Plan Before Executing
+
+For any non-trivial task (multi-step features, multi-phase work, anything beyond a single localized edit): write the plan to `plans/<feature>.md` **before** starting implementation. The plan must enumerate all phases / steps with enough detail that a future session (or a different Claude) can resume mid-stream without guessing. Update the file as the plan evolves and tick phases off as they land. Conversation-only plans are not acceptable — they vanish when the session ends.
+
 ## Quick Context
 
 The host is a single Node process that orchestrates per-session agent containers. Platform messages land via channel adapters, route through an entity model (users → messaging groups → agent groups → sessions), get written into the session's inbound DB, and wake a container. The agent-runner inside the container polls the DB, calls Claude, and writes back to the outbound DB. The host polls the outbound DB and delivers through the same adapter.
