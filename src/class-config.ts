@@ -15,6 +15,7 @@ import { log } from './log.js';
 
 export interface ClassConfig {
   driveParent: string | null;
+  driveMountRoot: string | null;
   kb: string | null;
   wiki: string | null;
   students: Array<{ name: string; folder: string }>;
@@ -31,6 +32,7 @@ export function readClassConfig(): ClassConfig | null {
     if (!Array.isArray(parsed.students)) return null;
     return {
       driveParent: parsed.driveParent ?? null,
+      driveMountRoot: parsed.driveMountRoot ?? null,
       kb: parsed.kb ?? null,
       wiki: parsed.wiki ?? null,
       students: parsed.students,

@@ -11,11 +11,18 @@
  * What it does NOT do (deferred to later phases):
  *   - Per-student Drive folder creation (happens at pairing time — Phase 3b,
  *     host-side via the instructor's existing Google OAuth)
- *   - In-container Drive ops (Phase 3c — host-side MCP server scoped per
- *     container)
+ *   - Doc-only MCP for read/write of Google Docs as markdown (Phase 3c.3 —
+ *     rclone exposes pointers, not text, for Doc-format files)
  *   - Per-student git identity for wiki attribution (Phase 4)
  *   - Scoped-playground wiring (Phase 5)
  *   - Welcome message / privacy notice (Phase 6)
+ *
+ * Drive surface for the agent: the host runs ONE rclone process for the
+ * whole class anchored at the parent folder ID (see docs/class-setup.md).
+ * Each student's container bind-mounts only its own subfolder at
+ * /workspace/drive/, so the agent (Codex, Claude, anything) operates on a
+ * normal filesystem. The instructor's full-Drive OAuth never enters any
+ * student container.
  *
  * Idempotent: re-runnable. Existing agent_groups rows are kept; container.json
  * is overwritten so re-running picks up new KB / wiki mount paths.
@@ -25,15 +32,18 @@
  *     --count 16 \
  *     --names "Alice,Bob,Carol,..." \
  *     --drive-parent <google-drive-folder-id> \
+ *     --drive-mount-root ~/nanoclaw-drive-mount \
  *     --kb /srv/class-kb \
  *     --wiki /srv/class-wiki
  *
- * Note: each path passed via --kb / --wiki must be in the mount allowlist
+ * Note: each path used as a bind mount (--kb, --wiki, and the rclone view
+ * root resolved from --drive-mount-root) must be in the mount allowlist
  * at ~/.config/nanoclaw/mount-allowlist.json or the host will refuse to
  * spawn the student container.
  */
 import crypto from 'crypto';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 
 import { DATA_DIR, GROUPS_DIR } from '../src/config.js';
@@ -48,6 +58,7 @@ interface CliArgs {
   count: number;
   names: string[];
   driveParent: string | null;
+  driveMountRoot: string | null;
   kb: string | null;
   wiki: string | null;
 }
@@ -70,6 +81,7 @@ function parseArgs(): CliArgs {
     count,
     names,
     driveParent: get('--drive-parent'),
+    driveMountRoot: get('--drive-mount-root'),
     kb: get('--kb'),
     wiki: get('--wiki'),
   };
@@ -111,7 +123,12 @@ const SHARED_CLAUDE_MD = `@./.claude-shared.md
 @./CLAUDE.local.md
 `;
 
-function makeContainerConfig(opts: { kb: string | null; wiki: string | null; folder: string }): ContainerConfig {
+function makeContainerConfig(opts: {
+  kb: string | null;
+  wiki: string | null;
+  folder: string;
+  driveMountPath: string | null;
+}): ContainerConfig {
   const additionalMounts: ContainerConfig['additionalMounts'] = [];
   if (opts.kb) {
     additionalMounts.push({ hostPath: opts.kb, containerPath: '/workspace/kb', readonly: true });
@@ -119,8 +136,17 @@ function makeContainerConfig(opts: { kb: string | null; wiki: string | null; fol
   if (opts.wiki) {
     additionalMounts.push({ hostPath: opts.wiki, containerPath: '/workspace/wiki', readonly: false });
   }
-  // Drive ops are host-side (Phase 3b) via instructor OAuth, then exposed to
-  // the container as scoped MCP tools (Phase 3c). No creds in the container.
+  if (opts.driveMountPath) {
+    // The student's specific Drive subfolder, surfaced via the host-side
+    // rclone mount (one rclone process for the whole class anchored at the
+    // parent folder ID). Container only sees this one subfolder; the
+    // instructor's full-Drive OAuth never leaves the host.
+    additionalMounts.push({
+      hostPath: opts.driveMountPath,
+      containerPath: '/workspace/drive',
+      readonly: false,
+    });
+  }
   return {
     mcpServers: {},
     packages: { apt: [], npm: [] },
@@ -138,10 +164,20 @@ async function main(): Promise<void> {
   initDb(path.join(DATA_DIR, 'v2.db'));
   runMigrations(getDb());
 
+  // The rclone mount root (one mount for the whole class, anchored at the
+  // parent folder ID — see docs/class-setup.md for the rclone config). Each
+  // student's container bind-mounts only its own subfolder by name. If the
+  // instructor hasn't run rclone yet, the bind mounts will fail at spawn —
+  // but only for the drive bit; KB + wiki + persona still work.
+  const driveMountRoot = args.driveMountRoot
+    ? path.resolve(args.driveMountRoot)
+    : path.join(os.homedir(), 'nanoclaw-drive-mount');
+
   console.log(`Provisioning ${args.count} student slots…`);
   if (args.driveParent) console.log(`  Drive parent folder: ${args.driveParent}`);
-  if (args.kb) console.log(`  Static KB: ${args.kb}`);
-  if (args.wiki) console.log(`  Wiki: ${args.wiki}`);
+  if (args.driveParent) console.log(`  Drive mount root:    ${driveMountRoot}`);
+  if (args.kb) console.log(`  Static KB:           ${args.kb}`);
+  if (args.wiki) console.log(`  Wiki:                ${args.wiki}`);
   console.log();
 
   // Persist the class config so the pair-handler can read drive-parent later.
@@ -151,6 +187,7 @@ async function main(): Promise<void> {
     JSON.stringify(
       {
         driveParent: args.driveParent,
+        driveMountRoot: args.driveParent ? driveMountRoot : null,
         kb: args.kb,
         wiki: args.wiki,
         students: args.names.map((name, i) => ({ name, folder: studentFolder(i + 1) })),
@@ -195,8 +232,13 @@ async function main(): Promise<void> {
       fs.writeFileSync(claudeMdPath, SHARED_CLAUDE_MD);
     }
     // container.json — overwrite (so re-running picks up new mount paths if
-    // KB/wiki location changes).
-    writeContainerConfig(folder, makeContainerConfig({ kb: args.kb, wiki: args.wiki, folder }));
+    // KB/wiki location changes). Drive mount path mirrors the folder name
+    // class-drive.ts creates: "<folder> — <name>" (em dash).
+    const driveMountPath = args.driveParent ? path.join(driveMountRoot, `${folder} — ${name}`) : null;
+    writeContainerConfig(
+      folder,
+      makeContainerConfig({ kb: args.kb, wiki: args.wiki, folder, driveMountPath }),
+    );
 
     // 3. Generate pairing code (wire-to that folder).
     // createPairing supersedes any existing pending pairing for the same

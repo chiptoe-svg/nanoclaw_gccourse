@@ -113,23 +113,85 @@ token is full-Drive scope, so we don't expose it to containers.
 - [ ] Commit `src/class-drive.ts` + telegram.ts diff + package.json +
       pnpm-lock.yaml (waiting on user signoff).
 
-### Phase 3c — Folder-scoped Drive MCP tool in container (next)
+### Phase 3c — rclone mount + Doc-only MCP (next)
 
-Phase 3b creates the folder host-side. Phase 3c gives the student's agent
-a *scoped* MCP tool that can read/write only that folder — no broader Drive
-access. The instructor's full-scope OAuth never leaves the host.
+**Architectural decision.** A general "Drive MCP" (list/read/write) duplicates
+what bash + a real filesystem already do, and it duplicates them *worse* —
+extra tool-roster weight, extra latency, extra auth surface, no semantic
+gain. Codex (the agent provider this install runs most of the time) is
+bash-first by design; wrapping `cat`/`ls`/`grep -r` in MCP makes Codex worse
+at being Codex. So:
 
-- [ ] Decide shape: thin host-side MCP server (one per host, takes a
-      folder ID per request) vs. spawning a per-container scoped server.
-      Lean: single host-side MCP that authenticates the caller by agent
-      group ID and looks up the folder ID from `agent_groups.metadata`.
-- [ ] Tool surface (minimum viable): `drive_list_files`, `drive_read_file`,
-      `drive_write_file`, `drive_create_doc`. All implicitly scoped to the
-      student's folder; no file-ID parameter that escapes the folder tree.
-- [ ] Wire into the agent-runner's MCP registry; gate on
-      `agent_groups.metadata.drive_folder_id` being set.
-- [ ] Document in `docs/class-setup.md` what the student's agent can and
-      can't do with Drive.
+1. **rclone-mount the student's specific Drive subfolder** at
+   `/workspace/drive/` inside the container. The instructor's full-Drive
+   OAuth stays on the host; the container only sees one folder via bind
+   mount. Codex uses bash, Claude uses Read/Write/Grep — both work because
+   it's a real path.
+2. **Doc-only MCP** for the one thing rclone can't do: Google Docs are
+   pointer files in rclone, not text. Two tools, host-side, scoped per
+   agent group: `drive_doc_read_as_markdown(name)`,
+   `drive_doc_write_from_markdown(name, markdown)`. Anything else (list,
+   move, upload, search by content) goes through the rclone mount.
+
+**Why one rclone process for the class, not 16.** rclone supports
+`--drive-root-folder-id <PARENT>` to anchor the visible tree at the class
+parent folder. One mount, one fuse process; each student's container
+bind-mounts only its own subfolder by name.
+
+**3c.1 — rclone host-side mount (instructor-run, one-time)**
+
+- [ ] `docs/class-setup.md`: install `rclone`, `rclone config` to create a
+      remote (call it `class-drive`) reusing the existing OAuth at
+      `~/.config/gws/credentials.json` if rclone can be pointed at it; if
+      not, walk through `rclone authorize drive` for a fresh refresh
+      token. Set `--drive-root-folder-id <classConfig.driveParent>` on
+      the remote.
+- [ ] Systemd user unit (`docs/class-setup.md` snippet):
+      `rclone mount class-drive: ~/nanoclaw-drive-mount/
+       --vfs-cache-mode writes --dir-cache-time 30s
+       --poll-interval 15s` so newly-created student folders show up
+      promptly after Phase 3b runs.
+- [ ] Add `~/nanoclaw-drive-mount/` (recursive) to the mount allowlist at
+      `~/.config/nanoclaw/mount-allowlist.json`.
+
+**3c.2 — per-student bind mount in class-skeleton**
+
+- [ ] Folder name on disk under the rclone view is
+      `<studentFolder> — <studentName>` (em dash, matches
+      `createStudentFolder` in `src/class-drive.ts`). class-skeleton
+      knows both at provision time, so write the mount into
+      `container.json` at skeleton time — no pair-time mutation needed:
+      ```
+      { "hostPath": "<HOME>/nanoclaw-drive-mount/<folder> — <name>",
+        "containerPath": "/workspace/drive", "readonly": false }
+      ```
+- [ ] New `--drive-mount-root` CLI flag (default `~/nanoclaw-drive-mount`)
+      so non-default rclone mount paths work.
+- [ ] Idempotent: re-running skeleton with new flags rewrites
+      container.json mounts.
+
+**3c.3 — Doc-only MCP server (after 3c.1+3c.2 prove rclone path works)**
+
+- [ ] Two tools only: `drive_doc_read_as_markdown`,
+      `drive_doc_write_from_markdown`.
+- [ ] Host-side server, single process, authenticates the caller by an
+      agent-group token injected into container env at spawn (mirror the
+      credential-proxy pattern). Server looks up `drive_folder_id` from
+      `agent_groups.metadata`; all Doc operations are scoped to that
+      folder's children.
+- [ ] Wire into `mcpServers` in the student's `container.json` only when
+      `drive_folder_id` is present on the agent group's metadata.
+- [ ] Skip if the rclone mount + Codex's bash + the agent's existing
+      ability to use the Drive UI cover the actual use cases. Reassess
+      after Phase 7 smoke test.
+
+**Explicitly NOT building (rejected):**
+- ~~General-purpose Drive MCP (list/read/write/grep)~~ — duplicates the
+  filesystem rclone gives us, makes Codex worse.
+- ~~Read/Write/Edit/Grep MCP "for Codex"~~ — Codex is bash-first by
+  intent; `apply_patch` + shell already cover this. MCP wrappers add
+  prompt overhead with no functional gain. The win for MCPs is things
+  bash *can't* do.
 
 ### Phase 4 — Per-student git identity for wiki attribution
 
