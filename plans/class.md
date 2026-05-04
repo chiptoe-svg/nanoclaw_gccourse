@@ -5,10 +5,11 @@ agent groups on a single Telegram bot identity. Each student gets their own
 agent group, DM, persona, Drive folder, and shared KB + wiki access. The
 instructor stays global owner across all 16.
 
-> **Status:** Phase 1 shipped in `3cc4e4e`. Phase 2 is in progress (uncommitted
-> Dockerfile diff). This plan was reconstructed after a session crash from the
-> README (`docs/class-setup.md`), the script (`scripts/class-skeleton.ts`),
-> and the working-tree diff. Update phase checkboxes as work lands.
+> **Status:** Phases 1 + 2 + 3a shipped (`3cc4e4e`, `273d92c`, `6248293`).
+> Phase 2's service-account assumptions reverted in `f790913` ahead of an
+> OAuth-based 3b. Phase 3b in progress (uncommitted: `src/class-drive.ts`,
+> telegram pairing call, `googleapis` dep). Update phase checkboxes as work
+> lands.
 
 ## Source-of-truth artifacts
 
@@ -36,30 +37,24 @@ instructor stays global owner across all 16.
     - [x] Generates `wire-to` pairing code per student via `createPairing`
     - [x] Writes `class-roster.csv` for instructor distribution
 
-### Phase 2 — Google Workspace tooling in container ✅ (uncommitted)
+### Phase 2 — per-group container env infra ✅ (commit `6248293` + revert `f790913`)
 
-- [x] `container/Dockerfile`: pnpm-global install
-      `@googleworkspace/cli@${GOOGLE_WORKSPACE_CLI_VERSION}` (pinned
-      `0.22.5`).
-- [x] Service-account credential plumbing — chose **Option A (mount)**.
-      The credential-proxy design is for bearer-style API keys;
-      service-account JWTs add complexity not worth it for V1.
-- [x] `ContainerConfig.env: Record<string,string>` field added; threaded
-      through `container-runner.buildContainerArgs` so per-group env vars
-      (like `GOOGLE_APPLICATION_CREDENTIALS`) get injected at spawn.
-- [x] `class-skeleton.ts`: new `--drive-creds <path>` arg (defaults to
-      `/home/nano/.config/nanoclaw/class-drive.json` if present). When
-      present, mounts the JSON RO at `/run/secrets/gw-creds.json` and
-      sets `GOOGLE_APPLICATION_CREDENTIALS`.
-- [x] `docs/class-setup.md` updated: mount-allowlist requirement,
-      `--drive-creds` arg, container.json mount layout.
-- [x] `pnpm exec tsc --noEmit` clean.
-- [ ] Build: `./container/build.sh` (deferred — long op; user can run when
-      ready to provision a real class).
-- [ ] Smoke test: `gw drive list` from inside a student container against
-      the parent folder (deferred — needs real GCP service account).
-- [ ] Commit Dockerfile + container-config + container-runner +
-      class-skeleton + docs (waiting on user signoff).
+Original scope was "install `@googleworkspace/cli` + mount a service-account
+JSON into student containers." `f790913` walked back the service-account
+parts because the instructor already has working user-OAuth at
+`~/.config/gws/` (drive/docs/sheets/slides/gmail scopes, refresh token), so
+(a) the auth model was wrong and (b) Drive ops belong host-side, not in the
+container. What stays from Phase 2:
+
+- [x] `ContainerConfig.env: Record<string,string>` field, threaded through
+      `container-runner.buildContainerArgs` so per-group env vars get
+      injected at spawn. Keeping this — useful for any per-group env need.
+
+What was reverted (do **not** redo):
+
+- [x] ~~`@googleworkspace/cli` Dockerfile install~~ — Drive ops moved to host.
+- [x] ~~`--drive-creds` CLI flag + service-account mount + `GOOGLE_APPLICATION_CREDENTIALS`~~
+      — replaced by Phase 3b's host-side OAuth path.
 
 ### Phase 3a — Pair handler: `<code> <email>` + wire-to dispatch ✅
 
@@ -87,23 +82,54 @@ wired the messaging group to its target agent group. Phase 3a fixed that.
 - [x] Tests added for the new email-extraction paths; full suite
       (312 / 312) green.
 
-### Phase 3b — Drive folder creation on pair (next)
+### Phase 3b — Drive folder creation on pair (in progress, uncommitted)
 
-- [ ] Host-side `class-drive.ts` wrapping the `gw` CLI (or googleapis SDK)
-      with the service-account JSON: `createStudentFolder(parent, n, email)`
-      → returns Drive folder ID, shares as Editor.
-- [ ] In the pair interceptor: when `wire-to` + class config + email
-      capture all align, call `createStudentFolder`, then
-      `setAgentGroupMetadataKey(ag.id, 'drive_folder_id', id)`.
-- [ ] Append a `/workspace/drive/` mount to the student's `container.json`
-      pointing at the host-side rclone mount of the Drive folder
-      (or stage files via the agent-runner; decide in this phase — rclone
-      is heavier but gives the agent a real filesystem).
-- [ ] Idempotency: re-pair with same email is no-op on the Drive side.
-- [ ] Decision: do we run the host-side Drive call inline in the
-      interceptor (blocking the pairing confirmation) or hand off to a
-      background job? Inline is simpler, but a slow Drive API call would
-      delay the user's "paired!" message. Lean inline for V1, log timing.
+Auth model: instructor's existing user-OAuth at
+`~/.config/gws/credentials.json` (left behind by `taylorwilsdon/google_workspace_mcp`
+via `/add-gmail-tool` / `/add-gcal-tool`). Host-side only — the refresh
+token is full-Drive scope, so we don't expose it to containers.
+
+- [x] `src/class-drive.ts`: loads `~/.config/gws/credentials.json`, builds
+      a `googleapis` Drive v3 client with refresh-token auth, exports
+      `createStudentFolder({ parentFolderId, studentFolder, studentName,
+      studentEmail })` → `{ folderId, folderUrl, created, shared }`.
+      Idempotent on both axes (folder lookup by name under parent;
+      permission check before re-granting). `sendNotificationEmail: false`
+      so Google's notice doesn't race the bot's welcome DM.
+- [x] `package.json`: add `googleapis@171.4.0` (released 2026-02-05, well
+      past `minimumReleaseAge: 4320`).
+- [x] Pair interceptor (`src/channels/telegram.ts`): after persisting
+      `student_email` + `student_name`, look up class config + agent
+      group metadata; if email is captured, `driveParent` is configured,
+      and no `drive_folder_id` is already set, call `createStudentFolder`
+      inline, then `setAgentGroupMetadataKey` for `drive_folder_id` +
+      `drive_folder_url`. Drive errors are logged but don't fail pairing.
+- [x] Decision: inline (not background). Drive call happens before pairing
+      confirmation so the welcome message can include the folder URL.
+      Re-pair retries on failure.
+- [x] `pnpm exec tsc --noEmit` clean. `pnpm test` 312/312 green.
+- [ ] Manual verification with the instructor's real OAuth + a throwaway
+      parent folder (deferred to Phase 7 smoke test).
+- [ ] Commit `src/class-drive.ts` + telegram.ts diff + package.json +
+      pnpm-lock.yaml (waiting on user signoff).
+
+### Phase 3c — Folder-scoped Drive MCP tool in container (next)
+
+Phase 3b creates the folder host-side. Phase 3c gives the student's agent
+a *scoped* MCP tool that can read/write only that folder — no broader Drive
+access. The instructor's full-scope OAuth never leaves the host.
+
+- [ ] Decide shape: thin host-side MCP server (one per host, takes a
+      folder ID per request) vs. spawning a per-container scoped server.
+      Lean: single host-side MCP that authenticates the caller by agent
+      group ID and looks up the folder ID from `agent_groups.metadata`.
+- [ ] Tool surface (minimum viable): `drive_list_files`, `drive_read_file`,
+      `drive_write_file`, `drive_create_doc`. All implicitly scoped to the
+      student's folder; no file-ID parameter that escapes the folder tree.
+- [ ] Wire into the agent-runner's MCP registry; gate on
+      `agent_groups.metadata.drive_folder_id` being set.
+- [ ] Document in `docs/class-setup.md` what the student's agent can and
+      can't do with Drive.
 
 ### Phase 4 — Per-student git identity for wiki attribution
 

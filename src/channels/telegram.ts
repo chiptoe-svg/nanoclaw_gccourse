@@ -45,7 +45,9 @@ import { sanitizeTelegramLegacyMarkdown } from './telegram-markdown-sanitize.js'
 import { registerChannelAdapter } from './channel-registry.js';
 import type { ChannelAdapter, ChannelSetup, InboundMessage } from './adapter.js';
 import { tryConsume } from './telegram-pairing.js';
-import { findClassStudent } from '../class-config.js';
+import { findClassStudent, readClassConfig } from '../class-config.js';
+import { createStudentFolder } from '../class-drive.js';
+import { getAgentGroupMetadata } from '../db/agent-groups.js';
 
 /**
  * Retry a one-shot operation that can fail on transient network errors at
@@ -252,14 +254,45 @@ function createPairingInterceptor(
               });
             }
             // Class flow: persist the student email + display name on the
-            // agent group's metadata blob so Phase 3b's Drive folder
-            // creation (and any future class-aware feature) can find it.
+            // agent group's metadata blob so Drive folder creation (and any
+            // future class-aware feature) can find it.
             const student = findClassStudent(targetFolder);
             if (student) {
               if (consumed.consumed?.email) {
                 setAgentGroupMetadataKey(ag.id, 'student_email', consumed.consumed.email);
               }
               setAgentGroupMetadataKey(ag.id, 'student_name', student.name);
+
+              // Create the per-student Drive folder + share with their email.
+              // Inline (not background) so the agent's first message can
+              // include the folder URL. Drive errors don't fail the pairing —
+              // the student can re-pair to retry once the issue is fixed.
+              const classConfig = readClassConfig();
+              const meta = getAgentGroupMetadata(ag.id);
+              const alreadyHas = typeof meta.drive_folder_id === 'string' && meta.drive_folder_id.length > 0;
+              if (consumed.consumed?.email && classConfig?.driveParent && !alreadyHas) {
+                try {
+                  const result = await createStudentFolder({
+                    parentFolderId: classConfig.driveParent,
+                    studentFolder: targetFolder,
+                    studentName: student.name,
+                    studentEmail: consumed.consumed.email,
+                  });
+                  setAgentGroupMetadataKey(ag.id, 'drive_folder_id', result.folderId);
+                  setAgentGroupMetadataKey(ag.id, 'drive_folder_url', result.folderUrl);
+                  log.info('Class Drive folder ready', {
+                    folder: targetFolder,
+                    folderId: result.folderId,
+                    created: result.created,
+                    shared: result.shared,
+                  });
+                } catch (driveErr) {
+                  log.error('Class Drive folder creation failed', {
+                    folder: targetFolder,
+                    err: driveErr instanceof Error ? driveErr.message : String(driveErr),
+                  });
+                }
+              }
             }
           }
         }
