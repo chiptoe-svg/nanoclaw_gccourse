@@ -193,14 +193,29 @@ bind-mounts only its own subfolder by name.
   prompt overhead with no functional gain. The win for MCPs is things
   bash *can't* do.
 
-### Phase 4 — Per-student git identity for wiki attribution
+### Phase 4 — Per-student git identity for wiki attribution ✅
 
-- [ ] At container spawn, set `git config user.name student_<n>` and
-      `user.email student_<n>@class.local` inside the container's wiki
-      mount, OR via `GIT_AUTHOR_*` env vars in `container-runner.ts`.
-      Env-var approach is cleaner — no in-container state.
-- [ ] Verify: a wiki commit from `student_07`'s container shows
-      `student_07 <student_07@class.local>` in `git log`.
+Pair-time captures already give us the real student identity
+(`agent_groups.metadata.student_name` from class config + `student_email`
+from the `<code> <email>` pairing). Inject those as
+`GIT_AUTHOR_*` / `GIT_COMMITTER_*` env vars at container spawn — better
+than the original synthetic `student_07@class.local` plan because
+`git log` shows actual humans the instructor recognizes.
+
+- [x] `gitAuthorEnvFromMetadata(metadata)` pure helper in
+      `src/container-runner.ts`. Emits 4 env pairs only when **both**
+      name and email are present and non-empty (whitespace trimmed,
+      non-string values ignored). Partial attribution would be worse
+      than git's default error.
+- [x] `buildContainerArgs`: looks up `getAgentGroupMetadata(agentGroup.id)`
+      at spawn, pushes the env pairs through. No-op for non-class
+      groups (empty metadata → empty array).
+- [x] 7 unit tests covering present, missing-name, missing-email,
+      empty metadata, whitespace-only, trimming, defensive non-string.
+- [x] `pnpm exec tsc --noEmit` clean, 319/319 tests green.
+- [ ] End-to-end verify deferred to Phase 7: a real wiki commit from
+      Alice's container should show `Alice Chen <alice@school.edu>`
+      in `git log`.
 
 ### Phase 5 — Scoped playground
 
