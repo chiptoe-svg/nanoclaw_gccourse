@@ -29,6 +29,8 @@ export interface ConsumedDetails {
   name: string | null;
   adminUserId: string | null;
   consumedAt: string;
+  /** Email captured when the user paired with `<code> <email>` syntax (class flow). */
+  email?: string;
 }
 
 export interface PairingAttempt {
@@ -160,16 +162,39 @@ export function extractAddressedText(text: string, botUsername: string): string 
   return trimmed.slice(m[0].length).trim();
 }
 
+// Loose email shape — the goal is to filter out chatter like "0349 thanks",
+// not to validate deliverability. RFC compliance is overkill for a class
+// pairing where the operator knows the address they typed.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 /**
- * Extract a pairing code from an inbound message. The message must be exactly
- * 4 digits (optionally prefixed by `@botname `) — loose matches like
- * "my pin is 1234" are rejected to avoid false positives from chatter.
+ * Extract a pairing code from an inbound message. The message must be either
+ * exactly 4 digits, or 4 digits followed by an email address (class flow).
+ * Optional `@botname ` prefix is stripped first. Loose matches like
+ * "my pin is 1234" or "0349 thanks" are rejected to avoid false positives.
  */
 export function extractCode(text: string, botUsername: string): string | null {
+  const parsed = extractCodeAndEmail(text, botUsername);
+  return parsed?.code ?? null;
+}
+
+/**
+ * Like `extractCode` but also returns the email when the message uses the
+ * `<code> <email>` form. Returns null on no match.
+ */
+export function extractCodeAndEmail(
+  text: string,
+  botUsername: string,
+): { code: string; email?: string } | null {
   const addressed = extractAddressedText(text, botUsername);
   const candidate = (addressed !== null ? addressed : text).trim();
-  const m = candidate.match(/^(\d{4})$/);
-  return m ? m[1] : null;
+  const exact = candidate.match(/^(\d{4})$/);
+  if (exact) return { code: exact[1] };
+  const withEmail = candidate.match(/^(\d{4})\s+(\S+)$/);
+  if (withEmail && EMAIL_RE.test(withEmail[2])) {
+    return { code: withEmail[1], email: withEmail[2] };
+  }
+  return null;
 }
 
 /**
@@ -178,8 +203,9 @@ export function extractCode(text: string, botUsername: string): string | null {
  * null on no match or expiry (silent drop).
  */
 export async function tryConsume(input: ConsumeInput): Promise<PairingRecord | null> {
-  const code = extractCode(input.text, input.botUsername);
-  if (!code) return null;
+  const parsed = extractCodeAndEmail(input.text, input.botUsername);
+  if (!parsed) return null;
+  const { code, email } = parsed;
   return withLock(() => {
     const store = readStore();
     const now = Date.now();
@@ -217,6 +243,7 @@ export async function tryConsume(input: ConsumeInput): Promise<PairingRecord | n
       name: input.name ?? null,
       adminUserId: input.adminUserId ?? null,
       consumedAt: new Date(now).toISOString(),
+      ...(email ? { email } : {}),
     };
     record.attempts = [
       ...(record.attempts ?? []),

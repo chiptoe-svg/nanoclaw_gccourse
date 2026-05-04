@@ -7,6 +7,8 @@ export interface AgentGroup {
   agent_provider: string | null;
   model: string | null;
   created_at: string;
+  /** Ad-hoc per-group structured metadata (JSON). See `getAgentGroupMetadata`. */
+  metadata?: string | null;
 }
 
 export type UnknownSenderPolicy = 'strict' | 'request_approval' | 'public';

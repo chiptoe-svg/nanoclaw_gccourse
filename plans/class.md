@@ -61,27 +61,49 @@ instructor stays global owner across all 16.
 - [ ] Commit Dockerfile + container-config + container-runner +
       class-skeleton + docs (waiting on user signoff).
 
-### Phase 3 — Pair handler: `<code> <email>` + lazy Drive folder
+### Phase 3a — Pair handler: `<code> <email>` + wire-to dispatch ✅
 
-- [ ] Extend the wire-to pair handler to accept `<code> <email>` (currently
-      just `<code>`). On match:
-    1. Validate code (existing path).
-    2. Validate email format.
-    3. Pair the Telegram chat → `student_<n>` agent group (existing path).
-    4. **New:** if `agent_groups.folder` matches `student_*` AND
-       `data/class-config.json` exists, call the Drive provisioner:
-       create `<driveParent>/student_<n>/`, share with the student's
-       email as Editor, store the folder ID on the agent group.
-    5. Append a `/workspace/drive/` mount to the student's `container.json`
-       pointing at the new Drive folder ID (via `gw drive mount` or rclone
-       — pick one in this phase).
-    6. Send the welcome message (Phase 6).
-- [ ] Persist `drive_folder_id` and `student_email` on the agent group.
-      Schema decision: add columns vs. JSON blob in an existing column.
-      Lean toward a small migration adding `agent_groups.metadata JSON`
-      since this is the third feature wanting per-group metadata.
-- [ ] Idempotency: if a student re-sends `<code> <email>`, don't double-create
-      the Drive folder; reuse existing.
+**Surprise during implementation:** the `wire-to` pairing intent had no
+handler before this phase. The `class-skeleton` script (Phase 1) generated
+codes that, when consumed, registered the chat + paired user but never
+wired the messaging group to its target agent group. Phase 3a fixed that.
+
+- [x] `extractCode` / new `extractCodeAndEmail` accept either a bare 4-digit
+      code OR `<code> <email>` (loose RFC-shape email regex). Existing
+      "0349 thanks" rejection preserved.
+- [x] `tryConsume` captures the email and stores it on
+      `PairingRecord.consumed.email`.
+- [x] Migration 015 adds `agent_groups.metadata TEXT` (nullable JSON blob).
+      `getAgentGroupMetadata(id)` / `setAgentGroupMetadataKey(id, key, value)`
+      helpers. `AgentGroup.metadata` is optional on the type so existing
+      literal constructions don't need a migration of their own.
+- [x] `src/class-config.ts` reads `data/class-config.json`,
+      `findClassStudent(folder)` lookup helper.
+- [x] Telegram pairing interceptor now handles `wire-to`:
+      looks up `agent_group` by folder, creates `messaging_group_agents`
+      row with `init-first-agent`-style defaults (engage-pattern '.' for DMs,
+      mention-only for groups), persists `student_email` + `student_name`
+      on the agent group's metadata when the folder is in `class-config`.
+- [x] Tests added for the new email-extraction paths; full suite
+      (312 / 312) green.
+
+### Phase 3b — Drive folder creation on pair (next)
+
+- [ ] Host-side `class-drive.ts` wrapping the `gw` CLI (or googleapis SDK)
+      with the service-account JSON: `createStudentFolder(parent, n, email)`
+      → returns Drive folder ID, shares as Editor.
+- [ ] In the pair interceptor: when `wire-to` + class config + email
+      capture all align, call `createStudentFolder`, then
+      `setAgentGroupMetadataKey(ag.id, 'drive_folder_id', id)`.
+- [ ] Append a `/workspace/drive/` mount to the student's `container.json`
+      pointing at the host-side rclone mount of the Drive folder
+      (or stage files via the agent-runner; decide in this phase — rclone
+      is heavier but gives the agent a real filesystem).
+- [ ] Idempotency: re-pair with same email is no-op on the Drive side.
+- [ ] Decision: do we run the host-side Drive call inline in the
+      interceptor (blocking the pairing confirmation) or hand off to a
+      background job? Inline is simpler, but a slow Drive API call would
+      delay the user's "paired!" message. Lean inline for V1, log timing.
 
 ### Phase 4 — Per-student git identity for wiki attribution
 

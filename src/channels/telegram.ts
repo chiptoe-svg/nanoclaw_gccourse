@@ -28,8 +28,10 @@ import { readEnvFile } from '../env.js';
 import { log } from '../log.js';
 import { processImage } from '../image.js';
 import { transcribeAudio } from '../transcription.js';
-import { getAgentGroup } from '../db/agent-groups.js';
+import { getAgentGroup, getAgentGroupByFolder, setAgentGroupMetadataKey } from '../db/agent-groups.js';
 import {
+  createMessagingGroupAgent,
+  getMessagingGroupAgentByPair,
   createMessagingGroup,
   getMessagingGroupAgents,
   getMessagingGroupByPlatform,
@@ -43,6 +45,7 @@ import { sanitizeTelegramLegacyMarkdown } from './telegram-markdown-sanitize.js'
 import { registerChannelAdapter } from './channel-registry.js';
 import type { ChannelAdapter, ChannelSetup, InboundMessage } from './adapter.js';
 import { tryConsume } from './telegram-pairing.js';
+import { findClassStudent } from '../class-config.js';
 
 /**
  * Retry a one-shot operation that can fail on transient network errors at
@@ -207,11 +210,67 @@ function createPairingInterceptor(
         promotedToOwner = true;
       }
 
+      // Wire-to intent: bind this chat to the named agent group folder so
+      // future messages route to it. The pairing record has done its job
+      // (proving the chat); the wiring step is what actually makes it
+      // useful. Idempotent — re-pairing the same chat to the same folder
+      // is a no-op.
+      if (typeof consumed.intent === 'object' && consumed.intent.kind === 'wire-to') {
+        const targetFolder = consumed.intent.folder;
+        const ag = getAgentGroupByFolder(targetFolder);
+        if (!ag) {
+          log.warn('Wire-to pairing: agent group not found, skipping wiring', {
+            folder: targetFolder,
+            platformId,
+          });
+        } else {
+          const mg =
+            getMessagingGroupByPlatform('telegram', platformId) ??
+            // Defensive — the create branch above just ran, but a race could
+            // theoretically miss it. Re-read explicitly.
+            null;
+          if (mg) {
+            const existing = getMessagingGroupAgentByPair(mg.id, ag.id);
+            if (!existing) {
+              const isGroup = mg.is_group === 1;
+              createMessagingGroupAgent({
+                id: `mga-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                messaging_group_id: mg.id,
+                agent_group_id: ag.id,
+                engage_mode: isGroup ? 'mention' : 'pattern',
+                engage_pattern: isGroup ? null : '.',
+                sender_scope: 'all',
+                ignored_message_policy: 'drop',
+                session_mode: 'shared',
+                priority: 0,
+                created_at: new Date().toISOString(),
+              });
+              log.info('Wire-to pairing: messaging group wired to agent group', {
+                mg: mg.id,
+                ag: ag.id,
+                folder: targetFolder,
+              });
+            }
+            // Class flow: persist the student email + display name on the
+            // agent group's metadata blob so Phase 3b's Drive folder
+            // creation (and any future class-aware feature) can find it.
+            const student = findClassStudent(targetFolder);
+            if (student) {
+              if (consumed.consumed?.email) {
+                setAgentGroupMetadataKey(ag.id, 'student_email', consumed.consumed.email);
+              }
+              setAgentGroupMetadataKey(ag.id, 'student_name', student.name);
+            }
+          }
+        }
+      }
+
       log.info('Telegram pairing accepted — chat registered', {
         platformId,
         pairedUser: pairedUserId,
         promotedToOwner,
         intent: consumed.intent,
+        email: consumed.consumed?.email,
       });
 
       await sendPairingConfirmation(token, platformId);

@@ -12,6 +12,7 @@ import {
   getPairing,
   waitForPairing,
   extractCode,
+  extractCodeAndEmail,
   extractAddressedText,
   _setStorePathForTest,
   _resetForTest,
@@ -60,6 +61,30 @@ describe('extractCode', () => {
   it('rejects loose matches with surrounding text', () => {
     expect(extractCode('my pin is 0349', 'nanobot')).toBeNull();
     expect(extractCode('0349 thanks', 'nanobot')).toBeNull();
+  });
+  it('accepts <code> <email> form (class flow)', () => {
+    expect(extractCode('0349 alice@school.edu', 'nanobot')).toBe('0349');
+    expect(extractCode('@nanobot 0042 bob@example.com', 'nanobot')).toBe('0042');
+  });
+  it('rejects <code> <not-an-email> form', () => {
+    expect(extractCode('0349 alice', 'nanobot')).toBeNull();
+    expect(extractCode('0349 @school.edu', 'nanobot')).toBeNull();
+  });
+});
+
+describe('extractCodeAndEmail', () => {
+  it('returns code only for bare 4-digit input', () => {
+    expect(extractCodeAndEmail('0349', 'nanobot')).toEqual({ code: '0349' });
+  });
+  it('returns code and email for class form', () => {
+    expect(extractCodeAndEmail('0349 alice@school.edu', 'nanobot')).toEqual({
+      code: '0349',
+      email: 'alice@school.edu',
+    });
+  });
+  it('returns null on garbage', () => {
+    expect(extractCodeAndEmail('hello', 'nanobot')).toBeNull();
+    expect(extractCodeAndEmail('0349 thanks', 'nanobot')).toBeNull();
   });
 });
 
