@@ -217,19 +217,34 @@ than the original synthetic `student_07@class.local` plan because
       Alice's container should show `Alice Chen <alice@school.edu>`
       in `git log`.
 
-### Phase 5 — Scoped playground
+### Phase 5 — Scoped playground ✅
 
-- [ ] Existing `/playground` skill currently scopes by agent group. For the
-      class case, students should reach the playground via DM and edit
-      *their own* persona only. Audit: confirm playground already enforces
-      per-agent-group scope (it does — magic-link auth is per-group).
-- [ ] Restrict the playground to `CLAUDE.local.md` editing only — the
-      shared `CLAUDE.md` (which `@./.claude-shared.md` includes) must not
-      be student-editable. Likely a config flag on the playground:
-      `editableFiles: ['CLAUDE.local.md']`.
-- [ ] Add a class-wide `agent_group_members` row so the instructor can
-      access every student playground without owner override (already
-      have global owner; this is just for cleanliness in audit logs).
+Per-agent-group scoping was already in place via magic-link auth, so the
+audit step was a no-op. The actual lockdown is server-side gating on the
+draft mutation endpoints — return 403 from the file PUT, skills PUT, and
+provider PUT when the draft's target is a provisioned class student.
+The persona endpoint (`PUT /api/drafts/:folder/persona`, used by the
+"Edit Persona" pane) stays open. Students customize personality;
+instructor controls everything else.
+
+- [x] `isClassStudentFolder(folder)` helper in `src/class-config.ts`.
+      Tested: present, absent, no class provisioned.
+- [x] `isClassStudentDraft(draftFolder)` helper in
+      `src/channels/playground.ts` — strips the `draft_` prefix and
+      delegates. Returns false (not a security failure) for
+      non-draft inputs so existing routes don't change behavior.
+- [x] 403 gate on file PUT, skills PUT, provider PUT for class
+      drafts. GETs remain open (reading shared CLAUDE.md is fine).
+- [x] applyDraft already only copies `CLAUDE.local.md` and
+      `container.json` back to the target — even pre-gate, a student
+      could not have written a `CLAUDE.md` that escaped to production.
+      The container.json PUT path was the actual exposure (skills,
+      provider, mounts via the file editor) and is now closed.
+- [x] 8 unit tests for the new helper. `pnpm exec tsc --noEmit`
+      clean, 327/327 tests green.
+- [ ] Class-wide `agent_group_members` row for the instructor — defer.
+      Owner role already grants access to every group; this was only
+      for audit-log cleanliness.
 
 ### Phase 6 — Welcome message + privacy notice
 

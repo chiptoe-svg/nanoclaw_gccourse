@@ -49,3 +49,13 @@ export function findClassStudent(folder: string): { name: string; folder: string
   if (!cfg) return null;
   return cfg.students.find((s) => s.folder === folder) ?? null;
 }
+
+/**
+ * True when the folder belongs to a provisioned class student. Used by the
+ * playground to lock down draft-mutation endpoints (only the persona pane
+ * is editable for student drafts, so they can't change container.json,
+ * skills, or provider — those stay instructor-controlled).
+ */
+export function isClassStudentFolder(folder: string): boolean {
+  return findClassStudent(folder) !== null;
+}
