@@ -23,7 +23,6 @@ ARG CLAUDE_CODE_VERSION=2.1.116
 ARG CODEX_VERSION=0.124.0
 ARG AGENT_BROWSER_VERSION=latest
 ARG VERCEL_VERSION=latest
-ARG GOOGLE_WORKSPACE_CLI_VERSION=0.22.5
 ARG BUN_VERSION=1.3.12
 
 # ---- System dependencies -----------------------------------------------------
@@ -108,12 +107,6 @@ RUN --mount=type=cache,target=/root/.cache/pnpm \
 
 RUN --mount=type=cache,target=/root/.cache/pnpm \
     pnpm install -g "@openai/codex@${CODEX_VERSION}"
-
-# Google Workspace CLI — agents create Docs/Sheets/Drive items, send Gmail,
-# read Calendar via the same single CLI. Service-account auth set up at the
-# class level so the agent doesn't need per-user OAuth.
-RUN --mount=type=cache,target=/root/.cache/pnpm \
-    pnpm install -g "@googleworkspace/cli@${GOOGLE_WORKSPACE_CLI_VERSION}"
 
 # ---- Entrypoint --------------------------------------------------------------
 COPY entrypoint.sh /app/entrypoint.sh

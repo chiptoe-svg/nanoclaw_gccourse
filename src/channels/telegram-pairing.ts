@@ -182,10 +182,7 @@ export function extractCode(text: string, botUsername: string): string | null {
  * Like `extractCode` but also returns the email when the message uses the
  * `<code> <email>` form. Returns null on no match.
  */
-export function extractCodeAndEmail(
-  text: string,
-  botUsername: string,
-): { code: string; email?: string } | null {
+export function extractCodeAndEmail(text: string, botUsername: string): { code: string; email?: string } | null {
   const addressed = extractAddressedText(text, botUsername);
   const candidate = (addressed !== null ? addressed : text).trim();
   const exact = candidate.match(/^(\d{4})$/);

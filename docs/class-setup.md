@@ -13,30 +13,30 @@ manage the class-wide skill set.
 
 ## What you provision
 
-### 1. Google Workspace service account (~5 min in Google Cloud Console)
+### 1. Google OAuth (instructor-owned)
 
-1. In the GCP project tied to your Workspace, **APIs & Services → Library →
-   Google Drive API → Enable**.
-2. **APIs & Services → Credentials → Create Credentials → Service account**.
-   - Name: `nanoclaw-class`. Click *Create and continue*. Skip role grants
-     (we'll grant per-folder). *Done*.
-3. On the new service account row, **Keys → Add Key → JSON**. A file
-   downloads.
-4. Drop it on the host at `/home/nano/.config/nanoclaw/class-drive.json`
-   (mode 0600).
-5. Add that path to the mount allowlist at
-   `~/.config/nanoclaw/mount-allowlist.json` so the host will let the
-   skeleton script mount it into student containers. Same for the KB and
-   wiki paths from steps 3 and 4 below.
+The host uses your existing Google OAuth credentials to create per-student
+folders in your Drive. This is user-delegated OAuth, not a service account
+— files are created in your account, not a separate "bot" identity.
+
+If you've previously authorized NanoClaw against Google
+(`~/.config/gws/credentials.json` exists with `drive` in `scope`), skip
+this section. Otherwise, follow the OAuth setup in `/add-gmail-tool` or
+`/add-gcal-tool` skill — same OAuth client, same `gws/` directory.
+
+Recommended: use a dedicated Google account (a 2nd account or throwaway)
+so class files don't pollute your personal Drive.
 
 ### 2. Parent Drive folder
 
 1. In your Drive, create a folder named e.g. `Class 2026 Spring` (or
    whatever you want). Note its folder ID (the part after `/folders/`
    in the URL).
-2. Right-click → *Share* → add the service account email
-   (`nanoclaw-class@<project>.iam.gserviceaccount.com`) as **Editor**.
-3. Save the folder ID — you'll feed it to the class-skeleton script.
+2. Save the folder ID — you'll feed it to the class-skeleton script.
+
+(No sharing step. The instructor's OAuth account already owns the folder.
+Per-student subfolders inherit ownership and get shared with each
+student's email automatically when they pair.)
 
 ### 3. Static knowledgebase folder
 
@@ -73,20 +73,14 @@ pnpm exec tsx scripts/class-skeleton.ts \
   --count 16 \
   --names "Alice,Bob,Carol,Dave,Eve,Frank,Grace,Heidi,Ivan,Judy,Kenneth,Leo,Mia,Noor,Oscar,Pat" \
   --drive-parent <FOLDER_ID> \
-  --drive-creds /home/nano/.config/nanoclaw/class-drive.json \
   --kb /srv/class-kb \
   --wiki /srv/class-wiki
 ```
 
-(`--drive-creds` defaults to `/home/nano/.config/nanoclaw/class-drive.json`
-if that file exists, so it's only needed when the JSON lives elsewhere.)
-
 This creates:
 
 - 16 `groups/student_<n>/` directories with starter CLAUDE.md +
-  CLAUDE.local.md + container.json (with KB ro mount, wiki rw mount,
-  service-account JSON ro mount at `/run/secrets/gw-creds.json`, and
-  `GOOGLE_APPLICATION_CREDENTIALS` pointing at it).
+  CLAUDE.local.md + container.json (KB ro mount, wiki rw mount).
 - 16 `agent_groups` rows (`student_01` … `student_16`).
 - 16 four-digit pairing codes via the existing `wire-to` pairing flow.
 - A CSV at `class-roster.csv` mapping name ↔ student folder ↔ pairing code.
