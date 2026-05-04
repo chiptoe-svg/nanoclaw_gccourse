@@ -246,16 +246,35 @@ instructor controls everything else.
       Owner role already grants access to every group; this was only
       for audit-log cleanliness.
 
-### Phase 6 — Welcome message + privacy notice
+### Phase 6 — Welcome message + privacy notice ✅
 
-- [ ] After successful pair + Drive folder creation, the bot sends:
-    - Greeting tagged to the student's name (resolved from `class-config.json`)
-    - Privacy notice from `docs/class-setup.md` ("conversations visible to
-      instructor", "wiki contributions shared", etc.)
-    - Pointer to `/playground` for persona customization.
-- [ ] Source the message text from a single template file
-      (`container/skills/welcome/class-welcome.md`?) so the instructor can
-      edit it without code changes.
+For class flows the generic "Pairing success! I'm spinning up the agent
+now…" confirmation is replaced with a tailored welcome: greeting using
+the student's display name, the Drive folder URL, the privacy notice,
+and a pointer to `/playground`.
+
+- [x] `src/class-welcome.ts` — `getClassWelcomeText({name, driveUrl})`.
+      Reads `data/class-welcome.md` if present (instructor override),
+      otherwise uses a sensible default. Substitutes `{name}` and
+      `{drive_url}`. Empty/missing drive URL renders as "(Drive folder
+      pending — check back in a minute)" so a transient Drive error
+      doesn't break the welcome message.
+- [x] Pair handler captures a `classWelcome` payload inside the wire-to
+      block (when target is a class student); after Drive folder
+      creation, sends `getClassWelcomeText(classWelcome)` instead of
+      the generic confirmation.
+- [x] `sendPairingConfirmation` factored to share a `sendTelegramText`
+      helper with `disable_web_page_preview: true` (avoids huge Drive
+      previews in chat).
+- [x] 7 unit tests for `getClassWelcomeText` covering substitution,
+      override file precedence, missing/empty drive URL, all-occurrence
+      replacement, whitespace-only override, default fallback.
+- [x] `pnpm exec tsc --noEmit` clean, 334/334 tests green.
+
+Override path: instructor drops a custom `data/class-welcome.md` next
+to `class-config.json` at any time — no restart needed; the file is
+read on each pair. Variables `{name}` and `{drive_url}` are the only
+substitutions.
 
 ### Phase 7 — Verification + end-to-end smoke
 

@@ -184,9 +184,16 @@ Should show 16 rows.
 
 ## Privacy notice for students
 
-Include in their welcome message (or share separately):
+The bot sends a welcome + privacy notice automatically after each
+student's first successful pairing. The default text covers:
 
-> Heads up: your conversations with this bot, your persona edits, and your
-> wiki contributions are visible to your instructor. Course-related, no
-> need to overthink it — just use it freely. The class knowledgebase and
-> wiki are shared with all classmates.
+- A greeting using the student's name from `class-config.json`.
+- A clickable link to their Drive folder.
+- A pointer to `/playground` for persona customization.
+- The privacy notice ("your conversations, persona edits, and wiki
+  contributions are visible to your instructor; KB and wiki are shared
+  with all classmates").
+
+To customize, drop a `data/class-welcome.md` file with your own text.
+Variables `{name}` and `{drive_url}` get substituted at send time. No
+restart needed — the file is read on each pair.

@@ -47,6 +47,7 @@ import type { ChannelAdapter, ChannelSetup, InboundMessage } from './adapter.js'
 import { tryConsume } from './telegram-pairing.js';
 import { findClassStudent, readClassConfig } from '../class-config.js';
 import { createStudentFolder } from '../class-drive.js';
+import { getClassWelcomeText } from '../class-welcome.js';
 import { getAgentGroupMetadata } from '../db/agent-groups.js';
 
 /**
@@ -123,24 +124,30 @@ function readInboundFields(message: InboundMessage): InboundFields {
  * are logged but never propagated, so a Telegram outage can't undo a successful
  * pairing or trigger the interceptor's fail-open path.
  */
-async function sendPairingConfirmation(token: string, platformId: string): Promise<void> {
+async function sendTelegramText(token: string, platformId: string, text: string, label: string): Promise<void> {
   const chatId = platformId.split(':').slice(1).join(':');
   if (!chatId) return;
   try {
     const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text: "Pairing success! I'm spinning up the agent now, you'll get a message from them shortly.",
-      }),
+      body: JSON.stringify({ chat_id: chatId, text, disable_web_page_preview: true }),
     });
     if (!res.ok) {
-      log.warn('Telegram pairing confirmation non-OK', { status: res.status });
+      log.warn(`Telegram ${label} non-OK`, { status: res.status });
     }
   } catch (err) {
-    log.warn('Telegram pairing confirmation failed', { err });
+    log.warn(`Telegram ${label} failed`, { err });
   }
+}
+
+async function sendPairingConfirmation(token: string, platformId: string): Promise<void> {
+  await sendTelegramText(
+    token,
+    platformId,
+    "Pairing success! I'm spinning up the agent now, you'll get a message from them shortly.",
+    'pairing confirmation',
+  );
 }
 
 function createPairingInterceptor(
@@ -211,6 +218,12 @@ function createPairingInterceptor(
         });
         promotedToOwner = true;
       }
+
+      // Class flow: when the wire-to target is a provisioned class student,
+      // we replace the generic pairing confirmation with a tailored welcome
+      // (greeting + privacy notice + Drive folder link + /playground hint).
+      // Captured here, sent at the end of this handler.
+      let classWelcome: { name: string; driveUrl: string | null } | null = null;
 
       // Wire-to intent: bind this chat to the named agent group folder so
       // future messages route to it. The pairing record has done its job
@@ -293,6 +306,14 @@ function createPairingInterceptor(
                   });
                 }
               }
+              // Compose the welcome regardless of whether the Drive folder
+              // was created this turn — the URL falls back to a "pending"
+              // string if absent, so a transient Drive error doesn't lose
+              // the student's orientation message.
+              const finalMeta = getAgentGroupMetadata(ag.id);
+              const driveUrl =
+                typeof finalMeta.drive_folder_url === 'string' ? finalMeta.drive_folder_url : null;
+              classWelcome = { name: student.name, driveUrl };
             }
           }
         }
@@ -304,9 +325,14 @@ function createPairingInterceptor(
         promotedToOwner,
         intent: consumed.intent,
         email: consumed.consumed?.email,
+        classFlow: classWelcome !== null,
       });
 
-      await sendPairingConfirmation(token, platformId);
+      if (classWelcome) {
+        await sendTelegramText(token, platformId, getClassWelcomeText(classWelcome), 'class welcome');
+      } else {
+        await sendPairingConfirmation(token, platformId);
+      }
     } catch (err) {
       log.error('Telegram pairing interceptor error', { err });
       // Fail open: pass through so a pairing bug doesn't break normal traffic.
