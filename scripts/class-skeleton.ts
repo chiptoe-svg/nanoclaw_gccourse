@@ -4,23 +4,34 @@
  * What it does:
  *   - Creates `groups/student_<n>/` for each student (CLAUDE.md, CLAUDE.local.md, container.json)
  *   - Inserts agent_groups row for each
+ *   - Wires KB (ro) + wiki (rw) mounts into each student's container.json
+ *   - If --drive-creds is provided, mounts the service-account JSON RO at
+ *     `/run/secrets/gw-creds.json` and sets GOOGLE_APPLICATION_CREDENTIALS
+ *     so the in-container `gw` CLI can authenticate
  *   - Generates a 4-digit pairing code via the existing `wire-to` flow
  *   - Writes a roster CSV mapping name ↔ folder ↔ pairing code
  *
  * What it does NOT do (deferred to later phases):
- *   - Drive folder creation (happens at pairing time, in the pair handler)
- *   - Shared KB / wiki mount setup (just records mount paths in container.json)
+ *   - Per-student Drive folder creation (happens at pairing time — Phase 3)
+ *   - Per-student git identity for wiki attribution (Phase 4)
  *   - Scoped-playground wiring (Phase 5)
+ *   - Welcome message / privacy notice (Phase 6)
  *
- * Idempotent: re-runnable. Existing student groups are skipped (with a log).
+ * Idempotent: re-runnable. Existing agent_groups rows are kept; container.json
+ * is overwritten so re-running picks up new mount paths or new --drive-creds.
  *
  * Usage:
  *   pnpm exec tsx scripts/class-skeleton.ts \
  *     --count 16 \
  *     --names "Alice,Bob,Carol,..." \
  *     --drive-parent <google-drive-folder-id> \
+ *     --drive-creds /home/nano/.config/nanoclaw/class-drive.json \
  *     --kb /srv/class-kb \
  *     --wiki /srv/class-wiki
+ *
+ * Note: each path passed via --kb / --wiki / --drive-creds must be in the
+ * mount allowlist at ~/.config/nanoclaw/mount-allowlist.json or the host
+ * will refuse to spawn the student container.
  */
 import crypto from 'crypto';
 import fs from 'fs';
@@ -38,9 +49,13 @@ interface CliArgs {
   count: number;
   names: string[];
   driveParent: string | null;
+  driveCreds: string | null;
   kb: string | null;
   wiki: string | null;
 }
+
+const DEFAULT_DRIVE_CREDS = '/home/nano/.config/nanoclaw/class-drive.json';
+const CONTAINER_DRIVE_CREDS_PATH = '/run/secrets/gw-creds.json';
 
 function parseArgs(): CliArgs {
   const args = process.argv.slice(2);
@@ -56,10 +71,13 @@ function parseArgs(): CliArgs {
   if (names.length !== count) {
     throw new Error(`--count is ${count} but --names has ${names.length} entries`);
   }
+  const driveCredsArg = get('--drive-creds');
+  const driveCreds = driveCredsArg ?? (fs.existsSync(DEFAULT_DRIVE_CREDS) ? DEFAULT_DRIVE_CREDS : null);
   return {
     count,
     names,
     driveParent: get('--drive-parent'),
+    driveCreds,
     kb: get('--kb'),
     wiki: get('--wiki'),
   };
@@ -101,13 +119,23 @@ const SHARED_CLAUDE_MD = `@./.claude-shared.md
 @./CLAUDE.local.md
 `;
 
-function makeContainerConfig(opts: { kb: string | null; wiki: string | null; folder: string }): ContainerConfig {
+function makeContainerConfig(opts: {
+  kb: string | null;
+  wiki: string | null;
+  driveCreds: string | null;
+  folder: string;
+}): ContainerConfig {
   const additionalMounts: ContainerConfig['additionalMounts'] = [];
   if (opts.kb) {
     additionalMounts.push({ hostPath: opts.kb, containerPath: '/workspace/kb', readonly: true });
   }
   if (opts.wiki) {
     additionalMounts.push({ hostPath: opts.wiki, containerPath: '/workspace/wiki', readonly: false });
+  }
+  const env: Record<string, string> = {};
+  if (opts.driveCreds) {
+    additionalMounts.push({ hostPath: opts.driveCreds, containerPath: CONTAINER_DRIVE_CREDS_PATH, readonly: true });
+    env.GOOGLE_APPLICATION_CREDENTIALS = CONTAINER_DRIVE_CREDS_PATH;
   }
   // Drive mount is added later by the pair-handler once the folder exists.
   return {
@@ -117,6 +145,7 @@ function makeContainerConfig(opts: { kb: string | null; wiki: string | null; fol
     skills: 'all',
     groupName: opts.folder,
     assistantName: opts.folder,
+    ...(Object.keys(env).length > 0 ? { env } : {}),
   };
 }
 
@@ -129,9 +158,14 @@ async function main(): Promise<void> {
 
   console.log(`Provisioning ${args.count} student slots…`);
   if (args.driveParent) console.log(`  Drive parent folder: ${args.driveParent}`);
+  if (args.driveCreds) console.log(`  Drive service-account creds: ${args.driveCreds}`);
   if (args.kb) console.log(`  Static KB: ${args.kb}`);
   if (args.wiki) console.log(`  Wiki: ${args.wiki}`);
   console.log();
+
+  if (args.driveCreds && !fs.existsSync(args.driveCreds)) {
+    throw new Error(`--drive-creds path does not exist: ${args.driveCreds}`);
+  }
 
   // Persist the class config so the pair-handler can read drive-parent later.
   const classConfigPath = path.join(DATA_DIR, 'class-config.json');
@@ -185,7 +219,10 @@ async function main(): Promise<void> {
     }
     // container.json — overwrite (so re-running picks up new mount paths if
     // KB/wiki location changes).
-    writeContainerConfig(folder, makeContainerConfig({ kb: args.kb, wiki: args.wiki, folder }));
+    writeContainerConfig(
+      folder,
+      makeContainerConfig({ kb: args.kb, wiki: args.wiki, driveCreds: args.driveCreds, folder }),
+    );
 
     // 3. Generate pairing code (wire-to that folder).
     // createPairing supersedes any existing pending pairing for the same

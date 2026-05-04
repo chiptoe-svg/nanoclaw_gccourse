@@ -24,6 +24,10 @@ manage the class-wide skill set.
    downloads.
 4. Drop it on the host at `/home/nano/.config/nanoclaw/class-drive.json`
    (mode 0600).
+5. Add that path to the mount allowlist at
+   `~/.config/nanoclaw/mount-allowlist.json` so the host will let the
+   skeleton script mount it into student containers. Same for the KB and
+   wiki paths from steps 3 and 4 below.
 
 ### 2. Parent Drive folder
 
@@ -69,14 +73,20 @@ pnpm exec tsx scripts/class-skeleton.ts \
   --count 16 \
   --names "Alice,Bob,Carol,Dave,Eve,Frank,Grace,Heidi,Ivan,Judy,Kenneth,Leo,Mia,Noor,Oscar,Pat" \
   --drive-parent <FOLDER_ID> \
+  --drive-creds /home/nano/.config/nanoclaw/class-drive.json \
   --kb /srv/class-kb \
   --wiki /srv/class-wiki
 ```
 
+(`--drive-creds` defaults to `/home/nano/.config/nanoclaw/class-drive.json`
+if that file exists, so it's only needed when the JSON lives elsewhere.)
+
 This creates:
 
 - 16 `groups/student_<n>/` directories with starter CLAUDE.md +
-  CLAUDE.local.md + container.json (with KB + wiki + Drive mounts).
+  CLAUDE.local.md + container.json (with KB ro mount, wiki rw mount,
+  service-account JSON ro mount at `/run/secrets/gw-creds.json`, and
+  `GOOGLE_APPLICATION_CREDENTIALS` pointing at it).
 - 16 `agent_groups` rows (`student_01` … `student_16`).
 - 16 four-digit pairing codes via the existing `wire-to` pairing flow.
 - A CSV at `class-roster.csv` mapping name ↔ student folder ↔ pairing code.

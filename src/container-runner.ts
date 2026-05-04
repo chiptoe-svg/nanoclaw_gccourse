@@ -494,6 +494,14 @@ async function buildContainerArgs(
     }
   }
 
+  // Per-group env vars from container.json. Last writer wins, so these can
+  // override provider defaults if a group genuinely needs to.
+  if (containerConfig.env) {
+    for (const [key, value] of Object.entries(containerConfig.env)) {
+      args.push('-e', `${key}=${value}`);
+    }
+  }
+
   // Host gateway
   args.push(...hostGatewayArgs());
 
