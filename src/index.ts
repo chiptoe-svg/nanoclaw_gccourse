@@ -61,6 +61,7 @@ import './modules/index.js';
 // for now they sit here as a self-contained block.
 import './class-codex-auth.js';
 import './class-container-env.js';
+import './class-pair-consumer.js';
 import './class-playground-gate.js';
 import './class-telegram-commands.js';
 import './student-auth-handlers.js';

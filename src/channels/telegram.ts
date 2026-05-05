@@ -28,7 +28,7 @@ import { readEnvFile } from '../env.js';
 import { log } from '../log.js';
 import { processImage } from '../image.js';
 import { transcribeAudio } from '../transcription.js';
-import { getAgentGroup, getAgentGroupByFolder, setAgentGroupMetadataKey } from '../db/agent-groups.js';
+import { getAgentGroup, getAgentGroupByFolder } from '../db/agent-groups.js';
 import {
   createMessagingGroupAgent,
   getMessagingGroupAgentByPair,
@@ -45,11 +45,7 @@ import { sanitizeTelegramLegacyMarkdown } from './telegram-markdown-sanitize.js'
 import { registerChannelAdapter } from './channel-registry.js';
 import type { ChannelAdapter, ChannelSetup, InboundMessage } from './adapter.js';
 import { tryConsume } from './telegram-pairing.js';
-import { findClassStudent, readClassConfig } from '../class-config.js';
-import { createStudentFolder } from '../class-drive.js';
-import { getClassWelcomeText } from '../class-welcome.js';
-import { getAgentGroupMetadata } from '../db/agent-groups.js';
-import { buildAuthUrl, issueAuthToken } from '../student-auth-server.js';
+import { runPairConsumers } from './pair-consumer-registry.js';
 import { dispatchTelegramCommand, registerTelegramCommand } from './telegram-commands.js';
 
 /**
@@ -221,12 +217,10 @@ function createPairingInterceptor(
         promotedToOwner = true;
       }
 
-      // Class flow: when the wire-to target is a provisioned class student,
-      // we replace the generic pairing confirmation with a tailored welcome
-      // (greeting + privacy notice + Drive folder link + /playground hint
-      // + Codex auth magic link). Captured here, sent at the end of this
-      // handler.
-      let classWelcome: { name: string; driveUrl: string | null; authUrl: string | null } | null = null;
+      // Pair-consumer outputs from any registered extensions (e.g. class
+      // feature). Captured during the wire-to branch below; delivered
+      // after the registration log line.
+      const pairResults: Array<{ confirmation?: string; suppressDefaultConfirmation?: boolean }> = [];
 
       // Wire-to intent: bind this chat to the named agent group folder so
       // future messages route to it. The pairing record has done its job
@@ -269,85 +263,44 @@ function createPairingInterceptor(
                 folder: targetFolder,
               });
             }
-            // Class flow: persist the student email + display name + paired
-            // user_id on the agent group's metadata blob so Drive folder
-            // creation, Phase 9's per-student Codex auth lookup, and any
-            // future class-aware feature can find them.
-            const student = findClassStudent(targetFolder);
-            if (student) {
-              if (consumed.consumed?.email) {
-                setAgentGroupMetadataKey(ag.id, 'student_email', consumed.consumed.email);
-              }
-              setAgentGroupMetadataKey(ag.id, 'student_name', student.name);
-              setAgentGroupMetadataKey(ag.id, 'student_user_id', pairedUserId);
-
-              // Create the per-student Drive folder + share with their email.
-              // Inline (not background) so the agent's first message can
-              // include the folder URL. Drive errors don't fail the pairing —
-              // the student can re-pair to retry once the issue is fixed.
-              const classConfig = readClassConfig();
-              const meta = getAgentGroupMetadata(ag.id);
-              const alreadyHas = typeof meta.drive_folder_id === 'string' && meta.drive_folder_id.length > 0;
-              if (consumed.consumed?.email && classConfig?.driveParent && !alreadyHas) {
-                try {
-                  const result = await createStudentFolder({
-                    parentFolderId: classConfig.driveParent,
-                    studentFolder: targetFolder,
-                    studentName: student.name,
-                    studentEmail: consumed.consumed.email,
-                  });
-                  setAgentGroupMetadataKey(ag.id, 'drive_folder_id', result.folderId);
-                  setAgentGroupMetadataKey(ag.id, 'drive_folder_url', result.folderUrl);
-                  log.info('Class Drive folder ready', {
-                    folder: targetFolder,
-                    folderId: result.folderId,
-                    created: result.created,
-                    shared: result.shared,
-                  });
-                } catch (driveErr) {
-                  log.error('Class Drive folder creation failed', {
-                    folder: targetFolder,
-                    err: driveErr instanceof Error ? driveErr.message : String(driveErr),
-                  });
-                }
-              }
-              // Compose the welcome regardless of whether the Drive folder
-              // was created this turn — the URL falls back to a "pending"
-              // string if absent, so a transient Drive error doesn't lose
-              // the student's orientation message.
-              const finalMeta = getAgentGroupMetadata(ag.id);
-              const driveUrl = typeof finalMeta.drive_folder_url === 'string' ? finalMeta.drive_folder_url : null;
-              // Issue a fresh Codex-auth magic link the welcome can link to
-              // immediately. buildAuthUrl returns null when NANOCLAW_PUBLIC_URL
-              // isn't configured — welcome template handles that case with a
-              // "ask your instructor" fallback.
-              let authUrl: string | null = null;
-              try {
-                const token = issueAuthToken(pairedUserId);
-                authUrl = buildAuthUrl(token);
-              } catch (err) {
-                log.warn('Class welcome: failed to issue auth token', {
-                  err: err instanceof Error ? err.message : String(err),
-                });
-              }
-              classWelcome = { name: student.name, driveUrl, authUrl };
-            }
+            // Run extension consumers (e.g. class feature: stamp metadata,
+            // create Drive folder, build tailored welcome). Empty when
+            // nothing's registered.
+            const results = await runPairConsumers(
+              {
+                agentGroupId: ag.id,
+                pairedUserId,
+                consumedEmail: consumed.consumed?.email ?? null,
+                targetFolder,
+                channel: 'telegram',
+              },
+              (i, err) => log.error('Pair consumer threw', { index: i, err }),
+            );
+            for (const result of results) pairResults.push(result);
           }
         }
       }
 
+      const suppressDefault = pairResults.some((r) => r.suppressDefaultConfirmation === true);
       log.info('Telegram pairing accepted — chat registered', {
         platformId,
         pairedUser: pairedUserId,
         promotedToOwner,
         intent: consumed.intent,
         email: consumed.consumed?.email,
-        classFlow: classWelcome !== null,
+        consumerCount: pairResults.length,
+        suppressedDefault: suppressDefault,
       });
 
-      if (classWelcome) {
-        await sendTelegramText(token, platformId, getClassWelcomeText(classWelcome), 'class welcome');
-      } else {
+      // Deliver each consumer-provided confirmation, in order. If none
+      // suppressed the default, send the generic confirmation last so
+      // the user always gets at least one acknowledgement.
+      for (const result of pairResults) {
+        if (result.confirmation) {
+          await sendTelegramText(token, platformId, result.confirmation, 'pair-consumer reply');
+        }
+      }
+      if (!suppressDefault) {
         await sendPairingConfirmation(token, platformId);
       }
     } catch (err) {

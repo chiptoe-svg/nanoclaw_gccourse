@@ -558,33 +558,50 @@ behavior of the class feature does not change.
       reject prefix without leading slash). 403/403 host tests
       green, tsc clean.
 
-#### 10.5 — `registerPairConsumer`
-- [ ] Biggest extraction: the ~80-line class-flow block in the
-      Telegram pair handler. New
-      `src/channels/pair-consumer-registry.ts`:
-      ```
-      type PairConsumer = (ctx: PairContext) => Promise<PairResult>;
-      type PairContext = { agentGroup, pairedUserId, consumedEmail,
-                           targetFolder, channel };
-      type PairResult = { confirmation?: string;
-                          suppressDefaultConfirmation?: boolean };
-      registerPairConsumer(c: PairConsumer);
-      runPairConsumers(ctx) → Promise<PairResult[]>;
-      ```
-- [ ] Class consumer (`src/class-pair-consumer.ts`) does what the
-      inline block currently does: stamp metadata, create Drive
-      folder, build welcome with auth_url, return as
-      `{ confirmation: <welcome text>, suppressDefaultConfirmation: true }`.
-- [ ] Pair handler in `telegram.ts` invokes `runPairConsumers`,
-      sends each consumer's confirmation if provided, sends the
-      generic confirmation only if nothing suppressed it.
+#### 10.5 — `registerPairConsumer` ✅
 
-#### 10.6 — Wire-up
-- [ ] `src/index.ts` imports the class registration files in one
-      block (mirrors `import './channels/index.js'` and
-      `import './modules/index.js'` patterns). When Phase 8
-      eventually extracts to a skill, that block is the only
-      thing the skill needs to add or remove.
+- [x] New `src/channels/pair-consumer-registry.ts`:
+      `PairContext` (agentGroupId, pairedUserId, consumedEmail,
+      targetFolder, channel), `PairResult` (confirmation?,
+      suppressDefaultConfirmation?), `registerPairConsumer`,
+      `runPairConsumers(ctx, onError?)`. Sequential execution
+      (consumers may share metadata), exception-tolerant — a
+      buggy consumer can't break pairing.
+- [x] Class consumer moved to `src/class-pair-consumer.ts` —
+      stamps metadata, creates Drive folder, issues auth token,
+      composes welcome, returns `{ confirmation, suppressDefaultConfirmation: true }`.
+      Non-class targets return `{}` (default confirmation fires).
+- [x] Telegram pair handler retired the ~80-line inline class
+      block. New shape: after wiring, call `runPairConsumers`,
+      collect results, send each consumer's confirmation, fall
+      back to generic confirmation only if nothing suppressed it.
+- [x] `telegram.ts` no longer imports `findClassStudent`,
+      `readClassConfig`, `createStudentFolder`, `getClassWelcomeText`,
+      `setAgentGroupMetadataKey`, `getAgentGroupMetadata`,
+      `issueAuthToken`, or `buildAuthUrl`. Class-agnostic again.
+- [x] 6 registry tests (empty chain, multi-consumer collect,
+      registration order, ctx passthrough, exception isolation,
+      no-op shape). 409/409 host tests green, tsc clean.
+
+#### 10.6 — Wire-up ✅
+
+- [x] `src/index.ts` imports six class registration files in one
+      block, mirroring `import './channels/index.js'` /
+      `import './modules/index.js'`:
+      ```
+      import './class-codex-auth.js';
+      import './class-container-env.js';
+      import './class-pair-consumer.js';
+      import './class-playground-gate.js';
+      import './class-telegram-commands.js';
+      import './student-auth-handlers.js';
+      ```
+      Phase 8 extraction is now mechanical: drop the block, copy
+      those files (plus `class-config.ts`, `class-drive.ts`,
+      `class-welcome.ts`, `student-auth.ts`,
+      `student-auth-server.ts`, `scripts/class-skeleton.ts`,
+      `data/class-config.json`, `docs/class-setup.md`) to a
+      sibling branch.
 
 **Net effect after Phase 10.** `main`'s class-specific imports
 collapse to roughly:
