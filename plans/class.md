@@ -295,6 +295,122 @@ end-to-end before claiming the class feature is shippable, and update
       `class-skeleton.ts`.
 - [ ] Defer until Phases 1–7 are stable.
 
+### Phase 9 — Per-student Codex OAuth via magic link
+
+The school has an OpenAI deal — every student already has a ChatGPT
+subscription. Codex CLI's OAuth flow lets that subscription power
+agent activities, and the existing `src/providers/codex.ts` already
+wires per-session `auth.json` copies for the *instructor*. Per-student
+is a one-line change in the provider plus a magic-link upload pipeline.
+
+**Why this works (and why #1 paste-API-key was the wrong shape):**
+- Codex OAuth uses a long-lived refresh token. Students do `codex
+  login` once on their laptop, get an `auth.json`, paste/upload it
+  via a magic link the bot DMs them. Lasts weeks/months.
+- Subscription quota goes to the *student's* account — no instructor
+  cost-per-student. (As of 2026-05, OpenAI hasn't followed Anthropic's
+  Feb 2026 ban on subscription tokens in third-party tools; this is
+  what NanoClaw's existing OpenAI provider already relies on.)
+- The credential proxy isn't involved on this codepath — Codex reads
+  the per-session auth.json directly. So per-student = different
+  source path at copy time.
+
+**Data model addition.** Pair handler also stashes
+`agent_groups.metadata.student_user_id` (the `telegram:<chatid>` form)
+so the codex provider can look up the student's stored auth.json from
+the agent group at session spawn.
+
+**Storage:** plain auth.json files at
+`data/student-auth/<sanitized_user_id>/auth.json`. No encryption
+(matches existing `~/.codex/auth.json` model on disk). Blast radius
+is the host filesystem — same as the instructor's auth today.
+
+#### 9.1 — Storage layer (`src/student-auth.ts`)
+- [ ] Sanitize user_id (`telegram:12345` → `telegram_12345`) for safe
+      filesystem paths. Reject anything outside `[A-Za-z0-9_-]`.
+- [ ] `storeStudentAuth(userId, jsonText)` — validates JSON shape
+      (must parse, must contain a `tokens` field with at least
+      access/refresh tokens, mirror Codex's expected schema), writes
+      atomically (temp file + rename).
+- [ ] `getStudentAuthPath(userId)` → string | null.
+- [ ] `hasStudentAuth(userId)` → boolean.
+- [ ] `deleteStudentAuth(userId)` → void (idempotent).
+- [ ] Unit tests: shape validation, path traversal rejection,
+      idempotent delete, atomic write doesn't leak partial files.
+
+#### 9.2 — Magic-link HTTP server
+- [ ] Decision: extend `webhook-server.ts` (already running) with
+      `/student-auth/*` routes vs. dedicated server. Lean toward
+      extending — one less process to manage.
+- [ ] In-memory token registry: `{ token → { userId, createdAt } }`,
+      30-min TTL. `issueAuthToken(userId)` → token; `consume(token)`
+      → userId or null.
+- [ ] Routes:
+    - `GET /student-auth?t=<token>` → static page with drag-drop
+      upload widget + paste fallback. Plain HTML, vanilla JS, no
+      framework. Two-line text below: "Run `codex login` on your
+      laptop, then drag your `~/.codex/auth.json` here."
+    - `POST /student-auth/upload?t=<token>` → JSON body
+      `{ authJson: "..." }`, validates via storage layer, returns
+      `{ ok: true }`. Token is single-use (consumed on success).
+- [ ] Public-URL config: new env var `NANOCLAW_PUBLIC_URL` (no
+      default — required for class deployments where students click
+      from outside the LAN). Magic links use this. Document the
+      tunneling options in `docs/class-setup.md`.
+
+#### 9.3 — Codex provider per-student source lookup
+- [ ] `src/providers/codex.ts`: instead of reading `<HOME>/.codex/auth.json`
+      directly, look up the agent group's metadata for `student_user_id`.
+      If found AND `getStudentAuthPath(userId)` exists, copy from there.
+      Otherwise fall back to host's auth (unauthed students keep
+      working on instructor's tab).
+- [ ] Provider context (`ctx`) needs `agentGroupId` (already there)
+      and a way to read metadata — add a small dependency on
+      `getAgentGroupMetadata` (host-side, fine).
+- [ ] Test: synthesize an agent group with student_user_id, write a
+      fixture auth.json, verify the per-session copy comes from the
+      student's path.
+
+#### 9.4 — `/login` command + welcome integration
+- [ ] New `/login` Telegram handler in the attachment-interceptor
+      block (alongside `/auth`). Issues a fresh magic-link token via
+      9.2, DMs the URL. Idempotent — student can re-issue if they
+      lose the link.
+- [ ] Pair handler: stash `student_user_id` on metadata
+      (`pairedUserId` is already in scope at line ~202).
+- [ ] Welcome template (`src/class-welcome.ts`): new `{auth_url}`
+      placeholder. At welcome-render time, pair handler issues a
+      magic-link token for the just-paired student and substitutes
+      the URL. Default template gets a "Send /login any time to
+      re-issue this link" line.
+- [ ] If `NANOCLAW_PUBLIC_URL` is unset, welcome falls back to a
+      "Ask your instructor for the auth link" message — don't render
+      a broken localhost URL.
+
+#### 9.5 — Refresh-failure re-auth nudge
+- [ ] In `container/agent-runner/src/`, detect Codex auth-refresh
+      failures (specific error code/string from the Codex CLI/SDK —
+      need to verify the exact pattern; placeholder until tested in
+      Phase 7).
+- [ ] On detection, emit a system-action outbound message
+      (`{kind: "system", action: "request-reauth", userId}`).
+- [ ] Host delivery handler for `request-reauth`: issue a fresh
+      magic-link token, DM the student "Your auth needs refreshing
+      — open this link to re-authenticate."
+
+#### 9.6 — Tests + smoke
+- [ ] Unit tests for 9.1 + 9.3.
+- [ ] Manual end-to-end as part of Phase 7 smoke test:
+    - Student receives auth link in welcome.
+    - Student does `codex login` locally, uploads auth.json.
+    - Subsequent agent activity uses student's account quota
+      (verify in OpenAI dashboard if the student grants visibility).
+- [ ] `pnpm exec tsc --noEmit` + `pnpm test` green.
+
+**Open**: 9.5's exact error pattern depends on what Codex's CLI/SDK
+emits when refresh fails. May need to wait for Phase 7 to surface a
+real failure to lock in the regex. Until then 9.5 is best-effort.
+
 ## Open questions
 
 1. **Service-account vs. per-student OAuth for Drive.** Current design uses
