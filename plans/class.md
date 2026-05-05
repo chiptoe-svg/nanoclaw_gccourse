@@ -338,25 +338,37 @@ is the host filesystem — same as the instructor's auth today.
 - [ ] Unit tests: shape validation, path traversal rejection,
       idempotent delete, atomic write doesn't leak partial files.
 
-#### 9.2 — Magic-link HTTP server
-- [ ] Decision: extend `webhook-server.ts` (already running) with
-      `/student-auth/*` routes vs. dedicated server. Lean toward
-      extending — one less process to manage.
-- [ ] In-memory token registry: `{ token → { userId, createdAt } }`,
-      30-min TTL. `issueAuthToken(userId)` → token; `consume(token)`
-      → userId or null.
-- [ ] Routes:
-    - `GET /student-auth?t=<token>` → static page with drag-drop
-      upload widget + paste fallback. Plain HTML, vanilla JS, no
-      framework. Two-line text below: "Run `codex login` on your
-      laptop, then drag your `~/.codex/auth.json` here."
-    - `POST /student-auth/upload?t=<token>` → JSON body
+#### 9.2 — Magic-link HTTP server ✅
+
+Built as a dedicated `src/student-auth-server.ts` rather than piling
+onto the webhook server — webhook's lifecycle is owned by Chat SDK and
+its route conventions don't fit. New always-on server, lazy-started on
+first `issueAuthToken` call. Two routes only; everything else 404s.
+
+- [x] In-memory token registry: 30-min TTL, single-use, 192-bit
+      tokens. `issueAuthToken(userId)` → token; `buildAuthUrl(token)` →
+      full public URL (or null when `NANOCLAW_PUBLIC_URL` is unset,
+      so callers can render a fallback message instead of a broken
+      localhost link).
+- [x] `GET /student-auth?t=<token>` → drag-drop upload page, plain
+      HTML + vanilla JS, no framework. Three-step instructions
+      ("install codex, codex login, drop your auth.json"). Drop-zone
+      AND a paste-into-textarea fallback for students who can't
+      drag from their file manager.
+- [x] `POST /student-auth/upload?t=<token>` — JSON body
       `{ authJson: "..." }`, validates via storage layer, returns
-      `{ ok: true }`. Token is single-use (consumed on success).
-- [ ] Public-URL config: new env var `NANOCLAW_PUBLIC_URL` (no
-      default — required for class deployments where students click
-      from outside the LAN). Magic links use this. Document the
-      tunneling options in `docs/class-setup.md`.
+      `{ ok: true }`. Token consumed on first POST regardless of
+      shape-validation outcome (single-use).
+- [x] Config: `STUDENT_AUTH_PORT` (default 3003), `STUDENT_AUTH_BIND_HOST`
+      (default 0.0.0.0), `NANOCLAW_PUBLIC_URL` (no default — required
+      for off-LAN class deployments).
+- [x] 14 integration tests via real http.Server on an OS-assigned
+      port (test hooks `_getBoundPortForTest` + `_waitForListeningForTest`):
+      valid GET, bad-token GET, single-use enforcement, JSON shape
+      rejection, malformed body, unknown route. tsc + 368/368 green.
+- [ ] `docs/class-setup.md`: tunneling/public-URL guidance — left
+      for 9.4 since that's where the welcome message refers to the
+      auth link and we'll surface the deploy story together.
 
 #### 9.3 — Codex provider per-student source lookup
 - [ ] `src/providers/codex.ts`: instead of reading `<HOME>/.codex/auth.json`

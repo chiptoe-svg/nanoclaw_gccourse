@@ -48,6 +48,21 @@ export const PLAYGROUND_IDLE_MS =
 // rather tunnel via SSH and skip the magic-link flow entirely.
 export const PLAYGROUND_BIND_HOST: string =
   process.env.PLAYGROUND_BIND_HOST || playgroundEnv.PLAYGROUND_BIND_HOST || '0.0.0.0';
+
+// Per-student Codex OAuth magic-link server (Phase 9). Always-on when
+// class flow is active so students can click the link any time, not
+// just during a narrow window.
+const studentAuthEnv = readEnvFile(['NANOCLAW_PUBLIC_URL', 'STUDENT_AUTH_BIND_HOST']);
+export const STUDENT_AUTH_PORT = parseInt(process.env.STUDENT_AUTH_PORT || '3003', 10);
+export const STUDENT_AUTH_BIND_HOST: string =
+  process.env.STUDENT_AUTH_BIND_HOST || studentAuthEnv.STUDENT_AUTH_BIND_HOST || '0.0.0.0';
+// Public-facing URL used to build student-auth magic links. Must point
+// at this host's STUDENT_AUTH_PORT (or a reverse-proxy fronting it).
+// Required for off-LAN class deployments (most). Empty string when
+// unset — caller decides whether to render localhost or a "ask your
+// instructor for the link" placeholder.
+export const NANOCLAW_PUBLIC_URL: string =
+  process.env.NANOCLAW_PUBLIC_URL || studentAuthEnv.NANOCLAW_PUBLIC_URL || '';
 export const MAX_MESSAGES_PER_PROMPT = Math.max(1, parseInt(process.env.MAX_MESSAGES_PER_PROMPT || '10', 10) || 10);
 export const IDLE_TIMEOUT = parseInt(process.env.IDLE_TIMEOUT || '1800000', 10); // 30min default — how long to keep container alive after last result
 export const MAX_CONCURRENT_CONTAINERS = Math.max(1, parseInt(process.env.MAX_CONCURRENT_CONTAINERS || '5', 10) || 5);
