@@ -31,10 +31,7 @@ describe('runPairConsumers', () => {
     registerPairConsumer(async () => ({ confirmation: 'A' }));
     registerPairConsumer(async () => ({ confirmation: 'B', suppressDefaultConfirmation: true }));
     const results = await runPairConsumers(CTX);
-    expect(results).toEqual([
-      { confirmation: 'A' },
-      { confirmation: 'B', suppressDefaultConfirmation: true },
-    ]);
+    expect(results).toEqual([{ confirmation: 'A' }, { confirmation: 'B', suppressDefaultConfirmation: true }]);
   });
 
   it('runs consumers sequentially in registration order', async () => {

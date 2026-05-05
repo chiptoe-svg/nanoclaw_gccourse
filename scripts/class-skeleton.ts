@@ -1,49 +1,33 @@
 /**
  * Class skeleton — bulk-provision N student agent groups for a class.
  *
- * What it does:
- *   - Creates `groups/student_<n>/` for each student (CLAUDE.md, CLAUDE.local.md, container.json)
- *   - Inserts agent_groups row for each
- *   - Wires KB (ro) + wiki (rw) mounts into each student's container.json
- *   - Generates a 4-digit pairing code via the existing `wire-to` flow
- *   - Writes a roster CSV mapping name ↔ folder ↔ pairing code
+ * Base script — ships KB + wiki mounts inline. Optional skills (e.g.
+ * `/add-classroom-gws`) extend this via `class-skeleton-extensions.ts`,
+ * which the script imports for side effects so registered contributors
+ * get to add their own per-student mounts and class-config fields.
  *
- * What it does NOT do (deferred to later phases):
- *   - Per-student Drive folder creation (happens at pairing time — Phase 3b,
- *     host-side via the instructor's existing Google OAuth)
- *   - Doc-only MCP for read/write of Google Docs as markdown (Phase 3c.3 —
- *     rclone exposes pointers, not text, for Doc-format files)
- *   - Per-student git identity for wiki attribution (Phase 4)
- *   - Scoped-playground wiring (Phase 5)
- *   - Welcome message / privacy notice (Phase 6)
+ * Idempotent: re-runnable. Existing agent_groups rows are kept;
+ * container.json is overwritten so re-running picks up new mount
+ * paths if KB / wiki / extensions change.
  *
- * Drive surface for the agent: the host runs ONE rclone process for the
- * whole class anchored at the parent folder ID (see docs/class-setup.md).
- * Each student's container bind-mounts only its own subfolder at
- * /workspace/drive/, so the agent (Codex, Claude, anything) operates on a
- * normal filesystem. The instructor's full-Drive OAuth never enters any
- * student container.
- *
- * Idempotent: re-runnable. Existing agent_groups rows are kept; container.json
- * is overwritten so re-running picks up new KB / wiki mount paths.
- *
- * Usage:
+ * Usage (base):
  *   pnpm exec tsx scripts/class-skeleton.ts \
  *     --count 16 \
- *     --names "Alice,Bob,Carol,..." \
- *     --drive-parent <google-drive-folder-id> \
- *     --drive-mount-root ~/nanoclaw-drive-mount \
+ *     --names "Alice,Bob,..." \
  *     --kb /srv/class-kb \
  *     --wiki /srv/class-wiki
  *
- * Note: each path used as a bind mount (--kb, --wiki, and the rclone view
- * root resolved from --drive-mount-root) must be in the mount allowlist
- * at ~/.config/nanoclaw/mount-allowlist.json or the host will refuse to
- * spawn the student container.
+ * With the gws skill installed, additional flags `--drive-parent
+ * <folder-id>` and `--drive-mount-root <path>` become available; they
+ * persist gws fields into `data/class-config.json` and emit per-student
+ * Drive bind mounts.
+ *
+ * Note: each path used as a bind mount must be in the mount allowlist
+ * at `~/.config/nanoclaw/mount-allowlist.json` or the host will refuse
+ * to spawn the student container.
  */
 import crypto from 'crypto';
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
 
 import { DATA_DIR, GROUPS_DIR } from '../src/config.js';
@@ -52,13 +36,17 @@ import { createAgentGroup, getAgentGroupByFolder } from '../src/db/agent-groups.
 import { initDb, getDb } from '../src/db/connection.js';
 import { runMigrations } from '../src/db/migrations/index.js';
 import { writeContainerConfig, type ContainerConfig } from '../src/container-config.js';
+import { collectSkeletonMounts } from '../src/skeleton-mount-registry.js';
 import type { AgentGroup } from '../src/types.js';
+
+// Side-effect imports: each registers any extension contributors it
+// brings (mount-registry contributors, etc.). Empty barrel in the
+// default install; skills like /add-classroom-gws append imports.
+import './class-skeleton-extensions.js';
 
 interface CliArgs {
   count: number;
   names: string[];
-  driveParent: string | null;
-  driveMountRoot: string | null;
   kb: string | null;
   wiki: string | null;
 }
@@ -72,7 +60,10 @@ function parseArgs(): CliArgs {
   const count = parseInt(get('--count') || '16', 10);
   const namesRaw = get('--names');
   const names = namesRaw
-    ? namesRaw.split(',').map((n) => n.trim()).filter(Boolean)
+    ? namesRaw
+        .split(',')
+        .map((n) => n.trim())
+        .filter(Boolean)
     : Array.from({ length: count }, (_, i) => `Student${String(i + 1).padStart(2, '0')}`);
   if (names.length !== count) {
     throw new Error(`--count is ${count} but --names has ${names.length} entries`);
@@ -80,8 +71,6 @@ function parseArgs(): CliArgs {
   return {
     count,
     names,
-    driveParent: get('--drive-parent'),
-    driveMountRoot: get('--drive-mount-root'),
     kb: get('--kb'),
     wiki: get('--wiki'),
   };
@@ -110,8 +99,8 @@ research, and questions about course material.
   syllabus, lecture notes. Check here before saying you don't know.
 - \`/workspace/wiki/\` — class wiki (read/write). Shared with all classmates.
   Contributions are git-attributed to ${name}.
-- \`/workspace/drive/\` — ${name}'s personal Google Drive folder, also
-  shared with the instructor. Files saved here sync to ${name}'s Drive.
+- \`/workspace/drive/\` — ${name}'s personal Google Drive folder when the
+  Workspace skill is installed. Files saved here sync to ${name}'s Drive.
 
 ## Customize me
 
@@ -127,7 +116,7 @@ function makeContainerConfig(opts: {
   kb: string | null;
   wiki: string | null;
   folder: string;
-  driveMountPath: string | null;
+  extraMounts: ContainerConfig['additionalMounts'];
 }): ContainerConfig {
   const additionalMounts: ContainerConfig['additionalMounts'] = [];
   if (opts.kb) {
@@ -136,16 +125,8 @@ function makeContainerConfig(opts: {
   if (opts.wiki) {
     additionalMounts.push({ hostPath: opts.wiki, containerPath: '/workspace/wiki', readonly: false });
   }
-  if (opts.driveMountPath) {
-    // The student's specific Drive subfolder, surfaced via the host-side
-    // rclone mount (one rclone process for the whole class anchored at the
-    // parent folder ID). Container only sees this one subfolder; the
-    // instructor's full-Drive OAuth never leaves the host.
-    additionalMounts.push({
-      hostPath: opts.driveMountPath,
-      containerPath: '/workspace/drive',
-      readonly: false,
-    });
+  for (const mount of opts.extraMounts) {
+    additionalMounts.push(mount);
   }
   return {
     mcpServers: {},
@@ -164,38 +145,20 @@ async function main(): Promise<void> {
   initDb(path.join(DATA_DIR, 'v2.db'));
   runMigrations(getDb());
 
-  // The rclone mount root (one mount for the whole class, anchored at the
-  // parent folder ID — see docs/class-setup.md for the rclone config). Each
-  // student's container bind-mounts only its own subfolder by name. If the
-  // instructor hasn't run rclone yet, the bind mounts will fail at spawn —
-  // but only for the drive bit; KB + wiki + persona still work.
-  const driveMountRoot = args.driveMountRoot
-    ? path.resolve(args.driveMountRoot)
-    : path.join(os.homedir(), 'nanoclaw-drive-mount');
-
   console.log(`Provisioning ${args.count} student slots…`);
-  if (args.driveParent) console.log(`  Drive parent folder: ${args.driveParent}`);
-  if (args.driveParent) console.log(`  Drive mount root:    ${driveMountRoot}`);
   if (args.kb) console.log(`  Static KB:           ${args.kb}`);
   if (args.wiki) console.log(`  Wiki:                ${args.wiki}`);
   console.log();
 
-  // Persist the class config so the pair-handler can read drive-parent later.
-  const classConfigPath = path.join(DATA_DIR, 'class-config.json');
-  fs.writeFileSync(
-    classConfigPath,
-    JSON.stringify(
-      {
-        driveParent: args.driveParent,
-        driveMountRoot: args.driveParent ? driveMountRoot : null,
-        kb: args.kb,
-        wiki: args.wiki,
-        students: args.names.map((name, i) => ({ name, folder: studentFolder(i + 1) })),
-      },
-      null,
-      2,
-    ),
-  );
+  // class-config.json is written AFTER the loop so extension
+  // contributors that mutate it (gws sets driveParent / driveMountRoot)
+  // have their fields baked in. Build the base shape here; contributors
+  // mutate it as side effects of producing mounts.
+  const classConfig: Record<string, unknown> = {
+    kb: args.kb,
+    wiki: args.wiki,
+    students: args.names.map((name, i) => ({ name, folder: studentFolder(i + 1) })),
+  };
 
   const roster: Array<{ name: string; folder: string; code: string }> = [];
 
@@ -231,14 +194,17 @@ async function main(): Promise<void> {
     if (!fs.existsSync(claudeMdPath)) {
       fs.writeFileSync(claudeMdPath, SHARED_CLAUDE_MD);
     }
-    // container.json — overwrite (so re-running picks up new mount paths if
-    // KB/wiki location changes). Drive mount path mirrors the folder name
-    // class-drive.ts creates: "<folder> — <name>" (em dash).
-    const driveMountPath = args.driveParent ? path.join(driveMountRoot, `${folder} — ${name}`) : null;
-    writeContainerConfig(
-      folder,
-      makeContainerConfig({ kb: args.kb, wiki: args.wiki, folder, driveMountPath }),
-    );
+    // Collect any extension-contributed mounts (Drive, etc.) for this
+    // student. Contributors may also mutate `classConfig` to persist
+    // their own fields — we write the file once after the loop so all
+    // mutations are captured.
+    const extraMounts = collectSkeletonMounts({
+      studentFolder: folder,
+      studentName: name,
+      classConfig,
+      argv: process.argv.slice(2),
+    });
+    writeContainerConfig(folder, makeContainerConfig({ kb: args.kb, wiki: args.wiki, folder, extraMounts }));
 
     // 3. Generate pairing code (wire-to that folder).
     // createPairing supersedes any existing pending pairing for the same
@@ -246,6 +212,11 @@ async function main(): Promise<void> {
     const pairing = await createPairing({ kind: 'wire-to', folder });
     roster.push({ name, folder, code: pairing.code });
   }
+
+  // Persist class-config.json (after contributors have had a chance
+  // to mutate it).
+  const classConfigPath = path.join(DATA_DIR, 'class-config.json');
+  fs.writeFileSync(classConfigPath, JSON.stringify(classConfig, null, 2));
 
   // 4. Write roster CSV for distribution.
   const csvPath = path.join(process.cwd(), 'class-roster.csv');

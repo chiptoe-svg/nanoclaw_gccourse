@@ -617,6 +617,184 @@ import './student-auth-handlers.js';
 ```
 All other shared files are class-free again.
 
+### Phase 11 — Skill packaging (3 install skills + classroom branch)
+
+**Why this exists.** Phase 10 made `main` class-agnostic by extracting
+inline hooks into 5 registries. Phase 11 cashes that in: the class
+feature lives on a `classroom` sibling branch, `main` carries none
+of it by default, and three install skills compose what the
+instructor needs:
+
+- `/add-classroom` — base. Provisions per-student agent groups,
+  pairing flow, playground lockdown, wiki-attribution env vars,
+  and a short greeting in the welcome.
+- `/add-classroom-gws` — adds Google Drive folder provisioning per
+  student (host-side via instructor OAuth) + the rclone-mount
+  bind into student containers. Layers a second pair consumer
+  that sends the Drive link as its own message.
+- `/add-classroom-auth` — adds per-student Codex OAuth
+  (magic-link upload of a `codex login`-produced auth.json).
+  Layers a third pair consumer that sends the auth link, plus
+  the `/login` command and the codex resolver chain extension.
+
+**Prerequisite (documented, not skill-installed):** `/add-agent-playground`
+must be present for the playground lockdown gate to do anything
+useful. The base skill checks for the playground and warns if absent.
+
+**Key design call: multi-message welcome.** Each skill registers
+its own pair consumer. After a successful pairing, the channel
+delivers each consumer's confirmation as its own message — base
+sends "Welcome, Alice! /playground to customize me." gws adds
+"Your Drive folder: <url>." auth adds "Connect your ChatGPT:
+<url>." That's 1–3 short messages depending on which skills are
+installed. Each consumer is independent; no shared welcome
+template, no sections registry to maintain.
+
+#### 11.1 — Refactor pair consumer for multi-message ✅
+
+- [x] Split `class-pair-consumer.ts` into three files:
+    - `class-pair-greeting.ts` (base): metadata stamping + short
+      greeting, suppresses the channel's default confirmation.
+    - `class-pair-drive.ts` (gws): Drive folder creation + URL
+      message. Reads `class-config.driveParent` to detect gws
+      configuration; no-ops when absent. Idempotent re-pair via
+      existing `meta.drive_folder_id` check.
+    - `class-pair-auth.ts` (auth): magic-link issuance + URL
+      message. Silent-skips when `NANOCLAW_PUBLIC_URL` is unset
+      (`/login` covers retry).
+- [x] Retired `class-welcome.ts` + `class-welcome.test.ts`. Each
+      consumer hardcodes its own short text; no template
+      composition.
+- [x] Telegram pair handler unchanged — already loops over results
+      and sends each `confirmation` (Phase 10.5 work).
+- [x] 6th registry: `src/skeleton-mount-registry.ts` —
+      `registerSkeletonMountContributor` /
+      `collectSkeletonMounts`. Provision-time only; ctx includes
+      student folder, name, classConfig blob (mutable), argv.
+- [x] gws contributor `src/class-skeleton-drive-mount.ts` reads
+      `--drive-parent` / `--drive-mount-root` from argv, mutates
+      classConfig, emits Drive bind mount.
+- [x] `scripts/class-skeleton-extensions.ts` — barrel script
+      imports for side effects. Empty in base; gws skill appends
+      `import '../src/class-skeleton-drive-mount.js';`.
+- [x] `scripts/class-skeleton.ts` no longer parses Drive flags or
+      knows about Drive paths. Calls `collectSkeletonMounts` per
+      student. classConfig persisted after the loop so contributor
+      mutations land.
+- [x] +5 registry tests (default empty, concat, ctx passthrough,
+      no-op contributors, classConfig mutation visible to later
+      contributors). 403/403 host tests green, tsc clean.
+
+#### 11.2 — Create the classroom sibling branch
+- [ ] `git checkout -b classroom` (orphan branch isn't needed —
+      we want it to share history with main so `git diff main..classroom`
+      is meaningful).
+- [ ] Branch contains: every class-* file currently on main,
+      plus `src/student-auth*`, `scripts/class-skeleton.ts`,
+      `docs/class-setup.md`, `plans/class*.md`, plus the
+      googleapis dep update in `package.json`.
+- [ ] Branch is pushed to origin so the skills can `git fetch
+      origin classroom`.
+
+#### 11.3 — Strip class files from main
+- [ ] Remove from main: every `class-*` file, `student-auth*`,
+      `class-skeleton.ts`, `googleapis` dep, the class import
+      block in `src/index.ts`, the GWS section in
+      `docs/class-setup.md`, `plans/class*.md`.
+- [ ] **Keep on main**: the five registries from Phase 10
+      (`registerCodexAuthResolver`, `registerContainerEnvContributor`,
+      `registerDraftMutationGate`, `registerTelegramCommand`,
+      `registerPairConsumer`). These are general extension points
+      that the channels and providers also benefit from.
+- [ ] After this step, main has zero class code. Tests still
+      green (the registries with no consumers/resolvers are
+      no-ops; existing tests verify default behavior).
+
+#### 11.4 — `/add-classroom` skill
+- [ ] `.claude/skills/add-classroom/SKILL.md`:
+    - Pre-flight: check `/add-agent-playground` is installed
+      (warn if not — feature still works, just no playground
+      lockdown).
+    - `git fetch origin classroom`.
+    - Copy: `class-config.ts`, `class-config.test.ts`,
+      `class-pair-greeting.ts`, `class-playground-gate.ts`,
+      `class-container-env.ts`, `class-container-env.test.ts`,
+      `scripts/class-skeleton.ts`, base section of
+      `docs/class-setup.md`, `plans/class.md` (optional).
+    - Append imports to `src/index.ts`:
+      ```
+      import './class-pair-greeting.js';
+      import './class-playground-gate.js';
+      import './class-container-env.js';
+      ```
+    - `pnpm exec tsc --noEmit && pnpm test`.
+- [ ] `.claude/skills/add-classroom/REMOVE.md`: reverse all of
+      the above. Idempotent.
+- [ ] `.claude/skills/add-classroom/VERIFY.md`: smoke checks —
+      does `class-config.ts` exist, do tests pass, can
+      `class-skeleton.ts --count 1 --names "Test" --kb /tmp/kb
+      --wiki /tmp/wiki` provision an agent group.
+
+#### 11.5 — `/add-classroom-gws` skill
+- [ ] Pre-flight: check `/add-classroom` is installed; abort
+      with a clear message if not (gws builds on base).
+- [ ] `git fetch origin classroom`.
+- [ ] Copy: `class-drive.ts`, `class-pair-drive.ts`, gws
+      section of `docs/class-setup.md`, the gws additions to
+      `class-skeleton.ts` (or a patch — TBD; see open
+      question below).
+- [ ] Append `import './class-pair-drive.js';` to `src/index.ts`.
+- [ ] `pnpm install googleapis@171.4.0`.
+- [ ] `pnpm exec tsc --noEmit && pnpm test`.
+- [ ] REMOVE.md: reverse, including dropping the dep with
+      `pnpm remove googleapis`.
+- [ ] VERIFY.md: tests pass, googleapis is in lockfile,
+      `class-drive.ts` exports the expected functions.
+
+**Decision: option (b) — sixth registry, `registerSkeletonMountContributor`.**
+- Provision-time registry (mounts get baked into `container.json`
+  when the skeleton runs, not at session spawn).
+- Base `class-skeleton.ts` imports a barrel
+  `scripts/class-skeleton-extensions.ts` (empty in base).
+- The gws skill ships `src/class-skeleton-drive-mount.ts`
+  (which registers a contributor that emits the Drive bind mount
+  + handles `--drive-parent`/`--drive-mount-root` CLI flags) AND
+  appends an import to the barrel.
+- Base script writes KB + wiki mounts inline (universal; no
+  extension point needed).
+
+#### 11.6 — `/add-classroom-auth` skill
+- [ ] Pre-flight: check `/add-classroom` is installed.
+- [ ] `git fetch origin classroom`.
+- [ ] Copy: `student-auth.ts`, `student-auth.test.ts`,
+      `student-auth-server.ts`, `student-auth-server.test.ts`,
+      `student-auth-handlers.ts`, `class-codex-auth.ts`,
+      `class-telegram-commands.ts`, `class-pair-auth.ts`,
+      `container/agent-runner/src/auth-nudge.ts`,
+      `container/agent-runner/src/auth-nudge.test.ts`,
+      auth section of `docs/class-setup.md`.
+- [ ] Append imports to `src/index.ts`:
+      ```
+      import './class-codex-auth.js';
+      import './class-telegram-commands.js';
+      import './class-pair-auth.js';
+      import './student-auth-handlers.js';
+      ```
+- [ ] `pnpm exec tsc --noEmit && pnpm test`.
+- [ ] REMOVE.md / VERIFY.md analogous.
+
+#### 11.7 — Smoke + finalize
+- [ ] Run `/add-classroom`, then `/add-classroom-gws`, then
+      `/add-classroom-auth` on a fresh main checkout. Verify
+      tests stay green at each step.
+- [ ] Run REMOVE in reverse order. Verify main is back to
+      class-free state.
+- [ ] Run on the user's actual install (the one we've been
+      developing in) — this means stripping their current main
+      first, then re-installing via skills. Document the
+      migration steps so the user doesn't lose their
+      `data/class-config.json`, `data/student-auth/`, etc.
+
 ## Open questions
 
 1. **Service-account vs. per-student OAuth for Drive.** Current design uses
