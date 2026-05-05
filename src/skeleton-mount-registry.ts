@@ -1,19 +1,18 @@
 /**
- * Provision-time mount-contributor registry for `class-skeleton.ts`.
+ * Provision-time bind-mount contributor registry.
  *
- * The base skeleton ships KB + wiki mounts inline (universal — every
- * class deployment wants them). Optional features that need their own
- * bind mounts register a contributor here; the script collects from
- * all registered contributors when writing each student's
- * `container.json`.
+ * Used by bulk-provisioning scripts (currently only the
+ * `/add-classroom`-installed `class-skeleton.ts`) to let installed
+ * extensions inject extra bind mounts into each provisioned agent
+ * group's `container.json` without the script knowing about every
+ * possible feature.
  *
- * Today: the gws skill registers a Drive-mount contributor.
- * Future: any feature that wants a per-student bind mount (e.g.
- * a per-student GitHub clone, a shared course-data volume) goes here.
+ * Provision-time only — these go into `container.json` once when the
+ * provisioning script runs. Spawn-time env vars use a different
+ * registry (`src/container-env-registry.ts`).
  *
- * Provision-time only — these go into `container.json` once when
- * `class-skeleton.ts` runs. Spawn-time env vars use a different
- * registry (`src/container-env-registry.ts` from Phase 10.2).
+ * No-op on a default install: the registry is empty until something
+ * registers against it.
  */
 import type { ContainerConfig } from './container-config.js';
 

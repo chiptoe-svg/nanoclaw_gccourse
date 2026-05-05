@@ -54,19 +54,11 @@ import './channels/index.js';
 // append registry-based modules. Imported for side effects (registrations).
 import './modules/index.js';
 
-// Class feature: registers gates, consumers, env contributors, auth
-// resolvers, command handlers, and the request_reauth delivery action.
-// Each module is no-op when nothing class-related is provisioned.
-// Phase 8 will eventually pull these out of main into an install skill;
-// for now they sit here as a self-contained block.
-import './class-codex-auth.js';
-import './class-container-env.js';
-import './class-pair-auth.js';
-import './class-pair-drive.js';
-import './class-pair-greeting.js';
-import './class-playground-gate.js';
-import './class-telegram-commands.js';
-import './student-auth-handlers.js';
+// Class feature is not part of trunk — installs via /add-classroom,
+// /add-classroom-gws, /add-classroom-auth (sibling `classroom` branch).
+// Each skill appends its own imports here for the registries it
+// registers against (codex auth resolver, container env contributor,
+// playground draft gate, pair consumer, telegram command).
 
 import type { ChannelAdapter, ChannelSetup } from './channels/adapter.js';
 import { initChannelAdapters, teardownChannelAdapters, getChannelAdapter } from './channels/channel-registry.js';
