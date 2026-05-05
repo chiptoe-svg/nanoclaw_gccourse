@@ -62,9 +62,9 @@ describe('collectSkeletonMounts', () => {
   it('contributors that return [] are no-ops', () => {
     registerSkeletonMountContributor(() => []);
     registerSkeletonMountContributor(() => [{ hostPath: '/only', containerPath: '/c', readonly: false }]);
-    expect(
-      collectSkeletonMounts({ studentFolder: 'f', studentName: 'n', classConfig: {}, argv: [] }),
-    ).toEqual([{ hostPath: '/only', containerPath: '/c', readonly: false }]);
+    expect(collectSkeletonMounts({ studentFolder: 'f', studentName: 'n', classConfig: {}, argv: [] })).toEqual([
+      { hostPath: '/only', containerPath: '/c', readonly: false },
+    ]);
   });
 
   it('mutations to classConfig by one contributor are visible to the next', () => {

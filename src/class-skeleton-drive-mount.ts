@@ -28,7 +28,7 @@ import { registerSkeletonMountContributor } from './skeleton-mount-registry.js';
 
 function readFlag(argv: string[], flag: string): string | null {
   const i = argv.indexOf(flag);
-  return i >= 0 ? argv[i + 1] ?? null : null;
+  return i >= 0 ? (argv[i + 1] ?? null) : null;
 }
 
 registerSkeletonMountContributor((ctx) => {

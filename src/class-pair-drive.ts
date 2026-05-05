@@ -60,7 +60,7 @@ async function classPairDrive(ctx: PairContext): Promise<PairResult> {
       });
       return {
         confirmation:
-          "(Drive folder creation failed — your instructor will see the error in the host logs. Re-pair after they fix it to retry.)",
+          '(Drive folder creation failed — your instructor will see the error in the host logs. Re-pair after they fix it to retry.)',
       };
     }
   }

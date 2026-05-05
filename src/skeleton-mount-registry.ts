@@ -33,9 +33,7 @@ export interface SkeletonMountContext {
   argv: string[];
 }
 
-export type SkeletonMountContributor = (
-  ctx: SkeletonMountContext,
-) => ContainerConfig['additionalMounts'];
+export type SkeletonMountContributor = (ctx: SkeletonMountContext) => ContainerConfig['additionalMounts'];
 
 const contributors: SkeletonMountContributor[] = [];
 
