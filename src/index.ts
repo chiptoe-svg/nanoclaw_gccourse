@@ -54,9 +54,12 @@ import './channels/index.js';
 // append registry-based modules. Imported for side effects (registrations).
 import './modules/index.js';
 
-// Class feature: register the request_reauth delivery-action handler so
-// container-side refresh-failure events get translated into a magic-link
-// DM nudge to the student. No-op when nothing emits the action.
+// Class feature: registers gates, consumers, env contributors, auth
+// resolvers, command handlers, and the request_reauth delivery action.
+// Each module is no-op when nothing class-related is provisioned.
+// Phase 8 will eventually pull these out of main into an install skill;
+// for now they sit here as a self-contained block.
+import './class-codex-auth.js';
 import './student-auth-handlers.js';
 
 import type { ChannelAdapter, ChannelSetup } from './channels/adapter.js';

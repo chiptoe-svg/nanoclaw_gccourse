@@ -26,50 +26,85 @@
  * token in `auth.json` is the credential — neither OPENAI_API_KEY nor
  * the proxy is involved on that codepath.
  *
- * Per-student auth (Phase 9): when the agent group's metadata carries a
- * `student_user_id` AND that student has uploaded their own auth.json
- * via the magic-link flow, we copy from the student's stored file
- * instead of the host's. Otherwise we fall back to the instructor's
- * host auth.json (so unauthed students keep working on the instructor's
- * tab and there's a graceful migration window).
+ * Auth source is pluggable via the resolver registry below. The default
+ * registration here uses the instructor's host `~/.codex/auth.json`,
+ * which preserves single-user behavior with zero config. Extension
+ * features (e.g. the class feature's per-student Codex auth) register
+ * additional resolvers that can shadow the default.
  */
 import fs from 'fs';
 import path from 'path';
 
-import { getAgentGroupMetadata } from '../db/agent-groups.js';
 import { log } from '../log.js';
-import { getStudentAuthPath } from '../student-auth.js';
 import { registerProviderContainerConfig } from './provider-container-registry.js';
 
 /**
- * Pick the source path for a session's auth.json. Per-student first
- * (when metadata + storage agree), instructor's host auth.json second.
- * Returns null if no source is available — the session-spawn proceeds
- * without an auth.json and Codex itself surfaces the auth-required
- * error to the agent.
+ * A resolver returns the path to an auth.json the session should use,
+ * or null if it doesn't have an opinion (let the next resolver try).
+ *
+ * `name` is a short label used in logs to disambiguate which credential
+ * is in play (handy when an instructor is debugging a class where some
+ * students have authed and others haven't).
+ */
+export type CodexAuthResolver = (ctx: CodexAuthResolverContext) => CodexAuthResolution | null;
+
+export interface CodexAuthResolverContext {
+  agentGroupId: string;
+  hostHome: string | undefined;
+}
+
+export interface CodexAuthResolution {
+  name: string;
+  path: string;
+}
+
+const resolvers: CodexAuthResolver[] = [];
+
+/**
+ * Prepend a resolver to the chain. Resolvers are tried in reverse
+ * registration order — newest registration wins — so an extension
+ * (like the class feature's per-student resolver) automatically
+ * shadows the default instructor resolver, regardless of which file
+ * is imported first.
+ */
+export function registerCodexAuthResolver(resolver: CodexAuthResolver): void {
+  resolvers.unshift(resolver);
+}
+
+/**
+ * Walk the resolver chain. Returns the first non-null resolution, or
+ * null if no resolver had an answer (session spawns without auth.json
+ * and Codex itself surfaces the auth-required error to the agent).
  *
  * Pure-ish: filesystem reads only. No mutation.
  */
-export function resolveCodexAuthSource(opts: { agentGroupId: string; hostHome: string | undefined }): {
-  source: 'student' | 'instructor' | 'none';
-  path: string | null;
-} {
-  const meta = getAgentGroupMetadata(opts.agentGroupId);
-  const studentUserId = typeof meta.student_user_id === 'string' ? meta.student_user_id : null;
-  if (studentUserId) {
-    const studentPath = getStudentAuthPath(studentUserId);
-    if (studentPath) {
-      return { source: 'student', path: studentPath };
-    }
+export function resolveCodexAuthSource(ctx: CodexAuthResolverContext): CodexAuthResolution | null {
+  for (const resolver of resolvers) {
+    const result = resolver(ctx);
+    if (result) return result;
   }
-  if (opts.hostHome) {
-    const hostAuth = path.join(opts.hostHome, '.codex', 'auth.json');
-    if (fs.existsSync(hostAuth)) {
-      return { source: 'instructor', path: hostAuth };
-    }
-  }
-  return { source: 'none', path: null };
+  return null;
 }
+
+/** Test hook — clear the resolver chain. */
+export function _resetResolversForTest(): void {
+  resolvers.length = 0;
+}
+
+/**
+ * Default resolver: the instructor's host ~/.codex/auth.json. Registered
+ * at import time so the chain is never empty in a fresh install.
+ * Exported so tests can re-register against a freshly reset chain
+ * without re-importing the module.
+ */
+export const instructorHostResolver: CodexAuthResolver = (ctx) => {
+  if (!ctx.hostHome) return null;
+  const candidate = path.join(ctx.hostHome, '.codex', 'auth.json');
+  if (!fs.existsSync(candidate)) return null;
+  return { name: 'instructor', path: candidate };
+};
+
+registerCodexAuthResolver(instructorHostResolver);
 
 registerProviderContainerConfig('codex', (ctx) => {
   const codexDir = path.join(ctx.sessionDir, 'codex');
@@ -80,11 +115,11 @@ registerProviderContainerConfig('codex', (ctx) => {
     hostHome: ctx.hostEnv.HOME,
   });
 
-  if (resolved.path) {
+  if (resolved) {
     fs.copyFileSync(resolved.path, path.join(codexDir, 'auth.json'));
     log.info('codex provider: auth source resolved', {
       agentGroupId: ctx.agentGroupId,
-      source: resolved.source,
+      source: resolved.name,
     });
   } else {
     log.warn('codex provider: no auth.json available — session will need /login', {

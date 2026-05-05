@@ -461,6 +461,121 @@ call in the right place.
       Phase 9 verification steps (auth link click → upload → log
       line → quota observation).
 
+### Phase 10 — Retroactive modularity
+
+**Why this exists.** NanoClaw's whole architecture is registry-based
+extension points (`registerChannelAdapter`, `registerProviderContainerConfig`,
+`registerDeliveryAction`, `onDeliveryAdapterReady`). Phases 1–9
+violated that pattern by adding inline `if (findClassStudent(folder))`
+hooks into five shared core files. That makes `main` carry
+class-specific code paths even when no class is provisioned, and it
+blocks Phase 8's "extract to a sibling branch + install skill"
+trajectory because the inline hooks don't have a clean removal seam.
+
+**This phase fixes that retroactively.** Each extraction is a small
+registry (~20–30 lines) plus migrating the class implementation to
+register against it. After Phase 10, `main` is class-agnostic again
+and Phase 8 packaging becomes mechanical.
+
+**Constraint**: tests must stay green at every step. Each substep is
+its own commit so any regression is bisectable. The user-visible
+behavior of the class feature does not change.
+
+#### 10.1 — `registerCodexAuthResolver` ✅
+
+- [x] Chain-of-resolvers registry in `src/providers/codex.ts`:
+      `registerCodexAuthResolver(fn)` `unshift`s, so newest
+      registration wins. `resolveCodexAuthSource(ctx)` returns the
+      first non-null result, or null if no resolver matches.
+- [x] Default resolver (`instructorHostResolver`) exported and
+      registered from `codex.ts` at import — fresh installs keep
+      working with zero config.
+- [x] Class student resolver moved to `src/class-codex-auth.ts`
+      (`studentCodexAuthResolver`), exported and registered at
+      import. The unshift semantics mean it auto-shadows the
+      instructor without import-order coordination.
+- [x] `src/index.ts` imports `./class-codex-auth.js` in a new
+      class-features import block, alongside `./student-auth-handlers.js`.
+- [x] 12 codex-provider tests (was 7): instructor-only chain (4),
+      class+instructor chain (6), pure registry semantics
+      (2 — newest-wins + all-null). 384/384 host tests green,
+      tsc clean.
+
+#### 10.2 — `registerContainerEnvContributor`
+- [ ] New registry: `registerContainerEnvContributor((ctx: { agentGroup })
+      => Array<[string, string]>)`. Container-runner calls
+      `collectContainerEnv(ctx)` and pushes the union as `-e` args.
+- [ ] Class contributor (`src/class-container-env.ts`) wraps
+      `gitAuthorEnvFromMetadata`. The current inline lookup in
+      `buildContainerArgs` goes away.
+- [ ] `gitAuthorEnvFromMetadata` itself stays as a pure helper that
+      the class contributor calls. Its 7 tests stay green.
+
+#### 10.3 — `registerDraftMutationGate`
+- [ ] In `src/channels/playground.ts`:
+      `registerDraftMutationGate((draftFolder, action: 'file_put' |
+      'skills_put' | 'provider_put') => { allow: boolean; reason?: string })`.
+      `checkDraftMutation(draftFolder, action)` returns the first
+      gate that denies, else allow.
+- [ ] Class gate (`src/class-playground-gate.ts`) wraps
+      `isClassStudentDraft` + the locked-message string. The three
+      inline `if (isClassStudentDraft(...)) return 403` calls in
+      `playground.ts` collapse to one `checkDraftMutation` call per
+      endpoint.
+
+#### 10.4 — `registerTelegramCommand`
+- [ ] New `src/channels/telegram-commands.ts`:
+      `registerTelegramCommand(prefix, handler)`,
+      `dispatchTelegramCommand(ctx) → Promise<boolean>`.
+- [ ] Existing `/auth`, `/model`, `/playground` handlers in
+      `telegram.ts` register themselves. The inline `if
+      (text.startsWith(...))` block in `createAttachmentInterceptor`
+      becomes a single `dispatchTelegramCommand` call.
+- [ ] Class `/login` handler moves to
+      `src/class-telegram-commands.ts`, registers itself.
+
+#### 10.5 — `registerPairConsumer`
+- [ ] Biggest extraction: the ~80-line class-flow block in the
+      Telegram pair handler. New
+      `src/channels/pair-consumer-registry.ts`:
+      ```
+      type PairConsumer = (ctx: PairContext) => Promise<PairResult>;
+      type PairContext = { agentGroup, pairedUserId, consumedEmail,
+                           targetFolder, channel };
+      type PairResult = { confirmation?: string;
+                          suppressDefaultConfirmation?: boolean };
+      registerPairConsumer(c: PairConsumer);
+      runPairConsumers(ctx) → Promise<PairResult[]>;
+      ```
+- [ ] Class consumer (`src/class-pair-consumer.ts`) does what the
+      inline block currently does: stamp metadata, create Drive
+      folder, build welcome with auth_url, return as
+      `{ confirmation: <welcome text>, suppressDefaultConfirmation: true }`.
+- [ ] Pair handler in `telegram.ts` invokes `runPairConsumers`,
+      sends each consumer's confirmation if provided, sends the
+      generic confirmation only if nothing suppressed it.
+
+#### 10.6 — Wire-up
+- [ ] `src/index.ts` imports the class registration files in one
+      block (mirrors `import './channels/index.js'` and
+      `import './modules/index.js'` patterns). When Phase 8
+      eventually extracts to a skill, that block is the only
+      thing the skill needs to add or remove.
+
+**Net effect after Phase 10.** `main`'s class-specific imports
+collapse to roughly:
+```ts
+// Class feature — registers gates, consumers, env contributors,
+// auth resolvers. No-op when data/class-config.json is absent.
+import './class-codex-auth.js';
+import './class-container-env.js';
+import './class-playground-gate.js';
+import './class-pair-consumer.js';
+import './class-telegram-commands.js';
+import './student-auth-handlers.js';
+```
+All other shared files are class-free again.
+
 ## Open questions
 
 1. **Service-account vs. per-student OAuth for Drive.** Current design uses

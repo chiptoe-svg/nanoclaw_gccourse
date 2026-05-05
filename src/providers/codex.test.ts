@@ -1,10 +1,15 @@
 /**
- * Unit tests for resolveCodexAuthSource — Phase 9.3's per-student
- * source picker that the codex provider's session-spawn callback uses.
+ * Unit tests for the codex provider's auth resolver registry
+ * (Phase 9.3 + Phase 10.1).
  *
- * Real DB + real filesystem (under temp DATA_DIR / temp HOME), so the
- * test exercises the actual call paths into agent_groups.metadata and
- * the student-auth storage layer.
+ * The chain semantics are: register newest-wins, walk in order, first
+ * non-null resolution returned. Default install registers only the
+ * instructor host resolver. The class feature (when imported) prepends
+ * a per-student resolver that shadows.
+ *
+ * Tests reset the chain explicitly per scenario via _resetResolversForTest
+ * and re-register the resolvers under test, so cross-test pollution
+ * from global module-load registration can't sneak in.
  */
 import fs from 'fs';
 import path from 'path';
@@ -28,10 +33,16 @@ vi.mock('../log.js', () => ({
   log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), fatal: vi.fn() },
 }));
 
+import { studentCodexAuthResolver } from '../class-codex-auth.js';
 import { closeDb, getDb, initTestDb, runMigrations } from '../db/index.js';
 import { createAgentGroup, setAgentGroupMetadataKey } from '../db/agent-groups.js';
 import { storeStudentAuth } from '../student-auth.js';
-import { resolveCodexAuthSource } from './codex.js';
+import {
+  _resetResolversForTest,
+  instructorHostResolver,
+  registerCodexAuthResolver,
+  resolveCodexAuthSource,
+} from './codex.js';
 
 const VALID_AUTH_JSON = JSON.stringify({
   tokens: { access_token: 'a', refresh_token: 'r' },
@@ -71,6 +82,7 @@ beforeEach(() => {
   fs.mkdirSync(TEST_DIR, { recursive: true });
   initTestDb();
   runMigrations(getDb());
+  _resetResolversForTest();
 });
 
 afterEach(() => {
@@ -78,36 +90,70 @@ afterEach(() => {
   clearAll();
 });
 
-describe('resolveCodexAuthSource', () => {
-  it('returns "none" when there is no per-student auth and no host auth', () => {
-    seedAgentGroup('ag-1', 'student_01');
-    const result = resolveCodexAuthSource({ agentGroupId: 'ag-1', hostHome: FAKE_HOME });
-    expect(result).toEqual({ source: 'none', path: null });
+describe('codex auth resolver chain — instructor-only (default install)', () => {
+  beforeEach(() => {
+    registerCodexAuthResolver(instructorHostResolver);
   });
 
-  it('falls back to the instructor host auth when no student is wired', () => {
+  it('returns null when no host auth.json exists', () => {
+    seedAgentGroup('ag-1', 'student_01');
+    expect(resolveCodexAuthSource({ agentGroupId: 'ag-1', hostHome: FAKE_HOME })).toBeNull();
+  });
+
+  it('resolves to the instructor host auth when present', () => {
     seedAgentGroup('ag-1', 'student_01');
     const expected = writeInstructorAuth();
     const result = resolveCodexAuthSource({ agentGroupId: 'ag-1', hostHome: FAKE_HOME });
-    expect(result).toEqual({ source: 'instructor', path: expected });
+    expect(result).toEqual({ name: 'instructor', path: expected });
   });
 
-  it('uses the student auth when student_user_id is set AND a stored auth exists', () => {
+  it('returns null when hostHome is undefined', () => {
+    seedAgentGroup('ag-1', 'student_01');
+    expect(resolveCodexAuthSource({ agentGroupId: 'ag-1', hostHome: undefined })).toBeNull();
+  });
+
+  it('ignores agent_groups.metadata when no class resolver is registered', () => {
     seedAgentGroup('ag-1', 'student_01');
     setAgentGroupMetadataKey('ag-1', 'student_user_id', 'telegram:42');
     storeStudentAuth('telegram:42', VALID_AUTH_JSON);
-    writeInstructorAuth(); // also present — should be ignored
+    const expected = writeInstructorAuth();
     const result = resolveCodexAuthSource({ agentGroupId: 'ag-1', hostHome: FAKE_HOME });
-    expect(result.source).toBe('student');
-    expect(result.path).toContain('student-auth');
+    expect(result).toEqual({ name: 'instructor', path: expected });
+  });
+});
+
+describe('codex auth resolver chain — class feature registered', () => {
+  beforeEach(() => {
+    // Order matches src/index.ts boot sequence: provider's default first,
+    // then class extensions. Class registration uses unshift, so it
+    // ends up AT the front of the chain → shadows the instructor.
+    registerCodexAuthResolver(instructorHostResolver);
+    registerCodexAuthResolver(studentCodexAuthResolver);
   });
 
-  it('falls back to instructor when student_user_id is set but no auth uploaded yet', () => {
+  it('uses student auth when student_user_id + uploaded auth both present', () => {
+    seedAgentGroup('ag-1', 'student_01');
+    setAgentGroupMetadataKey('ag-1', 'student_user_id', 'telegram:42');
+    storeStudentAuth('telegram:42', VALID_AUTH_JSON);
+    writeInstructorAuth(); // also present — should be shadowed
+    const result = resolveCodexAuthSource({ agentGroupId: 'ag-1', hostHome: FAKE_HOME });
+    expect(result?.name).toBe('student');
+    expect(result?.path).toContain('student-auth');
+  });
+
+  it('falls back to instructor when class resolver returns null (no upload yet)', () => {
     seedAgentGroup('ag-1', 'student_01');
     setAgentGroupMetadataKey('ag-1', 'student_user_id', 'telegram:42');
     const expected = writeInstructorAuth();
     const result = resolveCodexAuthSource({ agentGroupId: 'ag-1', hostHome: FAKE_HOME });
-    expect(result).toEqual({ source: 'instructor', path: expected });
+    expect(result).toEqual({ name: 'instructor', path: expected });
+  });
+
+  it('falls back to instructor for non-class agent groups (no student_user_id)', () => {
+    seedAgentGroup('ag-1', 'main');
+    const expected = writeInstructorAuth();
+    const result = resolveCodexAuthSource({ agentGroupId: 'ag-1', hostHome: FAKE_HOME });
+    expect(result).toEqual({ name: 'instructor', path: expected });
   });
 
   it('treats non-string student_user_id as absent (defensive)', () => {
@@ -116,13 +162,7 @@ describe('resolveCodexAuthSource', () => {
     storeStudentAuth('telegram:42', VALID_AUTH_JSON);
     const expected = writeInstructorAuth();
     const result = resolveCodexAuthSource({ agentGroupId: 'ag-1', hostHome: FAKE_HOME });
-    expect(result).toEqual({ source: 'instructor', path: expected });
-  });
-
-  it('returns "none" when hostHome is undefined and no student auth', () => {
-    seedAgentGroup('ag-1', 'student_01');
-    const result = resolveCodexAuthSource({ agentGroupId: 'ag-1', hostHome: undefined });
-    expect(result).toEqual({ source: 'none', path: null });
+    expect(result).toEqual({ name: 'instructor', path: expected });
   });
 
   it('uses student auth even when hostHome is undefined', () => {
@@ -130,6 +170,36 @@ describe('resolveCodexAuthSource', () => {
     setAgentGroupMetadataKey('ag-1', 'student_user_id', 'telegram:42');
     storeStudentAuth('telegram:42', VALID_AUTH_JSON);
     const result = resolveCodexAuthSource({ agentGroupId: 'ag-1', hostHome: undefined });
-    expect(result.source).toBe('student');
+    expect(result?.name).toBe('student');
+  });
+
+  it('returns null when neither student nor instructor have auth available', () => {
+    seedAgentGroup('ag-1', 'main');
+    expect(resolveCodexAuthSource({ agentGroupId: 'ag-1', hostHome: FAKE_HOME })).toBeNull();
+  });
+});
+
+describe('registry semantics', () => {
+  it('newest registration wins (unshift order)', () => {
+    const callOrder: string[] = [];
+    registerCodexAuthResolver(() => {
+      callOrder.push('first-registered');
+      return null;
+    });
+    registerCodexAuthResolver(() => {
+      callOrder.push('second-registered');
+      return { name: 'second', path: '/whatever' };
+    });
+    const result = resolveCodexAuthSource({ agentGroupId: 'ag-1', hostHome: undefined });
+    // Second registration was prepended, so it ran first and matched —
+    // first-registered never got called.
+    expect(callOrder).toEqual(['second-registered']);
+    expect(result).toEqual({ name: 'second', path: '/whatever' });
+  });
+
+  it('returns null when every resolver returns null', () => {
+    registerCodexAuthResolver(() => null);
+    registerCodexAuthResolver(() => null);
+    expect(resolveCodexAuthSource({ agentGroupId: 'ag-1', hostHome: undefined })).toBeNull();
   });
 });
