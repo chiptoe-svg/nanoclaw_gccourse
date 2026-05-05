@@ -370,18 +370,23 @@ first `issueAuthToken` call. Two routes only; everything else 404s.
       for 9.4 since that's where the welcome message refers to the
       auth link and we'll surface the deploy story together.
 
-#### 9.3 — Codex provider per-student source lookup
-- [ ] `src/providers/codex.ts`: instead of reading `<HOME>/.codex/auth.json`
-      directly, look up the agent group's metadata for `student_user_id`.
-      If found AND `getStudentAuthPath(userId)` exists, copy from there.
-      Otherwise fall back to host's auth (unauthed students keep
-      working on instructor's tab).
-- [ ] Provider context (`ctx`) needs `agentGroupId` (already there)
-      and a way to read metadata — add a small dependency on
-      `getAgentGroupMetadata` (host-side, fine).
-- [ ] Test: synthesize an agent group with student_user_id, write a
-      fixture auth.json, verify the per-session copy comes from the
-      student's path.
+#### 9.3 — Codex provider per-student source lookup ✅
+
+- [x] Extracted `resolveCodexAuthSource({agentGroupId, hostHome})` in
+      `src/providers/codex.ts` — pure-ish (filesystem reads only),
+      testable. Returns `{ source: 'student' | 'instructor' | 'none',
+      path: string | null }`.
+- [x] Lookup order: `agent_groups.metadata.student_user_id` →
+      `getStudentAuthPath(userId)`; if missing, fall back to
+      `<hostHome>/.codex/auth.json`; if still missing, "none" (codex
+      will surface an auth-required error to the agent).
+- [x] Defensive: non-string `student_user_id` is treated as absent
+      (so a stray boolean/number on metadata doesn't break the
+      fallback path).
+- [x] 7 unit tests using real DB + tmp DATA_DIR + tmp HOME: covers
+      none, instructor-only, student-overrides-instructor,
+      student-set-but-not-uploaded → fallback, non-string defensive,
+      hostHome-undefined cases. tsc clean, 375/375 green.
 
 #### 9.4 — `/login` command + welcome integration
 - [ ] New `/login` Telegram handler in the attachment-interceptor

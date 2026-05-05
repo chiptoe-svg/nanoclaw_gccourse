@@ -25,25 +25,71 @@
  * For Codex with ChatGPT subscription auth (the common path), the OAuth
  * token in `auth.json` is the credential — neither OPENAI_API_KEY nor
  * the proxy is involved on that codepath.
+ *
+ * Per-student auth (Phase 9): when the agent group's metadata carries a
+ * `student_user_id` AND that student has uploaded their own auth.json
+ * via the magic-link flow, we copy from the student's stored file
+ * instead of the host's. Otherwise we fall back to the instructor's
+ * host auth.json (so unauthed students keep working on the instructor's
+ * tab and there's a graceful migration window).
  */
 import fs from 'fs';
 import path from 'path';
 
+import { getAgentGroupMetadata } from '../db/agent-groups.js';
+import { log } from '../log.js';
+import { getStudentAuthPath } from '../student-auth.js';
 import { registerProviderContainerConfig } from './provider-container-registry.js';
+
+/**
+ * Pick the source path for a session's auth.json. Per-student first
+ * (when metadata + storage agree), instructor's host auth.json second.
+ * Returns null if no source is available — the session-spawn proceeds
+ * without an auth.json and Codex itself surfaces the auth-required
+ * error to the agent.
+ *
+ * Pure-ish: filesystem reads only. No mutation.
+ */
+export function resolveCodexAuthSource(opts: {
+  agentGroupId: string;
+  hostHome: string | undefined;
+}): { source: 'student' | 'instructor' | 'none'; path: string | null } {
+  const meta = getAgentGroupMetadata(opts.agentGroupId);
+  const studentUserId = typeof meta.student_user_id === 'string' ? meta.student_user_id : null;
+  if (studentUserId) {
+    const studentPath = getStudentAuthPath(studentUserId);
+    if (studentPath) {
+      return { source: 'student', path: studentPath };
+    }
+  }
+  if (opts.hostHome) {
+    const hostAuth = path.join(opts.hostHome, '.codex', 'auth.json');
+    if (fs.existsSync(hostAuth)) {
+      return { source: 'instructor', path: hostAuth };
+    }
+  }
+  return { source: 'none', path: null };
+}
 
 registerProviderContainerConfig('codex', (ctx) => {
   const codexDir = path.join(ctx.sessionDir, 'codex');
   fs.mkdirSync(codexDir, { recursive: true });
 
-  // Copy the host's auth.json into the per-session dir if it exists.
-  // We only copy auth.json, not the full ~/.codex — config.toml would
-  // get clobbered by the container on every wake anyway.
-  const hostHome = ctx.hostEnv.HOME;
-  if (hostHome) {
-    const hostAuth = path.join(hostHome, '.codex', 'auth.json');
-    if (fs.existsSync(hostAuth)) {
-      fs.copyFileSync(hostAuth, path.join(codexDir, 'auth.json'));
-    }
+  const resolved = resolveCodexAuthSource({
+    agentGroupId: ctx.agentGroupId,
+    hostHome: ctx.hostEnv.HOME,
+  });
+
+  if (resolved.path) {
+    fs.copyFileSync(resolved.path, path.join(codexDir, 'auth.json'));
+    log.info('codex provider: auth source resolved', {
+      agentGroupId: ctx.agentGroupId,
+      source: resolved.source,
+    });
+  } else {
+    log.warn('codex provider: no auth.json available — session will need /login', {
+      agentGroupId: ctx.agentGroupId,
+    });
   }
 
   const env: Record<string, string> = {};
