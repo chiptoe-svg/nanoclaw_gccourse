@@ -410,29 +410,56 @@ first `issueAuthToken` call. Two routes only; everything else 404s.
       fallback, empty fallback, custom override file with
       auth_url). 379/379 green, tsc clean.
 
-#### 9.5 — Refresh-failure re-auth nudge
-- [ ] In `container/agent-runner/src/`, detect Codex auth-refresh
-      failures (specific error code/string from the Codex CLI/SDK —
-      need to verify the exact pattern; placeholder until tested in
-      Phase 7).
-- [ ] On detection, emit a system-action outbound message
-      (`{kind: "system", action: "request-reauth", userId}`).
-- [ ] Host delivery handler for `request-reauth`: issue a fresh
-      magic-link token, DM the student "Your auth needs refreshing
-      — open this link to re-authenticate."
+#### 9.5 — Refresh-failure re-auth nudge ✅ (host-side complete; container detection best-effort pending Phase 7 calibration)
 
-#### 9.6 — Tests + smoke
-- [ ] Unit tests for 9.1 + 9.3.
+- [x] Host: `src/student-auth-handlers.ts` registers a delivery
+      action for `request_reauth`. Looks up the agent group's
+      `student_user_id` from metadata, issues a fresh magic-link
+      token, builds the URL, and delivers a chat DM to the
+      student's messaging group via the active channel adapter.
+      Falls back to "ask your instructor" when
+      NANOCLAW_PUBLIC_URL is unset. Imported from `src/index.ts`
+      so the registration fires at host boot.
+- [x] Container: `container/agent-runner/src/auth-nudge.ts` exposes
+      `looksLikeAuthFailure(message)` (defensive regex covering
+      OAuth invalid_grant, 401, "authentication failed", "token
+      expired", "invalid token") and `requestReauth(reason)` which
+      writes the `{kind: 'system', action: 'request_reauth',
+      reason}` outbound row. 5-minute debounce per session so a
+      cascading-error storm doesn't spam the student.
+- [x] 8 unit tests in `auth-nudge.test.ts` (bun:test) covering the
+      regex matches and non-matches.
+- [ ] Wire actual call sites in the codex provider's error path —
+      deferred to Phase 7 smoke test where we can observe real
+      error patterns from the app-server. The helper exists; the
+      detector regex is best-effort; call-site wiring is the part
+      that benefits from real-world calibration.
+
+**Net:** the entire chain plumbing is ready. As soon as we observe
+an actual Codex refresh-failure pattern in Phase 7, we add a single
+`if (looksLikeAuthFailure(err.message)) requestReauth(err.message);`
+call in the right place.
+
+#### 9.6 — Tests + smoke ✅
+
+- [x] 20 unit tests for 9.1 (storage), 14 for 9.2 (HTTP server),
+      7 for 9.3 (provider source resolver), 4 added for 9.4
+      (auth_url substitution), 8 for 9.5 (auth-failure regex on
+      container side).
+- [x] `pnpm exec tsc --noEmit` clean. Host: 379/379 green.
+      Container: 73/73 green via `bun test`.
 - [ ] Manual end-to-end as part of Phase 7 smoke test:
     - Student receives auth link in welcome.
-    - Student does `codex login` locally, uploads auth.json.
-    - Subsequent agent activity uses student's account quota
-      (verify in OpenAI dashboard if the student grants visibility).
-- [ ] `pnpm exec tsc --noEmit` + `pnpm test` green.
-
-**Open**: 9.5's exact error pattern depends on what Codex's CLI/SDK
-emits when refresh fails. May need to wait for Phase 7 to surface a
-real failure to lock in the regex. Until then 9.5 is best-effort.
+    - Student does `codex login` locally, uploads auth.json via the
+      magic-link page.
+    - Codex provider for that student's session uses the student's
+      auth.json (verify via log line `codex provider: auth source
+      resolved` with `source: "student"`).
+    - Subsequent agent activity draws from the student's ChatGPT
+      quota.
+- [ ] Update `plans/class-smoke-test.md` Phase 7 runbook with the
+      Phase 9 verification steps (auth link click → upload → log
+      line → quota observation).
 
 ## Open questions
 

@@ -74,10 +74,7 @@ export function getClassWelcomeText(ctx: ClassWelcomeContext): string {
     ctx.authUrl && ctx.authUrl.length > 0
       ? ctx.authUrl
       : "(ask your instructor for the auth link — NANOCLAW_PUBLIC_URL isn't configured)";
-  return template
-    .replaceAll('{name}', ctx.name)
-    .replaceAll('{drive_url}', driveUrl)
-    .replaceAll('{auth_url}', authUrl);
+  return template.replaceAll('{name}', ctx.name).replaceAll('{drive_url}', driveUrl).replaceAll('{auth_url}', authUrl);
 }
 
 function readTemplate(): string {

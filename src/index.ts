@@ -54,6 +54,11 @@ import './channels/index.js';
 // append registry-based modules. Imported for side effects (registrations).
 import './modules/index.js';
 
+// Class feature: register the request_reauth delivery-action handler so
+// container-side refresh-failure events get translated into a magic-link
+// DM nudge to the student. No-op when nothing emits the action.
+import './student-auth-handlers.js';
+
 import type { ChannelAdapter, ChannelSetup } from './channels/adapter.js';
 import { initChannelAdapters, teardownChannelAdapters, getChannelAdapter } from './channels/channel-registry.js';
 
