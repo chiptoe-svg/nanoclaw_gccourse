@@ -35,9 +35,8 @@ import {
   getDraftStatus,
   listAgentGroups,
   listDrafts,
-  targetFolderOf,
 } from '../agent-builder/core.js';
-import { isClassStudentFolder } from '../class-config.js';
+import { checkDraftMutation } from './playground-gate-registry.js';
 import { GROUPS_DIR } from '../config.js';
 import { getAgentGroupByFolder, updateAgentGroup } from '../db/agent-groups.js';
 import { getActiveSessions, updateSession } from '../db/sessions.js';
@@ -48,24 +47,6 @@ import type { ChannelAdapter, ChannelSetup, InboundEvent, OutboundMessage } from
 import { registerChannelAdapter } from './channel-registry.js';
 
 const PLATFORM_PREFIX = 'playground:';
-
-/**
- * Class-student drafts get a locked-down playground: only the persona
- * pane (CLAUDE.local.md) is editable. The file editor, skills selector,
- * and provider switcher all 403. Reasoning: the instructor curates
- * shared CLAUDE.md, container.json, and provider/skill choices for the
- * class — students customize their personality only.
- */
-function isClassStudentDraft(draftFolder: string): boolean {
-  try {
-    return isClassStudentFolder(targetFolderOf(draftFolder));
-  } catch {
-    return false; // not a draft folder
-  }
-}
-
-const STUDENT_LOCKED_MESSAGE =
-  'Class-student drafts only allow persona edits. Use the persona pane to edit CLAUDE.local.md.';
 
 // ── Magic-link auth ────────────────────────────────────────────────────────
 //
@@ -505,7 +486,10 @@ async function route(req: http.IncomingMessage, res: http.ServerResponse, url: U
   const providerMatch = url.pathname.match(/^\/api\/drafts\/(draft_[A-Za-z0-9_-]+)\/provider$/);
   if (method === 'PUT' && providerMatch) {
     const draftFolder = providerMatch[1]!;
-    if (isClassStudentDraft(draftFolder)) return send(res, 403, { error: STUDENT_LOCKED_MESSAGE });
+    {
+      const decision = checkDraftMutation(draftFolder, 'provider_put');
+      if (!decision.allow) return send(res, 403, { error: decision.reason || 'Forbidden' });
+    }
     const body = await readJsonBody(req);
     const provider = body.provider as string | undefined;
     if (!provider) return send(res, 400, { error: 'provider required' });
@@ -608,10 +592,11 @@ async function route(req: http.IncomingMessage, res: http.ServerResponse, url: U
   if (fileMatch && (method === 'GET' || method === 'PUT')) {
     const draftFolder = fileMatch[1]!;
     const relPath = decodeURIComponent(fileMatch[2]!);
-    // Class students can read any file (informational), but writes are
-    // restricted to the persona pane. Use /api/drafts/:folder/persona.
-    if (method === 'PUT' && isClassStudentDraft(draftFolder)) {
-      return send(res, 403, { error: STUDENT_LOCKED_MESSAGE });
+    // Mutation gates (file PUT only — GETs are always allowed). Class
+    // feature uses this to lock student drafts down to persona edits.
+    if (method === 'PUT') {
+      const decision = checkDraftMutation(draftFolder, 'file_put');
+      if (!decision.allow) return send(res, 403, { error: decision.reason || 'Forbidden' });
     }
     // Path-traversal defense: reject .. or anything that resolves outside.
     if (relPath.split('/').some((seg) => seg === '..' || seg.startsWith('.'))) {
@@ -676,7 +661,10 @@ async function route(req: http.IncomingMessage, res: http.ServerResponse, url: U
   }
   if (method === 'PUT' && skillsMatch) {
     const draftFolder = skillsMatch[1]!;
-    if (isClassStudentDraft(draftFolder)) return send(res, 403, { error: STUDENT_LOCKED_MESSAGE });
+    {
+      const decision = checkDraftMutation(draftFolder, 'skills_put');
+      if (!decision.allow) return send(res, 403, { error: decision.reason || 'Forbidden' });
+    }
     const body = await readJsonBody(req);
     const skills = body.skills as string[] | 'all' | undefined;
     if (skills === undefined || (skills !== 'all' && !Array.isArray(skills))) {

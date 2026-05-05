@@ -517,17 +517,23 @@ behavior of the class feature does not change.
       (empty, multi-contributor concat, ctx passthrough, registration
       order). 388/388 host tests green, tsc clean.
 
-#### 10.3 — `registerDraftMutationGate`
-- [ ] In `src/channels/playground.ts`:
-      `registerDraftMutationGate((draftFolder, action: 'file_put' |
-      'skills_put' | 'provider_put') => { allow: boolean; reason?: string })`.
-      `checkDraftMutation(draftFolder, action)` returns the first
-      gate that denies, else allow.
-- [ ] Class gate (`src/class-playground-gate.ts`) wraps
-      `isClassStudentDraft` + the locked-message string. The three
+#### 10.3 — `registerDraftMutationGate` ✅
+
+- [x] New `src/channels/playground-gate-registry.ts`:
+      `registerDraftMutationGate(gate)` and `checkDraftMutation(folder,
+      action)`. First-deny-wins; empty chain allows everything.
+      Action enum is `'file_put' | 'skills_put' | 'provider_put'`.
+- [x] Class gate moved to `src/class-playground-gate.ts`. Wraps
+      `isClassStudentDraft` + the lockdown message. The three
       inline `if (isClassStudentDraft(...)) return 403` calls in
       `playground.ts` collapse to one `checkDraftMutation` call per
       endpoint.
+- [x] `playground.ts` no longer imports `isClassStudentFolder` or
+      `targetFolderOf`, no longer carries `STUDENT_LOCKED_MESSAGE`
+      — class-agnostic again.
+- [x] 6 registry tests (default-allow, first-deny-wins, skip-allow,
+      all-allow, ctx passthrough, missing-reason). 394/394 host tests
+      green, tsc clean.
 
 #### 10.4 — `registerTelegramCommand`
 - [ ] New `src/channels/telegram-commands.ts`:
