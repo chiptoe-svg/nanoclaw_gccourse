@@ -82,4 +82,44 @@ describe('getClassWelcomeText', () => {
     expect(text).toContain('Hi Eve!');
     expect(text).toContain('https://example.com/z');
   });
+
+  it('substitutes {auth_url} when authUrl is provided', () => {
+    const text = getClassWelcomeText({
+      name: 'Alice',
+      driveUrl: 'https://drive.example/x',
+      authUrl: 'https://nano.example.com/student-auth?t=abc',
+    });
+    expect(text).toContain('https://nano.example.com/student-auth?t=abc');
+    expect(text).not.toContain('{auth_url}');
+  });
+
+  it('falls back to a neutral message when authUrl is null (NANOCLAW_PUBLIC_URL unset)', () => {
+    const text = getClassWelcomeText({
+      name: 'Alice',
+      driveUrl: 'https://drive.example/x',
+      authUrl: null,
+    });
+    expect(text).toContain('NANOCLAW_PUBLIC_URL');
+    expect(text).not.toContain('{auth_url}');
+  });
+
+  it('falls back when authUrl is empty string', () => {
+    const text = getClassWelcomeText({
+      name: 'Alice',
+      driveUrl: 'https://drive.example/x',
+      authUrl: '',
+    });
+    expect(text).toContain('NANOCLAW_PUBLIC_URL');
+  });
+
+  it('substitutes {auth_url} from a custom override template', () => {
+    fs.mkdirSync(TEST_DIR, { recursive: true });
+    fs.writeFileSync(TEMPLATE_PATH, 'Hi {name}. Connect: {auth_url}');
+    const text = getClassWelcomeText({
+      name: 'Bob',
+      driveUrl: null,
+      authUrl: 'https://nano.example.com/student-auth?t=xyz',
+    });
+    expect(text).toBe('Hi Bob. Connect: https://nano.example.com/student-auth?t=xyz');
+  });
 });

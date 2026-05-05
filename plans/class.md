@@ -388,21 +388,27 @@ first `issueAuthToken` call. Two routes only; everything else 404s.
       student-set-but-not-uploaded → fallback, non-string defensive,
       hostHome-undefined cases. tsc clean, 375/375 green.
 
-#### 9.4 — `/login` command + welcome integration
-- [ ] New `/login` Telegram handler in the attachment-interceptor
-      block (alongside `/auth`). Issues a fresh magic-link token via
-      9.2, DMs the URL. Idempotent — student can re-issue if they
-      lose the link.
-- [ ] Pair handler: stash `student_user_id` on metadata
-      (`pairedUserId` is already in scope at line ~202).
-- [ ] Welcome template (`src/class-welcome.ts`): new `{auth_url}`
-      placeholder. At welcome-render time, pair handler issues a
-      magic-link token for the just-paired student and substitutes
-      the URL. Default template gets a "Send /login any time to
-      re-issue this link" line.
-- [ ] If `NANOCLAW_PUBLIC_URL` is unset, welcome falls back to a
-      "Ask your instructor for the auth link" message — don't render
-      a broken localhost URL.
+#### 9.4 — `/login` command + welcome integration ✅
+
+- [x] `/login` Telegram handler in the attachment-interceptor block
+      (alongside `/auth`, `/model`, `/playground`). Issues a fresh
+      magic-link token for the message author, builds the URL via
+      9.2, DMs it. Idempotent — students can re-issue any time.
+      Surfaces "ask your instructor" reply when NANOCLAW_PUBLIC_URL
+      isn't set rather than a broken localhost URL.
+- [x] Pair handler: stamps `student_user_id` on agent group
+      metadata (the `pairedUserId` already in scope), so 9.3's codex
+      provider lookup has the key it needs.
+- [x] Class welcome template grew an `{auth_url}` placeholder.
+      Default template gets a third orientation bullet pointing at
+      the link, with a "Send /login any time" reminder. Pair handler
+      issues a fresh token at welcome-send time and substitutes.
+- [x] Empty/null authUrl falls back to "(ask your instructor for the
+      auth link — NANOCLAW_PUBLIC_URL isn't configured)" so a
+      partial deploy still produces a readable welcome.
+- [x] 4 additional welcome unit tests (auth_url substitution, null
+      fallback, empty fallback, custom override file with
+      auth_url). 379/379 green, tsc clean.
 
 #### 9.5 — Refresh-failure re-auth nudge
 - [ ] In `container/agent-runner/src/`, detect Codex auth-refresh

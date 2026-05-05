@@ -49,6 +49,7 @@ import { findClassStudent, readClassConfig } from '../class-config.js';
 import { createStudentFolder } from '../class-drive.js';
 import { getClassWelcomeText } from '../class-welcome.js';
 import { getAgentGroupMetadata } from '../db/agent-groups.js';
+import { buildAuthUrl, issueAuthToken } from '../student-auth-server.js';
 
 /**
  * Retry a one-shot operation that can fail on transient network errors at
@@ -221,9 +222,10 @@ function createPairingInterceptor(
 
       // Class flow: when the wire-to target is a provisioned class student,
       // we replace the generic pairing confirmation with a tailored welcome
-      // (greeting + privacy notice + Drive folder link + /playground hint).
-      // Captured here, sent at the end of this handler.
-      let classWelcome: { name: string; driveUrl: string | null } | null = null;
+      // (greeting + privacy notice + Drive folder link + /playground hint
+      // + Codex auth magic link). Captured here, sent at the end of this
+      // handler.
+      let classWelcome: { name: string; driveUrl: string | null; authUrl: string | null } | null = null;
 
       // Wire-to intent: bind this chat to the named agent group folder so
       // future messages route to it. The pairing record has done its job
@@ -266,15 +268,17 @@ function createPairingInterceptor(
                 folder: targetFolder,
               });
             }
-            // Class flow: persist the student email + display name on the
-            // agent group's metadata blob so Drive folder creation (and any
-            // future class-aware feature) can find it.
+            // Class flow: persist the student email + display name + paired
+            // user_id on the agent group's metadata blob so Drive folder
+            // creation, Phase 9's per-student Codex auth lookup, and any
+            // future class-aware feature can find them.
             const student = findClassStudent(targetFolder);
             if (student) {
               if (consumed.consumed?.email) {
                 setAgentGroupMetadataKey(ag.id, 'student_email', consumed.consumed.email);
               }
               setAgentGroupMetadataKey(ag.id, 'student_name', student.name);
+              setAgentGroupMetadataKey(ag.id, 'student_user_id', pairedUserId);
 
               // Create the per-student Drive folder + share with their email.
               // Inline (not background) so the agent's first message can
@@ -312,7 +316,20 @@ function createPairingInterceptor(
               // the student's orientation message.
               const finalMeta = getAgentGroupMetadata(ag.id);
               const driveUrl = typeof finalMeta.drive_folder_url === 'string' ? finalMeta.drive_folder_url : null;
-              classWelcome = { name: student.name, driveUrl };
+              // Issue a fresh Codex-auth magic link the welcome can link to
+              // immediately. buildAuthUrl returns null when NANOCLAW_PUBLIC_URL
+              // isn't configured — welcome template handles that case with a
+              // "ask your instructor" fallback.
+              let authUrl: string | null = null;
+              try {
+                const token = issueAuthToken(pairedUserId);
+                authUrl = buildAuthUrl(token);
+              } catch (err) {
+                log.warn('Class welcome: failed to issue auth token', {
+                  err: err instanceof Error ? err.message : String(err),
+                });
+              }
+              classWelcome = { name: student.name, driveUrl, authUrl };
             }
           }
         }
@@ -646,6 +663,44 @@ async function sendTelegram(token: string, chatId: string, text: string): Promis
 }
 
 /**
+ * Handle the /login Telegram command (Phase 9).
+ *
+ * Issues a fresh student-auth magic-link token for the message author
+ * and DMs the URL. Idempotent — students can re-issue any time (if
+ * they lose the link, refresh-token expires, etc.). When
+ * NANOCLAW_PUBLIC_URL isn't configured we surface a "ask your
+ * instructor" message instead of a broken localhost URL.
+ *
+ * Returns true to consume the message (don't forward to pairing /
+ * router); false otherwise.
+ */
+async function handleLoginCommand(
+  token: string,
+  platformId: string,
+  text: string,
+  authorUserId: string | null,
+): Promise<boolean> {
+  if (!text.startsWith('/login')) return false;
+  if (!authorUserId) return false;
+  const userId = `telegram:${authorUserId}`;
+  let reply: string;
+  try {
+    const authToken = issueAuthToken(userId);
+    const url = buildAuthUrl(authToken);
+    reply = url
+      ? `Open this link to connect your ChatGPT account: ${url}\n\n(Link is single-use and expires in 30 minutes.)`
+      : "I can't generate a link right now — your instructor needs to set NANOCLAW_PUBLIC_URL. Ping them.";
+  } catch (err) {
+    log.warn('handleLoginCommand: failed to issue token', {
+      err: err instanceof Error ? err.message : String(err),
+    });
+    reply = "Sorry, I couldn't issue an auth link. Try again or contact your instructor.";
+  }
+  await sendTelegramText(token, platformId, reply, '/login');
+  return true;
+}
+
+/**
  * Handle the /auth Telegram command.
  * - `/auth`       → show current mode + OAuth status
  * - `/auth api`   → switch to API key mode
@@ -711,10 +766,15 @@ function createAttachmentInterceptor(
   pairingOnInbound: ChannelSetup['onInbound'],
 ): ChannelSetup['onInbound'] {
   return async (platformId, threadId, message) => {
-    // Handle /auth and /model commands — consume the message if matched
+    // Handle /auth, /model, /playground, /login — consume the message
+    // if matched so the router doesn't see them.
     if (message.kind === 'chat-sdk' && message.content && typeof message.content === 'object') {
       const c = message.content as ContentRecord;
       const text: string = c.text ?? '';
+      const authorUserId =
+        typeof c.author === 'object' && c.author && typeof (c.author as { userId?: unknown }).userId === 'string'
+          ? ((c.author as { userId: string }).userId as string)
+          : null;
       if (text.startsWith('/auth')) {
         const consumed = await handleAuthCommand(token, platformId, text);
         if (consumed) return;
@@ -725,6 +785,10 @@ function createAttachmentInterceptor(
       }
       if (text.startsWith('/playground')) {
         const consumed = await handlePlaygroundCommand(token, platformId, text);
+        if (consumed) return;
+      }
+      if (text.startsWith('/login')) {
+        const consumed = await handleLoginCommand(token, platformId, text, authorUserId);
         if (consumed) return;
       }
     }
