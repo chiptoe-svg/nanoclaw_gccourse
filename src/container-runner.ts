@@ -16,6 +16,7 @@ import {
   GROUPS_DIR,
   TIMEZONE,
 } from './config.js';
+import { collectContainerEnv } from './container-env-registry.js';
 import { readContainerConfig, writeContainerConfig } from './container-config.js';
 import {
   CONTAINER_HOST_GATEWAY,
@@ -25,7 +26,7 @@ import {
   stopContainer,
 } from './container-runtime.js';
 import { composeGroupClaudeMd } from './claude-md-compose.js';
-import { getAgentGroup, getAgentGroupMetadata } from './db/agent-groups.js';
+import { getAgentGroup } from './db/agent-groups.js';
 import { getDb, hasTable } from './db/connection.js';
 import { initGroupFilesystem } from './group-init.js';
 import { stopTypingRefresh } from './modules/typing/index.js';
@@ -223,26 +224,6 @@ export function resolveProviderName(
   containerConfigProvider: string | null | undefined,
 ): string {
   return (sessionProvider || agentGroupProvider || containerConfigProvider || 'claude').toLowerCase();
-}
-
-/**
- * Build GIT_AUTHOR_* / GIT_COMMITTER_* env pairs from agent_groups.metadata.
- *
- * Used so that wiki commits made from inside a student's container are
- * attributed to that student in `git log`. We only emit the env vars when
- * BOTH name and email are present and non-empty — partial attribution is
- * worse than git's default (which surfaces the misconfiguration loudly).
- */
-export function gitAuthorEnvFromMetadata(metadata: Record<string, unknown>): Array<[string, string]> {
-  const name = typeof metadata.student_name === 'string' ? metadata.student_name.trim() : '';
-  const email = typeof metadata.student_email === 'string' ? metadata.student_email.trim() : '';
-  if (!name || !email) return [];
-  return [
-    ['GIT_AUTHOR_NAME', name],
-    ['GIT_AUTHOR_EMAIL', email],
-    ['GIT_COMMITTER_NAME', name],
-    ['GIT_COMMITTER_EMAIL', email],
-  ];
 }
 
 function resolveProviderContribution(
@@ -522,12 +503,11 @@ async function buildContainerArgs(
     }
   }
 
-  // Per-student git identity (Phase 4). When the agent group has a
-  // student_name + student_email on its metadata (set by the class pair
-  // handler), inject GIT_AUTHOR_* / GIT_COMMITTER_* so any git commits
-  // the agent makes — typically against the shared wiki at /workspace/wiki —
-  // are attributed to the real student.
-  for (const [key, value] of gitAuthorEnvFromMetadata(getAgentGroupMetadata(agentGroup.id))) {
+  // Extension-contributed env vars (e.g. class feature's GIT_AUTHOR_*
+  // injection). Each contributor decides what to emit per agent group;
+  // returns empty when nothing applies. No-op when no contributors are
+  // registered (default install).
+  for (const [key, value] of collectContainerEnv({ agentGroup })) {
     args.push('-e', `${key}=${value}`);
   }
 

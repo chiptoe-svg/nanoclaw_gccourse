@@ -501,15 +501,21 @@ behavior of the class feature does not change.
       (2 — newest-wins + all-null). 384/384 host tests green,
       tsc clean.
 
-#### 10.2 — `registerContainerEnvContributor`
-- [ ] New registry: `registerContainerEnvContributor((ctx: { agentGroup })
-      => Array<[string, string]>)`. Container-runner calls
-      `collectContainerEnv(ctx)` and pushes the union as `-e` args.
-- [ ] Class contributor (`src/class-container-env.ts`) wraps
-      `gitAuthorEnvFromMetadata`. The current inline lookup in
-      `buildContainerArgs` goes away.
-- [ ] `gitAuthorEnvFromMetadata` itself stays as a pure helper that
-      the class contributor calls. Its 7 tests stay green.
+#### 10.2 — `registerContainerEnvContributor` ✅
+
+- [x] New `src/container-env-registry.ts`:
+      `registerContainerEnvContributor(fn)` and
+      `collectContainerEnv(ctx)`. Container-runner calls collect
+      once per spawn, pushes union as `-e` args.
+- [x] Class contributor moved to `src/class-container-env.ts`,
+      registers itself at import. `gitAuthorEnvFromMetadata` moved
+      with it as a pure helper.
+- [x] container-runner.ts no longer imports `getAgentGroupMetadata`
+      or knows about student metadata at all — class-agnostic again.
+- [x] gitAuthor tests moved from container-runner.test.ts to
+      class-container-env.test.ts (still 7); +4 new registry tests
+      (empty, multi-contributor concat, ctx passthrough, registration
+      order). 388/388 host tests green, tsc clean.
 
 #### 10.3 — `registerDraftMutationGate`
 - [ ] In `src/channels/playground.ts`:

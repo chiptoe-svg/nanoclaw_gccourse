@@ -60,6 +60,7 @@ import './modules/index.js';
 // Phase 8 will eventually pull these out of main into an install skill;
 // for now they sit here as a self-contained block.
 import './class-codex-auth.js';
+import './class-container-env.js';
 import './student-auth-handlers.js';
 
 import type { ChannelAdapter, ChannelSetup } from './channels/adapter.js';
