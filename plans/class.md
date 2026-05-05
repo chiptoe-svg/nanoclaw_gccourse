@@ -535,16 +535,28 @@ behavior of the class feature does not change.
       all-allow, ctx passthrough, missing-reason). 394/394 host tests
       green, tsc clean.
 
-#### 10.4 — `registerTelegramCommand`
-- [ ] New `src/channels/telegram-commands.ts`:
-      `registerTelegramCommand(prefix, handler)`,
-      `dispatchTelegramCommand(ctx) → Promise<boolean>`.
-- [ ] Existing `/auth`, `/model`, `/playground` handlers in
-      `telegram.ts` register themselves. The inline `if
-      (text.startsWith(...))` block in `createAttachmentInterceptor`
-      becomes a single `dispatchTelegramCommand` call.
-- [ ] Class `/login` handler moves to
-      `src/class-telegram-commands.ts`, registers itself.
+#### 10.4 — `registerTelegramCommand` ✅
+
+- [x] New `src/channels/telegram-commands.ts`: `registerTelegramCommand`,
+      `dispatchTelegramCommand`. Boundary-aware prefix matching
+      (so `/auth` matches `/auth foo` but NOT `/authy`).
+- [x] `/auth`, `/model`, `/playground` register themselves at the
+      bottom of `telegram.ts`. The inline `if (text.startsWith(...))`
+      block in `createAttachmentInterceptor` collapses to one
+      `dispatchTelegramCommand` call gated on `text.startsWith('/')`.
+- [x] `/login` handler moved to `src/class-telegram-commands.ts`,
+      registers itself; imports `sendTelegramText` (now exported)
+      from telegram.ts.
+- [x] Telegram channel core no longer carries `/login` or its
+      dependencies on `student-auth-server`'s issuance API for
+      command purposes. (The pair handler still calls
+      `issueAuthToken`/`buildAuthUrl` for the welcome message —
+      that's Phase 10.5's territory.)
+- [x] 9 dispatcher tests (no-match, match-and-consume, prefix
+      boundary `/authy` rejected, exact-match, whitespace match,
+      fall-through on `false`, registration-order, ctx passthrough,
+      reject prefix without leading slash). 403/403 host tests
+      green, tsc clean.
 
 #### 10.5 — `registerPairConsumer`
 - [ ] Biggest extraction: the ~80-line class-flow block in the

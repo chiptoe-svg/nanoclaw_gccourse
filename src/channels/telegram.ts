@@ -50,6 +50,7 @@ import { createStudentFolder } from '../class-drive.js';
 import { getClassWelcomeText } from '../class-welcome.js';
 import { getAgentGroupMetadata } from '../db/agent-groups.js';
 import { buildAuthUrl, issueAuthToken } from '../student-auth-server.js';
+import { dispatchTelegramCommand, registerTelegramCommand } from './telegram-commands.js';
 
 /**
  * Retry a one-shot operation that can fail on transient network errors at
@@ -125,7 +126,7 @@ function readInboundFields(message: InboundMessage): InboundFields {
  * are logged but never propagated, so a Telegram outage can't undo a successful
  * pairing or trigger the interceptor's fail-open path.
  */
-async function sendTelegramText(token: string, platformId: string, text: string, label: string): Promise<void> {
+export async function sendTelegramText(token: string, platformId: string, text: string, label: string): Promise<void> {
   const chatId = platformId.split(':').slice(1).join(':');
   if (!chatId) return;
   try {
@@ -663,44 +664,6 @@ async function sendTelegram(token: string, chatId: string, text: string): Promis
 }
 
 /**
- * Handle the /login Telegram command (Phase 9).
- *
- * Issues a fresh student-auth magic-link token for the message author
- * and DMs the URL. Idempotent — students can re-issue any time (if
- * they lose the link, refresh-token expires, etc.). When
- * NANOCLAW_PUBLIC_URL isn't configured we surface a "ask your
- * instructor" message instead of a broken localhost URL.
- *
- * Returns true to consume the message (don't forward to pairing /
- * router); false otherwise.
- */
-async function handleLoginCommand(
-  token: string,
-  platformId: string,
-  text: string,
-  authorUserId: string | null,
-): Promise<boolean> {
-  if (!text.startsWith('/login')) return false;
-  if (!authorUserId) return false;
-  const userId = `telegram:${authorUserId}`;
-  let reply: string;
-  try {
-    const authToken = issueAuthToken(userId);
-    const url = buildAuthUrl(authToken);
-    reply = url
-      ? `Open this link to connect your ChatGPT account: ${url}\n\n(Link is single-use and expires in 30 minutes.)`
-      : "I can't generate a link right now — your instructor needs to set NANOCLAW_PUBLIC_URL. Ping them.";
-  } catch (err) {
-    log.warn('handleLoginCommand: failed to issue token', {
-      err: err instanceof Error ? err.message : String(err),
-    });
-    reply = "Sorry, I couldn't issue an auth link. Try again or contact your instructor.";
-  }
-  await sendTelegramText(token, platformId, reply, '/login');
-  return true;
-}
-
-/**
  * Handle the /auth Telegram command.
  * - `/auth`       → show current mode + OAuth status
  * - `/auth api`   → switch to API key mode
@@ -755,9 +718,17 @@ async function handleAuthCommand(token: string, platformId: string, text: string
   return true;
 }
 
+// ── Built-in command registrations ─────────────────────────────────────────
+// /auth, /model, /playground all ship with main. /login (class feature)
+// registers itself from src/class-telegram-commands.ts when imported.
+
+registerTelegramCommand('/auth', (ctx) => handleAuthCommand(ctx.token, ctx.platformId, ctx.text));
+registerTelegramCommand('/model', (ctx) => handleModelCommand(ctx.token, ctx.platformId, ctx.text));
+registerTelegramCommand('/playground', (ctx) => handlePlaygroundCommand(ctx.token, ctx.platformId, ctx.text));
+
 /**
  * Outer interceptor that applies fork customizations (attachment processing,
- * /auth command) before forwarding to the pairing interceptor.
+ * slash-command dispatch) before forwarding to the pairing interceptor.
  * Wraps the already-pairing-wrapped onInbound so the call chain is:
  *   adapter → attachmentInterceptor → pairingInterceptor → hostOnInbound (router)
  */
@@ -766,8 +737,8 @@ function createAttachmentInterceptor(
   pairingOnInbound: ChannelSetup['onInbound'],
 ): ChannelSetup['onInbound'] {
   return async (platformId, threadId, message) => {
-    // Handle /auth, /model, /playground, /login — consume the message
-    // if matched so the router doesn't see them.
+    // Slash commands: dispatch to registered handlers. Anything that
+    // returns true short-circuits the rest of the chain.
     if (message.kind === 'chat-sdk' && message.content && typeof message.content === 'object') {
       const c = message.content as ContentRecord;
       const text: string = c.text ?? '';
@@ -775,20 +746,8 @@ function createAttachmentInterceptor(
         typeof c.author === 'object' && c.author && typeof (c.author as { userId?: unknown }).userId === 'string'
           ? ((c.author as { userId: string }).userId as string)
           : null;
-      if (text.startsWith('/auth')) {
-        const consumed = await handleAuthCommand(token, platformId, text);
-        if (consumed) return;
-      }
-      if (text.startsWith('/model')) {
-        const consumed = await handleModelCommand(token, platformId, text);
-        if (consumed) return;
-      }
-      if (text.startsWith('/playground')) {
-        const consumed = await handlePlaygroundCommand(token, platformId, text);
-        if (consumed) return;
-      }
-      if (text.startsWith('/login')) {
-        const consumed = await handleLoginCommand(token, platformId, text, authorUserId);
+      if (text.startsWith('/')) {
+        const consumed = await dispatchTelegramCommand({ token, platformId, text, authorUserId });
         if (consumed) return;
       }
     }

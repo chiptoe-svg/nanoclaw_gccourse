@@ -62,6 +62,7 @@ import './modules/index.js';
 import './class-codex-auth.js';
 import './class-container-env.js';
 import './class-playground-gate.js';
+import './class-telegram-commands.js';
 import './student-auth-handlers.js';
 
 import type { ChannelAdapter, ChannelSetup } from './channels/adapter.js';
