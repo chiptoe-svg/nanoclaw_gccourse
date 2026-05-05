@@ -33,9 +33,7 @@ describe('resolveProviderName', () => {
 
 describe('gitAuthorEnvFromMetadata', () => {
   it('emits GIT_AUTHOR + GIT_COMMITTER pairs when name and email are present', () => {
-    expect(
-      gitAuthorEnvFromMetadata({ student_name: 'Alice Chen', student_email: 'alice@school.edu' }),
-    ).toEqual([
+    expect(gitAuthorEnvFromMetadata({ student_name: 'Alice Chen', student_email: 'alice@school.edu' })).toEqual([
       ['GIT_AUTHOR_NAME', 'Alice Chen'],
       ['GIT_AUTHOR_EMAIL', 'alice@school.edu'],
       ['GIT_COMMITTER_NAME', 'Alice Chen'],
@@ -56,15 +54,11 @@ describe('gitAuthorEnvFromMetadata', () => {
   });
 
   it('treats whitespace-only values as missing', () => {
-    expect(
-      gitAuthorEnvFromMetadata({ student_name: '   ', student_email: 'alice@school.edu' }),
-    ).toEqual([]);
+    expect(gitAuthorEnvFromMetadata({ student_name: '   ', student_email: 'alice@school.edu' })).toEqual([]);
   });
 
   it('trims surrounding whitespace before emitting', () => {
-    expect(
-      gitAuthorEnvFromMetadata({ student_name: '  Bob  ', student_email: '  bob@school.edu  ' }),
-    ).toEqual([
+    expect(gitAuthorEnvFromMetadata({ student_name: '  Bob  ', student_email: '  bob@school.edu  ' })).toEqual([
       ['GIT_AUTHOR_NAME', 'Bob'],
       ['GIT_AUTHOR_EMAIL', 'bob@school.edu'],
       ['GIT_COMMITTER_NAME', 'Bob'],

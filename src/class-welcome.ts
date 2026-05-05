@@ -57,9 +57,8 @@ export interface ClassWelcomeContext {
  */
 export function getClassWelcomeText(ctx: ClassWelcomeContext): string {
   const template = readTemplate();
-  const driveUrl = ctx.driveUrl && ctx.driveUrl.length > 0
-    ? ctx.driveUrl
-    : '(Drive folder pending — check back in a minute)';
+  const driveUrl =
+    ctx.driveUrl && ctx.driveUrl.length > 0 ? ctx.driveUrl : '(Drive folder pending — check back in a minute)';
   return template.replaceAll('{name}', ctx.name).replaceAll('{drive_url}', driveUrl);
 }
 

@@ -311,8 +311,7 @@ function createPairingInterceptor(
               // string if absent, so a transient Drive error doesn't lose
               // the student's orientation message.
               const finalMeta = getAgentGroupMetadata(ag.id);
-              const driveUrl =
-                typeof finalMeta.drive_folder_url === 'string' ? finalMeta.drive_folder_url : null;
+              const driveUrl = typeof finalMeta.drive_folder_url === 'string' ? finalMeta.drive_folder_url : null;
               classWelcome = { name: student.name, driveUrl };
             }
           }

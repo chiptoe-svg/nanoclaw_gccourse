@@ -50,10 +50,10 @@ import { registerProviderContainerConfig } from './provider-container-registry.j
  *
  * Pure-ish: filesystem reads only. No mutation.
  */
-export function resolveCodexAuthSource(opts: {
-  agentGroupId: string;
-  hostHome: string | undefined;
-}): { source: 'student' | 'instructor' | 'none'; path: string | null } {
+export function resolveCodexAuthSource(opts: { agentGroupId: string; hostHome: string | undefined }): {
+  source: 'student' | 'instructor' | 'none';
+  path: string | null;
+} {
   const meta = getAgentGroupMetadata(opts.agentGroupId);
   const studentUserId = typeof meta.student_user_id === 'string' ? meta.student_user_id : null;
   if (studentUserId) {

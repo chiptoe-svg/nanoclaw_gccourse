@@ -139,9 +139,9 @@ describe('storeStudentAuth / getStudentAuthPath / hasStudentAuth / deleteStudent
 
   it('rejects JSON without the required tokens shape', () => {
     expect(() => storeStudentAuth('telegram:1', JSON.stringify({ foo: 'bar' }))).toThrow(/Codex auth.json/);
-    expect(() =>
-      storeStudentAuth('telegram:1', JSON.stringify({ tokens: { access_token: 'a' } })),
-    ).toThrow(/Codex auth.json/);
+    expect(() => storeStudentAuth('telegram:1', JSON.stringify({ tokens: { access_token: 'a' } }))).toThrow(
+      /Codex auth.json/,
+    );
   });
 
   it('overwrites existing auth atomically (no .tmp leftover)', () => {

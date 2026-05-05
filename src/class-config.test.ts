@@ -30,11 +30,7 @@ function writeConfig(students: Array<{ name: string; folder: string }>): void {
   fs.mkdirSync(TEST_DIR, { recursive: true });
   fs.writeFileSync(
     CONFIG_PATH,
-    JSON.stringify(
-      { driveParent: 'parent-id', driveMountRoot: '/tmp/x', kb: null, wiki: null, students },
-      null,
-      2,
-    ),
+    JSON.stringify({ driveParent: 'parent-id', driveMountRoot: '/tmp/x', kb: null, wiki: null, students }, null, 2),
   );
 }
 
