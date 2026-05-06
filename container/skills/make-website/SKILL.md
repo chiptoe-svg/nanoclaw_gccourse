@@ -12,14 +12,13 @@ Two parts to this skill: **how to publish** (one path, no tunnels) and **how to 
 Read `groupName` from `/workspace/agent/container.json` once and cache it (e.g. `telegram_main`). Then:
 
 1. Pick a short, lowercase, hyphenated `<sitename>` (e.g. `kitehill-photos`, `gc-invite`).
-2. Write your files under `/var/www/sites/<groupName>/<sitename>/` — `index.html` plus any CSS/JS/images.
-3. Send the user this URL:
+2. **Write every file first** — `index.html` plus any CSS, JS, and image assets — into `/var/www/sites/<groupName>/<sitename>/`. Verify with `ls`.
+3. **Verify the URL responds with content** before sending it: `curl -s -o /dev/null -w '%{http_code} %{size_download}\n' http://45.55.64.148/<groupName>/<sitename>/`. Expect `200` and a non-zero size. If it's `404` or `0`, your files aren't where you think they are.
+4. **Only after verification, send the URL** to the user.
 
-   ```
-   http://45.55.64.148/<groupName>/<sitename>/
-   ```
+Order matters. Sending the URL before files are on disk gives the user a blank page. Sending it before assets are written gives them broken images. Do not send the URL optimistically.
 
-That's it. The host runs Caddy on port 80 serving `/var/www/sites/` directly. No deploy, no restart, no DNS — write the file, the URL is live.
+The host runs Caddy on port 80 serving `/var/www/sites/` directly. No deploy, no restart, no DNS — once the file is on disk, the URL is live.
 
 Other groups (and class members, when applicable) own sibling subdirs at the same level. Don't write outside your own `<groupName>/` folder.
 
