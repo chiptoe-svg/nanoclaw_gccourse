@@ -47,8 +47,8 @@ describe('checkDraftMutation', () => {
 
   it('passes the draft folder and action through to gates', () => {
     const seen: Array<{ folder: string; action: DraftMutationAction }> = [];
-    registerDraftMutationGate((folder, action) => {
-      seen.push({ folder, action });
+    registerDraftMutationGate((ctx) => {
+      seen.push({ folder: ctx.draftFolder, action: ctx.action });
       return { allow: true };
     });
     checkDraftMutation('draft_student_07', 'file_put');
@@ -57,6 +57,27 @@ describe('checkDraftMutation', () => {
       { folder: 'draft_student_07', action: 'file_put' },
       { folder: 'draft_main', action: 'skills_put' },
     ]);
+  });
+
+  it('passes userId through to gates when supplied via the legacy 3-arg form', () => {
+    const seen: Array<string | null | undefined> = [];
+    registerDraftMutationGate((ctx) => {
+      seen.push(ctx.userId);
+      return { allow: true };
+    });
+    checkDraftMutation('draft_x', 'file_put', 'telegram:42');
+    checkDraftMutation('draft_x', 'file_put');
+    expect(seen).toEqual(['telegram:42', null]);
+  });
+
+  it('accepts an explicit context object', () => {
+    const seen: Array<string | null | undefined> = [];
+    registerDraftMutationGate((ctx) => {
+      seen.push(ctx.userId);
+      return { allow: true };
+    });
+    checkDraftMutation({ draftFolder: 'draft_x', action: 'file_put', userId: 'telegram:99' });
+    expect(seen).toEqual(['telegram:99']);
   });
 
   it('returns deny without a reason when the gate omits one', () => {
