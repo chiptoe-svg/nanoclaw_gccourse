@@ -15,11 +15,7 @@
  * to the default confirmation.
  */
 import { classRoleForFolder, findClassInstructor } from './class-config.js';
-import {
-  registerPairConsumer,
-  type PairContext,
-  type PairResult,
-} from './channels/pair-consumer-registry.js';
+import { registerPairConsumer, type PairContext, type PairResult } from './channels/pair-consumer-registry.js';
 import { setAgentGroupMetadataKey } from './db/agent-groups.js';
 import { grantRole } from './modules/permissions/db/user-roles.js';
 import { log } from './log.js';

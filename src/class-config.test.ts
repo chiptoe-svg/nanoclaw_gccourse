@@ -227,7 +227,7 @@ describe('class-config helpers', () => {
       expect(classRoleForFolder('instructor_01')).toBe('instructor');
     });
 
-    it('returns null when the folder isn\'t in any list', () => {
+    it("returns null when the folder isn't in any list", () => {
       writeConfig({ students: [{ name: 'Alice', folder: 'student_01' }] });
       expect(classRoleForFolder('main')).toBeNull();
       expect(classRoleForFolder('ta_01')).toBeNull();
