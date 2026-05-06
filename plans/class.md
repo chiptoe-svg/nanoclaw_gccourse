@@ -795,6 +795,102 @@ template, no sections registry to maintain.
       migration steps so the user doesn't lose their
       `data/class-config.json`, `data/student-auth/`, etc.
 
+### Phase 12 — Multi-tier roles (admin / instructor / TA / student)
+
+**Why this exists.** Phases 1–11 modeled the class as instructor +
+students only. Real classes have head instructors, co-instructors,
+TAs, students. Phase 12 extends the schema + pair flow + permissions
+to support all four — without inventing new role primitives
+(NanoClaw already has owner/admin/scoped-admin; we use them as-is).
+
+**Role mapping** (no new role primitives):
+
+- **Admin** = the existing instance `owner`. Single global user.
+- **Instructor** = global `admin` role. Multiple supported.
+- **TA** = `admin` scoped to every `student_*` and other `ta_*`
+  agent group in the class (whole-class scope). Each TA gets their
+  own `ta_NN` agent group with a TA-flavored persona.
+- **Student** = `agent_group_members` row on their own `student_NN`
+  group (unchanged from earlier phases).
+
+**Key design calls** (locked with the user):
+
+- Role detection by **folder prefix**, not email. The pairing code
+  carries `wire-to <folder>`; folder name decides the role.
+- TA scope is **whole-class** (every TA → admin on every student).
+- TA gets **their own agent** with a different default persona.
+- Student `CLAUDE.md` includes `@./.class-shared.md`, a symlink to
+  `data/class-shared-students.md` the instructor edits once for the
+  whole class. Default content: Socratic-tutor stance + per-user
+  web-hosting instruction.
+- TAs and instructors do NOT include `.class-shared.md`.
+- Students can read but not write the global persona — already
+  enforced by the playground lockdown gate.
+
+#### 12.1 — Playground gate signature on main ✅ (commit `0441eaf`)
+- [x] `DraftMutationGate` signature changes to take a single `ctx`
+      parameter `{ draftFolder, action, userId? }`.
+- [x] `checkDraftMutation` accepts both legacy (folder, action)
+      and ctx-shape calls.
+- [x] `playground.ts`: new `cookieUserId` alongside `cookieValue`.
+      `rotateCredentials()` and `startPlaygroundServer()` accept an
+      optional userId; cookie session associated with whoever DMed
+      `/playground`. Phase 12.5 (telegram /playground command) will
+      thread the requesting user's id through.
+- [x] +2 tests for the new ctx-shape semantics.
+
+#### 12.2 — Sync gate change to classroom ✅ (cherry-pick `89ee371`)
+- [x] Cherry-picked the main-side commit so classroom sees the new
+      shape.
+
+#### 12.3 — class-config schema + helpers ✅
+- [x] `ClassConfig` grows `tas: ClassMember[]` and
+      `instructors: ClassMember[]`. Reader defaults both to `[]`
+      for back-compat.
+- [x] New helpers: `findClassTa`, `findClassInstructor`,
+      `isClassFolder` (broad), `classRoleForFolder` (returns the
+      role string).
+- [x] `isClassStudentFolder` is now an alias for `isClassFolder`.
+- [x] +13 unit tests; 21 total in class-config.test.ts.
+
+#### 12.4 — class-skeleton extensions ✅
+- [x] CLI flags `--instructors "..."` and `--tas "..."`.
+- [x] Three persona templates (student / TA / instructor).
+- [x] Students get a 3-line @-import; TAs/instructors get a 2-line
+      one (no `.class-shared.md`).
+- [x] Writes `data/class-shared-students.md` once (Socratic +
+      web-hosting). Symlinks each student folder's `.class-shared.md`
+      to it. Copy fallback if symlinks aren't supported.
+- [x] Roster CSV gains a `role` column.
+
+#### 12.5 — Instructor + TA pair consumers ✅
+- [x] `class-pair-instructor.ts`: stamps metadata, grants global
+      admin, sends a short greeting.
+- [x] `class-pair-ta.ts`: stamps metadata, grants scoped admin on
+      every student/ta, sends a short greeting.
+- [x] Existing `class-pair-greeting.ts` already only fires for
+      students.
+
+#### 12.6 — Role-aware playground gate ✅
+- [x] `class-playground-gate.ts` reads `ctx.userId` and consults
+      `canAccessAgentGroup`. Admin scope bypasses; member-only
+      (student) keeps the lockdown.
+- [x] When `userId` is null (anonymous), conservatively locks down.
+
+#### 12.7 — Per-user web-publishing instruction ✅
+- [x] `class-shared-students.md` template tells agents to use
+      `/var/www/sites/<your-folder>/<sitename>/`. Persona only.
+
+#### 12.8 — Update /add-classroom SKILL.md (pending)
+- [ ] Document `--instructors` and `--tas` flags.
+- [ ] Add `class-pair-instructor.ts` + `class-pair-ta.ts` to the
+      copy list.
+- [ ] Note the Phase 12.1 main-side dependency.
+
+#### 12.9 — Push classroom + verify (pending)
+- [ ] Push classroom to origin.
+- [ ] Tests green on both branches: 345/345 main, 418/418 classroom.
+
 ## Open questions
 
 1. **Service-account vs. per-student OAuth for Drive.** Current design uses

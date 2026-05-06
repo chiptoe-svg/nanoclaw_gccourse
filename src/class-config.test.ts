@@ -24,13 +24,44 @@ vi.mock('./log.js', () => ({
   log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), fatal: vi.fn() },
 }));
 
-import { findClassStudent, isClassStudentFolder, readClassConfig } from './class-config.js';
+import {
+  classRoleForFolder,
+  findClassInstructor,
+  findClassStudent,
+  findClassTa,
+  isClassFolder,
+  isClassStudentFolder,
+  readClassConfig,
+} from './class-config.js';
 
-function writeConfig(students: Array<{ name: string; folder: string }>): void {
+interface MemberInput {
+  name: string;
+  folder: string;
+}
+interface ConfigInput {
+  students: MemberInput[];
+  tas?: MemberInput[];
+  instructors?: MemberInput[];
+}
+
+function writeConfig(input: MemberInput[] | ConfigInput): void {
+  const cfg: ConfigInput = Array.isArray(input) ? { students: input } : input;
   fs.mkdirSync(TEST_DIR, { recursive: true });
   fs.writeFileSync(
     CONFIG_PATH,
-    JSON.stringify({ driveParent: 'parent-id', driveMountRoot: '/tmp/x', kb: null, wiki: null, students }, null, 2),
+    JSON.stringify(
+      {
+        driveParent: 'parent-id',
+        driveMountRoot: '/tmp/x',
+        kb: null,
+        wiki: null,
+        students: cfg.students,
+        tas: cfg.tas ?? [],
+        instructors: cfg.instructors ?? [],
+      },
+      null,
+      2,
+    ),
   );
 }
 
@@ -90,6 +121,120 @@ describe('class-config helpers', () => {
 
     it('is false when no class is provisioned (default install)', () => {
       expect(isClassStudentFolder('student_01')).toBe(false);
+    });
+
+    it('is true for TA and instructor folders too (broad class match)', () => {
+      writeConfig({
+        students: [{ name: 'Alice', folder: 'student_01' }],
+        tas: [{ name: 'Bob', folder: 'ta_01' }],
+        instructors: [{ name: 'Carol', folder: 'instructor_01' }],
+      });
+      expect(isClassStudentFolder('ta_01')).toBe(true);
+      expect(isClassStudentFolder('instructor_01')).toBe(true);
+    });
+  });
+
+  describe('readClassConfig with Phase 12 fields', () => {
+    it('defaults tas + instructors to empty arrays when absent in JSON (back-compat)', () => {
+      writeConfig([{ name: 'Alice', folder: 'student_01' }]);
+      const cfg = readClassConfig();
+      expect(cfg!.tas).toEqual([]);
+      expect(cfg!.instructors).toEqual([]);
+    });
+
+    it('parses tas + instructors when present', () => {
+      writeConfig({
+        students: [{ name: 'Alice', folder: 'student_01' }],
+        tas: [{ name: 'Bob', folder: 'ta_01' }],
+        instructors: [
+          { name: 'Carol', folder: 'instructor_01' },
+          { name: 'Dave', folder: 'instructor_02' },
+        ],
+      });
+      const cfg = readClassConfig();
+      expect(cfg!.tas).toHaveLength(1);
+      expect(cfg!.instructors).toHaveLength(2);
+      expect(cfg!.instructors[1].name).toBe('Dave');
+    });
+  });
+
+  describe('findClassTa', () => {
+    it('returns the TA record when folder matches', () => {
+      writeConfig({
+        students: [],
+        tas: [{ name: 'Bob', folder: 'ta_01' }],
+      });
+      expect(findClassTa('ta_01')).toEqual({ name: 'Bob', folder: 'ta_01' });
+    });
+
+    it('returns null for an unknown TA folder', () => {
+      writeConfig({ students: [], tas: [{ name: 'Bob', folder: 'ta_01' }] });
+      expect(findClassTa('ta_99')).toBeNull();
+    });
+
+    it('returns null when no class is provisioned', () => {
+      expect(findClassTa('ta_01')).toBeNull();
+    });
+  });
+
+  describe('findClassInstructor', () => {
+    it('returns the instructor record when folder matches', () => {
+      writeConfig({
+        students: [],
+        instructors: [{ name: 'Carol', folder: 'instructor_01' }],
+      });
+      expect(findClassInstructor('instructor_01')).toEqual({ name: 'Carol', folder: 'instructor_01' });
+    });
+
+    it('returns null for an unknown instructor folder', () => {
+      writeConfig({ students: [], instructors: [{ name: 'Carol', folder: 'instructor_01' }] });
+      expect(findClassInstructor('instructor_99')).toBeNull();
+    });
+  });
+
+  describe('isClassFolder', () => {
+    it('matches across all three role lists', () => {
+      writeConfig({
+        students: [{ name: 'Alice', folder: 'student_01' }],
+        tas: [{ name: 'Bob', folder: 'ta_01' }],
+        instructors: [{ name: 'Carol', folder: 'instructor_01' }],
+      });
+      expect(isClassFolder('student_01')).toBe(true);
+      expect(isClassFolder('ta_01')).toBe(true);
+      expect(isClassFolder('instructor_01')).toBe(true);
+    });
+
+    it('is false for non-class folders', () => {
+      writeConfig({
+        students: [{ name: 'Alice', folder: 'student_01' }],
+        tas: [{ name: 'Bob', folder: 'ta_01' }],
+      });
+      expect(isClassFolder('main')).toBe(false);
+      expect(isClassFolder('student_99')).toBe(false);
+      expect(isClassFolder('ta_99')).toBe(false);
+    });
+  });
+
+  describe('classRoleForFolder', () => {
+    it('returns the matching role', () => {
+      writeConfig({
+        students: [{ name: 'Alice', folder: 'student_01' }],
+        tas: [{ name: 'Bob', folder: 'ta_01' }],
+        instructors: [{ name: 'Carol', folder: 'instructor_01' }],
+      });
+      expect(classRoleForFolder('student_01')).toBe('student');
+      expect(classRoleForFolder('ta_01')).toBe('ta');
+      expect(classRoleForFolder('instructor_01')).toBe('instructor');
+    });
+
+    it('returns null when the folder isn\'t in any list', () => {
+      writeConfig({ students: [{ name: 'Alice', folder: 'student_01' }] });
+      expect(classRoleForFolder('main')).toBeNull();
+      expect(classRoleForFolder('ta_01')).toBeNull();
+    });
+
+    it('returns null when no class is provisioned', () => {
+      expect(classRoleForFolder('student_01')).toBeNull();
     });
   });
 });

@@ -64,6 +64,8 @@ import './class-container-env.js';
 import './class-pair-auth.js';
 import './class-pair-drive.js';
 import './class-pair-greeting.js';
+import './class-pair-instructor.js';
+import './class-pair-ta.js';
 import './class-playground-gate.js';
 import './class-telegram-commands.js';
 import './student-auth-handlers.js';
