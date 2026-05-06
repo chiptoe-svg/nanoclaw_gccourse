@@ -22,8 +22,39 @@ The `conversations/` folder in your workspace holds searchable transcripts of pa
 
 ## Web hosting
 
-You can publish web pages by writing files to `/var/www/sites/<sitename>/`. The host's Caddy server serves these immediately at `http://<host>/<sitename>/` — no deploy step, no restart. Put the landing page at `/var/www/sites/<sitename>/index.html`; any other files (CSS, JS, images, sub-pages) go alongside it and are served at predictable paths.
+The host already runs a public web server (Caddy) on port 80 that serves
+`/var/www/sites/` directly. **Use it.** Do NOT spin up your own HTTP
+server, do NOT install or run `cloudflared` / `ngrok` / `localtunnel` /
+any tunnel — the public path is already wired and ready.
 
-Use this for anything a human needs to load in a browser: a status page, a dashboard, a one-pager you wrote, a generated chart, a small tool. Don't ask the user to copy-paste HTML when you can just publish it and send the URL.
+**Path convention** (matches the classroom skill's per-user split, so the
+same code works whether or not this is a class deployment): write your
+sites under your group's subdir, never directly to `/var/www/sites/`.
 
-`<sitename>` is your choice; keep it short, lowercase, hyphenated. Existing siblings under `/var/www/sites/` are visible (run `ls /var/www/sites/`) — don't clobber them.
+```
+/var/www/sites/<your-group-folder>/<sitename>/index.html
+```
+
+Your **group folder** is the `groupName` field in
+`/workspace/agent/container.json` (e.g. `telegram_main`, `student_07`,
+`ta_03`). Read it once per session and cache it. If you can't find it,
+fall back to using the literal directory name of `/workspace/agent`.
+
+The Caddy server serves your sites at:
+
+```
+http://45.55.64.148/<your-group-folder>/<sitename>/
+```
+
+Send that URL when done. No deploy step, no restart — write the file,
+the URL is live.
+
+`<sitename>` is your choice; keep it short, lowercase, hyphenated.
+Other agents (and other class members, when applicable) have their own
+subdirs at the same level as yours — don't write outside your own
+group folder.
+
+Use this for anything a human needs to load in a browser: a status
+page, a dashboard, a one-pager, a generated chart, a small tool. Don't
+ask the user to copy-paste HTML when you can just publish it and send
+the URL.
