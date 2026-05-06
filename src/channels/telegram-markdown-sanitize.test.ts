@@ -24,12 +24,19 @@ describe('sanitizeTelegramLegacyMarkdown', () => {
     expect(sanitizeTelegramLegacyMarkdown(input)).toBe(input);
   });
 
-  it('strips formatting chars on odd delimiter count (unbalanced *)', () => {
-    expect(sanitizeTelegramLegacyMarkdown('a * b *c*')).toBe('a  b c');
+  it('escapes formatting chars on odd delimiter count (unbalanced *)', () => {
+    expect(sanitizeTelegramLegacyMarkdown('a * b *c*')).toBe('a \\* b \\*c\\*');
   });
 
-  it('strips formatting chars on odd delimiter count (unbalanced _)', () => {
-    expect(sanitizeTelegramLegacyMarkdown('file_name has _one italic_')).toBe('filename has one italic');
+  it('escapes formatting chars on odd delimiter count (unbalanced _)', () => {
+    expect(sanitizeTelegramLegacyMarkdown('file_name has _one italic_')).toBe('file\\_name has \\_one italic\\_');
+  });
+
+  it('preserves underscores in URL slugs (regression: `telegram_main` → `telegrammain`)', () => {
+    const input = '**http://45.55.64.148/telegram_main/the-view/**';
+    const out = sanitizeTelegramLegacyMarkdown(input);
+    expect(out).toContain('telegram\\_main');
+    expect(out).not.toContain('telegrammain');
   });
 
   it('strips brackets when unbalanced', () => {
