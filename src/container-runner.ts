@@ -474,6 +474,10 @@ async function buildContainerArgs(
   // placeholder credentials. Proxy substitutes real keys/OAuth tokens.
   args.push('-e', `ANTHROPIC_BASE_URL=http://${CONTAINER_HOST_GATEWAY}:${CREDENTIAL_PROXY_PORT}`);
   args.push('-e', `OPENAI_BASE_URL=http://${CONTAINER_HOST_GATEWAY}:${CREDENTIAL_PROXY_PORT}/openai/v1`);
+  // Google APIs route — credential proxy refreshes the OAuth bearer
+  // from ~/.config/gws/credentials.json on the host. The container
+  // sees only this URL; no Google secrets ever cross the boundary.
+  args.push('-e', `GWS_BASE_URL=http://${CONTAINER_HOST_GATEWAY}:${CREDENTIAL_PROXY_PORT}/googleapis`);
 
   const authMode = detectAuthMode();
   if (authMode === 'api-key') {
