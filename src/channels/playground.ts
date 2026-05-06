@@ -59,11 +59,13 @@ const PLATFORM_PREFIX = 'playground:';
 const COOKIE_NAME = 'nc_playground';
 let magicToken: string | null = null; // valid until first successful /auth, then null
 let cookieValue: string | null = null; // value the cookie must match for auth
+let cookieUserId: string | null = null; // who issued the magic link (Telegram user_id, e.g. "telegram:42"); null = anonymous session
 let lastActivityAt = 0; // ms timestamp; bumped on every authed request
 
-function rotateCredentials(): void {
+function rotateCredentials(userId: string | null = null): void {
   magicToken = crypto.randomBytes(24).toString('base64url');
   cookieValue = crypto.randomBytes(24).toString('base64url');
+  cookieUserId = userId;
   lastActivityAt = Date.now();
 }
 
@@ -81,6 +83,7 @@ function checkIdleExpiry(): boolean {
 
   log.info('Playground session idle-expired', { idleMinutes: Math.floor(idleMs / 60000) });
   cookieValue = null;
+  cookieUserId = null;
   for (const c of sseClients) {
     try {
       c.res.end();
@@ -228,14 +231,18 @@ function urlFor(host: string, key: string): string {
   return `http://${display}:${PLAYGROUND_PORT}/auth?key=${encodeURIComponent(key)}`;
 }
 
-export async function startPlaygroundServer(): Promise<{ url: string; alreadyRunning: boolean }> {
+export async function startPlaygroundServer(
+  opts: { userId?: string | null } = {},
+): Promise<{ url: string; alreadyRunning: boolean }> {
   if (!PLAYGROUND_ENABLED) {
     throw new Error(
       'PLAYGROUND_ENABLED is not set in env. Add PLAYGROUND_ENABLED=1 to .env or systemd unit and restart.',
     );
   }
   // Always rotate magic token + cookie value on (re)start. Old links die.
-  rotateCredentials();
+  // userId (when supplied) gets associated with the new cookie so role-aware
+  // gates can identify who's editing.
+  rotateCredentials(opts.userId ?? null);
 
   if (server) {
     return { url: urlFor(PLAYGROUND_BIND_HOST, magicToken!), alreadyRunning: true };
@@ -263,6 +270,7 @@ export async function stopPlaygroundServer(): Promise<void> {
   // Even if the server is somehow null, scrub creds defensively.
   magicToken = null;
   cookieValue = null;
+  cookieUserId = null;
   if (!server) return;
   // Close all SSE connections.
   for (const c of sseClients) {
@@ -487,7 +495,7 @@ async function route(req: http.IncomingMessage, res: http.ServerResponse, url: U
   if (method === 'PUT' && providerMatch) {
     const draftFolder = providerMatch[1]!;
     {
-      const decision = checkDraftMutation(draftFolder, 'provider_put');
+      const decision = checkDraftMutation(draftFolder, 'provider_put', cookieUserId);
       if (!decision.allow) return send(res, 403, { error: decision.reason || 'Forbidden' });
     }
     const body = await readJsonBody(req);
@@ -595,7 +603,7 @@ async function route(req: http.IncomingMessage, res: http.ServerResponse, url: U
     // Mutation gates (file PUT only — GETs are always allowed). Class
     // feature uses this to lock student drafts down to persona edits.
     if (method === 'PUT') {
-      const decision = checkDraftMutation(draftFolder, 'file_put');
+      const decision = checkDraftMutation(draftFolder, 'file_put', cookieUserId);
       if (!decision.allow) return send(res, 403, { error: decision.reason || 'Forbidden' });
     }
     // Path-traversal defense: reject .. or anything that resolves outside.
@@ -662,7 +670,7 @@ async function route(req: http.IncomingMessage, res: http.ServerResponse, url: U
   if (method === 'PUT' && skillsMatch) {
     const draftFolder = skillsMatch[1]!;
     {
-      const decision = checkDraftMutation(draftFolder, 'skills_put');
+      const decision = checkDraftMutation(draftFolder, 'skills_put', cookieUserId);
       if (!decision.allow) return send(res, 403, { error: decision.reason || 'Forbidden' });
     }
     const body = await readJsonBody(req);

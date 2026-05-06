@@ -20,7 +20,22 @@ export interface DraftMutationDecision {
   reason?: string;
 }
 
-export type DraftMutationGate = (draftFolder: string, action: DraftMutationAction) => DraftMutationDecision;
+/**
+ * Context passed to each gate. `draftFolder` and `action` are always
+ * present. `userId` is the user who authed the playground session
+ * (set by playground.ts at magic-link consumption time); gates use it
+ * to make role-aware decisions — e.g. the class lockdown lets
+ * scoped-admin users (TAs, instructors) bypass restrictions that
+ * apply to plain members (students). Optional so legacy gates
+ * written before the field existed still type-check.
+ */
+export interface DraftMutationContext {
+  draftFolder: string;
+  action: DraftMutationAction;
+  userId?: string | null;
+}
+
+export type DraftMutationGate = (ctx: DraftMutationContext) => DraftMutationDecision;
 
 const gates: DraftMutationGate[] = [];
 
@@ -37,11 +52,25 @@ export function registerDraftMutationGate(gate: DraftMutationGate): void {
 /**
  * Walk the gate chain, return the first denial or `{ allow: true }`
  * when every gate passed. Pure-ish: depends only on what the gates
- * read (typically class-config + the draft folder name).
+ * read (typically class-config + the draft folder name + the
+ * authenticated user_id when role-aware decisions are needed).
+ *
+ * Two call shapes for backward compatibility:
+ *   checkDraftMutation(draftFolder, action)
+ *   checkDraftMutation(draftFolder, action, userId)
+ *   checkDraftMutation(ctx)  // future explicit-context callers
  */
-export function checkDraftMutation(draftFolder: string, action: DraftMutationAction): DraftMutationDecision {
+export function checkDraftMutation(
+  draftFolderOrCtx: string | DraftMutationContext,
+  action?: DraftMutationAction,
+  userId?: string | null,
+): DraftMutationDecision {
+  const ctx: DraftMutationContext =
+    typeof draftFolderOrCtx === 'string'
+      ? { draftFolder: draftFolderOrCtx, action: action!, userId: userId ?? null }
+      : draftFolderOrCtx;
   for (const gate of gates) {
-    const decision = gate(draftFolder, action);
+    const decision = gate(ctx);
     if (!decision.allow) return decision;
   }
   return { allow: true };
