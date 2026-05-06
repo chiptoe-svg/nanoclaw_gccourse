@@ -170,10 +170,72 @@ These don't work on this install (require OneCLI gateway). Phase
 
 #### 13.5 — V2 tool surface (separate plan, write when needed)
 
-## Out of scope
+## Out of scope (V1)
 
-- Multi-account OAuth (each agent gets its own Google account).
-  Stays single-instructor-OAuth. If a class moves to per-student
-  OAuth in the future, that's a different design.
 - Gmail send-as-instructor for students. Too easy to abuse;
   requires explicit role allowlist before V2.
+
+## Phase 14 — Per-student Google OAuth (required before class deploy)
+
+The V1 architecture above routes EVERY agent's GWS calls through the
+instructor's OAuth bearer. For a single-instructor deployment that's
+fine. For class use it's a real boundary problem: a student's agent
+calling `drive_doc_read_as_markdown(fileId)` could read any Doc the
+instructor has access to, not just their own. URL-pattern gating at
+the proxy partially helps but is brittle (fileId-to-folder lookups,
+per-call auth checks) and a parsing bug = full breach.
+
+**Right shape: per-student OAuth, mirroring Phase 9's Codex auth pattern.**
+
+- Students click a magic link, authorize Google with their own school
+  account, the OAuth refresh token lands at
+  `data/student-google-auth/<sanitized_user_id>/credentials.json`.
+- Proxy looks up *which student* is calling (existing per-container
+  env scheme from Phase 9.3), uses *that student's* refresh token
+  for the API call.
+- Student's agent literally operates as them. Reads their own Drive
+  only. Boundary enforced by Google's auth, not by URL parsing.
+- Instructor's OAuth still used host-side at pair time (creating +
+  sharing the student's folder via `class-drive.ts`) — that's
+  separate from runtime agent calls.
+
+**Foundation already in place:**
+
+- `src/gws-auth.ts` — pure helpers: load OAuth client, build
+  authorization URL, exchange code for tokens, write credentials.json.
+  No HTTP server, no CLI. Reusable.
+- `scripts/gws-authorize.ts` — one-off CLI that wraps the helpers
+  for the instructor to mint a fresh refresh token via localhost
+  callback. Dual purpose: solves immediate refresh problems today,
+  proves the OAuth exchange before Phase 14 wraps it in a magic-link
+  server.
+
+**What Phase 14 adds on top:**
+
+- `src/student-google-auth.ts` — per-student credential storage
+  (mirror of `src/student-auth.ts` for Codex auth). Path-sanitized
+  user_id → credentials.json on disk.
+- Magic-link OAuth flow on the existing student-auth-server (port
+  3003 — Phase 9.2). New routes: `/google-auth?t=<token>` redirects
+  to Google's consent URL with state encoding the upload token;
+  `/google-auth/callback` receives Google's redirect, exchanges the
+  code via `gws-auth.ts`, stores per-student credentials.
+- Per-student bearer lookup in `src/credential-proxy.ts`. Current
+  code reads instructor creds at startup; replace with per-request
+  lookup keyed on the calling agent group's `student_user_id`
+  metadata. Falls back to instructor creds if no per-student auth
+  uploaded yet (graceful migration window).
+- New Telegram command `/gauth` → DMs a magic link to the user.
+  Mirror of `/login` for Codex auth.
+- `class-shared-students.md` instructions point students at `/gauth`.
+
+**OAuth client redirect URIs needed in GCP Console:**
+
+The existing OAuth client (whatever the instructor used originally)
+needs `<NANOCLAW_PUBLIC_URL>/google-auth/callback` listed as an
+"Authorized redirect URI." One-time GCP Console config, not code.
+
+**Net effect after Phase 14:** running `/add-classroom` +
+`/add-classroom-gws` + Phase 13 GWS tools is class-safe. Instructor's
+Drive is invisible to students; students authenticate as themselves;
+boundaries enforced by Google rather than by our URL parsing.
