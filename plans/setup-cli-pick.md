@@ -316,7 +316,7 @@ If any of these surface a bug, file as a follow-up commit before announcing the 
 - [x] Framework: `setup/lib/setup-cli/` registry + Claude + Codex adapters + tests
 - [x] Phase A: `tz-from-claude.ts` → `tz-from-cli.ts` (registry-aware)
 - [x] Phase B: `claude-handoff.ts` → `cli-handoff.ts`
-- [ ] Phase C: `claude-assist.ts` → `cli-assist.ts`
+- [x] Phase C: `claude-assist.ts` → `cli-assist.ts` (also: SetupCli.headless gained `tools?: boolean` opt; dropped Claude-specific stream-json UI and --resume session for cross-CLI uniformity)
 - [ ] Phase D: Picker prompt + `.env` persistence
 - [ ] Phase E: README + docs update
 - [ ] Phase F: `--reconfigure-cli` flag + auto-re-prompt when persisted CLI is uninstalled

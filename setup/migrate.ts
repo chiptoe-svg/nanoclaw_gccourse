@@ -9,7 +9,7 @@
  *
  * Responsibility split mirrors `setup/auto.ts`:
  *   - This file: step sequencing, clack UI, decision routing.
- *   - Primitives: runner (spinner + log + fail), claude-assist (failure
+ *   - Primitives: runner (spinner + log + fail), cli-assist (failure
  *     recovery), cli-handoff (interactive recovery for ambiguous
  *     customizations).
  *   - Library: `setup/migrate/*.ts` — detect, extract, seed, owner inference,
@@ -19,7 +19,8 @@
  *   NANOCLAW_V1_ROOT       v1 install path; defaults to `..`
  *   NANOCLAW_MIGRATE_SKIP  comma-separated step names to skip
  *                          (preflight|safety|extract|owner|guide|seed|copy|rebuild|verify)
- *   NANOCLAW_SKIP_CLAUDE_ASSIST=1 disables the claude-assist offer on failure
+ *   NANOCLAW_SKIP_CLAUDE_ASSIST=1 disables the cli-assist offer on failure
+ *                                 (env var name kept for CI back-compat)
  */
 
 import { execSync, spawnSync } from 'child_process';
@@ -29,7 +30,7 @@ import path from 'path';
 import * as p from '@clack/prompts';
 import k from 'kleur';
 
-import { offerClaudeAssist } from './lib/claude-assist.js';
+import { offerSetupCliAssist } from './lib/cli-assist.js';
 import { offerSetupCliHandoff } from './lib/cli-handoff.js';
 import * as setupLog from './logs.js';
 import { ensureAnswer, fail } from './lib/runner.js';
@@ -349,7 +350,7 @@ async function stepSeed(v1Root: string, v2Root: string): Promise<SeedStats> {
     const msg = (err as Error).message;
     p.log.error(msg);
 
-    const tryAgain = await offerClaudeAssist({
+    const tryAgain = await offerSetupCliAssist({
       stepName: 'migrate-seed',
       msg,
       hint: `v1 root: ${v1Root}. Check src/channels/ for the adapters the seeder expected.`,
@@ -516,7 +517,7 @@ async function stepVerify(v2Root: string, seed: SeedStats | null): Promise<void>
 
   if (warnings.length > 0) {
     for (const w of warnings) p.log.warn(w);
-    await offerClaudeAssist({
+    await offerSetupCliAssist({
       stepName: 'migrate-verify',
       msg: 'Verification completed with issues.',
       hint: warnings.join(' · '),
