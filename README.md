@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  A lightweight, hackable AI assistant fork built for academic environments. Comes with a small starter set of skills (Google Workspace, Telegram, web search) and runs each agent in its own secure container. Supports multi-user classrooms with instructor, TA, and student roles — each agent configurable with its own persona and skills.
+  A lightweight AI personal assistant fork built for academic environments. Comes with a small starter set of skills (Google Workspace, Telegram, web search) and runs each agent in its own secure container. Supports multi-user classrooms with instructor, TA, and student roles — each agent configurable with its own persona and skills.
 </p>
 
 <p align="center">
