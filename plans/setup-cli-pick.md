@@ -319,5 +319,5 @@ If any of these surface a bug, file as a follow-up commit before announcing the 
 - [x] Phase C: `claude-assist.ts` → `cli-assist.ts` (also: SetupCli.headless gained `tools?: boolean` opt; dropped Claude-specific stream-json UI and --resume session for cross-CLI uniformity)
 - [x] Phase D: Picker prompt + `.env` persistence
 - [x] Phase E: README + docs update
-- [ ] Phase F: `--reconfigure-cli` flag + auto-re-prompt when persisted CLI is uninstalled
+- [x] Phase F: `--reconfigure-cli` flag + auto-re-prompt when persisted CLI is uninstalled (the auto-re-prompt was already covered by Phase D's stale-config fall-through)
 - [ ] Phase G: End-to-end smoke test
