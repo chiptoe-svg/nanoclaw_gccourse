@@ -290,9 +290,7 @@ primary surface for the course.
      them in addition to the home-page surface. Without link they
      just see updates in the home-page log/dashboard.
    - **Display name + email** (read-only, from roster).
-   - **Provider preference per draft** — already settable inside the
-     playground; surfacing here lets students see their current
-     choice without entering the playground.
+   - **Per-agent provider + auth** — see "Provider settings" below.
    - **Idle / re-auth controls** — "log out everywhere" button =
      `revokeSessionsForUser(self)`.
 2. **Dashboard**
@@ -313,6 +311,102 @@ primary surface for the course.
    filter applies cleanly: `/playground/?onlyMine=1` for student
    sessions; instructors get the full list.
 
+**Provider settings (the per-agent provider + auth panel):**
+
+For each of the student's drafts (in practice usually one), a card
+shows:
+
+- **Provider dropdown** — Claude Code | OpenAI Codex | Local LLM |
+  Custom OpenAI-compatible. Selection writes to
+  `agent_groups.agent_provider` (existing column; same column the
+  playground topbar toggles); the next message respawns the
+  container with the new provider.
+- **Credential status** — one of:
+  - `Using class default` (instructor's bearer; what the install
+    has today before any per-student auth)
+  - `Connected: Anthropic API key (••••wxyz)` / `Connected:
+    Anthropic OAuth (subscription, refreshes auto)` /
+    `Connected: ChatGPT subscription via /add-classroom-auth`
+  - `Connection expired — re-authenticate`
+- **Connect / re-authenticate button** per provider:
+  - **Anthropic** — paste API key OR magic-link OAuth (the
+    OAuth-token-capture flow used in `setup/lib/cli-assist.ts`'s
+    `runClaudeSetupToken` is reusable here).
+  - **OpenAI Codex** — magic-link upload of `auth.json`. Reuses
+    the entire `/add-classroom-auth` flow that already exists; the
+    home page just hosts the entry-point button instead of a
+    Telegram `/login` command.
+  - **Local LLM** — picks from a dropdown of instructor-configured
+    endpoints (an opinionated set the instructor curated, e.g.
+    "Class Mac Studio: Qwen 2.5 32B"). No auth needed — the
+    network is the boundary.
+  - **Custom OpenAI-compatible** — paste base URL + key. For
+    students who set up their own LM Studio at home or pay for an
+    OpenRouter sub. Validated by issuing a tiny test request.
+
+**Per-student creds storage** mirrors the existing
+`/add-classroom-auth` and Phase 3 GWS pattern:
+
+```
+data/student-creds/<sanitized_user_id>/
+  anthropic.json       { type: 'api-key' | 'oauth', key|token, expiresAt? }
+  openai.json          { type: 'auth.json', uploadedAt }     ← /add-classroom-auth already does this
+  custom.json          { baseUrl, key }
+```
+
+The credential proxy already supports per-request lookup keyed on
+the calling agent group (Phase 9 of the existing `/add-classroom-auth`
+work). Phase 4 just extends the lookup table to consult these new
+files, and falls back to the instructor's bearer if no per-student
+cred for the chosen provider.
+
+**Default-provider determination on draft creation:**
+
+When a student forks a draft from the target group, the draft
+inherits the target's `agent_provider`. Student can change it
+immediately via this settings panel. If they have no creds for the
+new provider, the fallback path is explicit and visible: "Using
+class default" badge on the dropdown.
+
+**Cost-attribution implication:**
+
+Per-student creds means *the student* pays (their subscription /
+their key). Class-default means *the instructor* pays. Phase 8's
+cost-tracking framework needs to attribute correctly: when an
+experiment runs against an agent using per-student auth, the
+recorded cost is informational; against class default, the
+instructor's running tally goes up. UI should make this visible
+("you paid $0.04 for this experiment" vs. "class paid $0.04").
+
+**Skill-extraction implication:**
+
+Anthropic per-student auth doesn't exist yet — `/add-classroom-auth`
+covers Codex only. Two options:
+
+(a) Extend `/add-classroom-auth` to handle both. Skill becomes
+    multi-provider; student's "auth" is a generic per-provider
+    table. Cleaner long-term; bigger one-time refactor.
+(b) Add `/add-classroom-anthropic-auth` as a sibling skill,
+    parallel structure to the existing one. Simpler now; possibly
+    rename later when a third provider arrives.
+
+I'd lean (a). The existing `/add-classroom-auth` is small enough
+that generalizing it is cheaper than maintaining two parallel
+skills, and the "per-student auth for provider X" pattern is going
+to recur (custom-LLM endpoints are the third instance already).
+**Marking this as a Decision-10 open item — needs your input.**
+
+**Files (added to Phase 4):**
+
+- `src/channels/playground/home/provider-settings-pane.{html,js}` — UI.
+- `src/channels/playground/api-providers.ts` — `/api/home/providers/{status,connect,disconnect}`.
+- `src/credential-proxy.ts` — extend the per-student lookup that
+  Phase 3 added (GWS) to also consult `data/student-creds/<user>/`
+  for the agent's chosen provider before falling back to instructor.
+- Per Decision 10 (a): refactor `/add-classroom-auth` (in the
+  classroom branch) into multi-provider shape; per (b): new
+  `/add-classroom-anthropic-auth` skill mirroring the existing one.
+
 **Files:**
 
 - `src/channels/playground/home/{home.html,home.js,home.css}` —
@@ -331,8 +425,10 @@ primary surface for the course.
 - A logged-in instructor lands on `/`, sees a class-wide dashboard,
   can click into the playground and see all student drafts.
 
-**Hours est:** ~6–8 hr. Mostly UI plumbing; the data is already
-in the central DB.
+**Hours est:** ~9–12 hr. UI plumbing is most of it; the per-student
+provider-auth piece adds the Anthropic OAuth flow + the
+credential-proxy lookup extension. Decision 10 (skill refactor vs.
+new sibling skill) affects ~2 hr of that estimate.
 
 ---
 
@@ -496,6 +592,7 @@ The actual config flip is a handful of `.env` lines.
 | 7 | **"Build your own strategy" capstone** — final lab where students write a custom stage module? | If yes, the plugin interface needs documentation + an example "skeleton stage" to copy. If no, ship a fixed set of stages. Mark for further discussion. |
 | 8 | **Async-ingest UX** — long ingests (a 500-page textbook + figure captioning) take real minutes. Background-job queue with progress UI? | Required for video and large multimodal PDFs. Probably yes; spec'd at Phase 7 implementation time. |
 | 9 | **Cost tracking implementation** — needs the agent-runner to emit token counts, which it doesn't track in `outbound.db` today. | Mentioned in Phase 4 too. Likely a small follow-up plan rather than bundled here. |
+| 10 | **Per-student Anthropic auth — extend `/add-classroom-auth` or new sibling skill?** Existing skill handles Codex only; we now also need Anthropic API key + OAuth flows. | (a) refactor `/add-classroom-auth` into multi-provider shape vs. (b) add `/add-classroom-anthropic-auth` parallel skill. Lean (a). Spec'd in Phase 4's "Provider settings" sub-section. |
 
 A new tab on the home page where each student builds and explores a
 "knowledge source" attached to their agent — the modern descendant of
@@ -950,7 +1047,7 @@ end up exposing plain HTTP.
 | 1 | Multi-user session store | ~80 changed in `playground.ts` + ~150 new test | 4–5 |
 | 2 | Google OAuth + roster + minimal home page | ~300 new + migration + skill flag | 7–9 |
 | 3 | Per-student GWS refresh token persistence + proxy lookup | ~150 new | 3–4 |
-| 4 | Home page expansion (settings, dashboard, picker filter) | ~400 new (UI-heavy) | 6–8 |
+| 4 | Home page expansion (settings, dashboard, provider settings + per-student auth, picker filter) | ~600 new (UI-heavy + per-student auth wiring) | 9–12 |
 | 5 | Agent export (nanoclaw / claude-code / codex / json) | ~250 new | 4–5 |
 | 6 | Local-LLM via codex provider (audit + runbook) | ~50 changed + docs | 2–3 |
 | 7 | Expert system builder tab + default strategies (scope tbd) | tbd — see "RAG phase open design" below | tbd |
