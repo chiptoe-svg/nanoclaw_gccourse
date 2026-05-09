@@ -511,7 +511,6 @@ async function handlePlaygroundCommand(token: string, platformId: string, text: 
   return true;
 }
 
-
 /**
  * Send a plain-text reply to a Telegram chat. No parse_mode — legacy
  * Markdown collapses single newlines into spaces, MarkdownV2 requires
@@ -533,7 +532,6 @@ export async function sendTelegram(token: string, chatId: string, text: string):
     log.warn('Telegram sendMessage threw', { chatId, err });
   }
 }
-
 
 // ── Built-in command registrations ─────────────────────────────────────────
 // /auth, /model, /provider, /playground all ship with main. /login (class
