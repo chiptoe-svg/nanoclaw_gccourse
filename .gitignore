@@ -39,3 +39,16 @@ groups/*
 .nanoclaw/
 
 agents-sdk-docs
+
+# /add-admintools — locally-installed admin tools (copied from `admin` branch)
+src/admin-handlers/auth.ts
+src/admin-handlers/model.ts
+src/admin-handlers/provider.ts
+src/auth-switch.ts
+src/model-switch.ts
+src/model-discovery.ts
+src/model-discovery.test.ts
+src/model-providers/
+src/provider-switch.ts
+src/provider-switch.test.ts
+scripts/switch-provider.ts
