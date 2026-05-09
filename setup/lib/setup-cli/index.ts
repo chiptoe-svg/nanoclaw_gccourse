@@ -21,9 +21,10 @@
 import { readEnvFile } from '../../../src/env.js';
 import { claudeCli } from './claude.js';
 import { codexCli } from './codex.js';
+import { opencodeCli } from './opencode.js';
 import type { SetupCli } from './types.js';
 
-const BUILTIN_CLIS: SetupCli[] = [claudeCli, codexCli];
+const BUILTIN_CLIS: SetupCli[] = [claudeCli, codexCli, opencodeCli];
 
 const registry = new Map<string, SetupCli>();
 for (const cli of BUILTIN_CLIS) {
@@ -69,4 +70,4 @@ export function _resetRegistryForTest(): void {
 }
 
 export type { SpawnArgs, SetupCli } from './types.js';
-export { claudeCli, codexCli };
+export { claudeCli, codexCli, opencodeCli };
