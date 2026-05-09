@@ -10,7 +10,7 @@
  * Responsibility split mirrors `setup/auto.ts`:
  *   - This file: step sequencing, clack UI, decision routing.
  *   - Primitives: runner (spinner + log + fail), claude-assist (failure
- *     recovery), claude-handoff (interactive recovery for ambiguous
+ *     recovery), cli-handoff (interactive recovery for ambiguous
  *     customizations).
  *   - Library: `setup/migrate/*.ts` — detect, extract, seed, owner inference,
  *     guide composition.
@@ -30,7 +30,7 @@ import * as p from '@clack/prompts';
 import k from 'kleur';
 
 import { offerClaudeAssist } from './lib/claude-assist.js';
-import { offerClaudeHandoff } from './lib/claude-handoff.js';
+import { offerSetupCliHandoff } from './lib/cli-handoff.js';
 import * as setupLog from './logs.js';
 import { ensureAnswer, fail } from './lib/runner.js';
 import { brandBold, dimWrap } from './lib/theme.js';
@@ -252,7 +252,7 @@ async function stepOwner(ex: V1ExtractResult): Promise<void> {
   const raw = ensureAnswer(answer);
 
   if (raw === '?' ) {
-    await offerClaudeHandoff({
+    await offerSetupCliHandoff({
       channel: 'migrate',
       step: 'owner',
       stepDescription: 'The migration needs to identify the operator (owner) for v2',
@@ -263,10 +263,10 @@ async function stepOwner(ex: V1ExtractResult): Promise<void> {
     try {
       const edited = JSON.parse(fs.readFileSync(ownerJson, 'utf-8')) as { userId?: string };
       if (edited.userId) {
-        ex.ownerProposal = { userId: edited.userId, source: 'claude-handoff', confidence: 'high' };
+        ex.ownerProposal = { userId: edited.userId, source: 'cli-handoff', confidence: 'high' };
         rewriteOwnerFile(ex);
-        p.log.success(`Owner: ${k.cyan(edited.userId)} (claude-handoff)`);
-        setupLog.step('owner', 'success', 0, { USER_ID: edited.userId, SOURCE: 'claude-handoff' });
+        p.log.success(`Owner: ${k.cyan(edited.userId)} (cli-handoff)`);
+        setupLog.step('owner', 'success', 0, { USER_ID: edited.userId, SOURCE: 'cli-handoff' });
         return;
       }
     } catch {
@@ -483,7 +483,7 @@ async function stepRebuild(ex: V1ExtractResult): Promise<void> {
     setupLog.step('rebuild', 'skipped', 0, {});
     return;
   }
-  await offerClaudeHandoff({
+  await offerSetupCliHandoff({
     channel: 'migrate',
     step: 'rebuild',
     stepDescription: 'Reapply v1 source customizations on v2 using the migration guide',
