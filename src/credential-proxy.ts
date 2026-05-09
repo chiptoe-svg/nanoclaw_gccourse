@@ -18,12 +18,24 @@
  *
  * Anthropic OAuth source (in order of priority):
  *   1. CLAUDE_CODE_OAUTH_TOKEN in .env (static, user-managed)
- *   2. ~/.claude/.credentials.json (auto-refreshed by Claude CLI)
+ *   2. ~/.claude/.credentials.json (file written by Claude Code CLI)
+ *   3. macOS keychain ("Claude Code-credentials" generic password) — only
+ *      consulted on darwin when the file is absent
+ *
+ * Anthropic OAuth tokens expire (~1 hour). The proxy proactively refreshes
+ * them via platform.claude.com/v1/oauth/token before expiry, persists the
+ * refreshed token back to the credentials file (so process restarts pick
+ * up the latest), and treats unknown expiry (keychain path) as "needs
+ * refresh now" so the proxy learns the real expiry time. This makes the
+ * proxy self-sufficient — it does NOT rely on Claude CLI running on the
+ * same host to keep the file fresh, which is the common case on a Linux
+ * server running NanoClaw as a long-lived service.
  *
  * Google OAuth source: ~/.config/gws/credentials.json (authorized_user
  * format with refresh_token). Proxy refreshes the access token on
  * demand and caches it in memory until ~5 min before expiry.
  */
+import { execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { createServer, Server } from 'http';
@@ -32,6 +44,12 @@ import { request as httpRequest, RequestOptions } from 'http';
 
 import { readEnvFile } from './env.js';
 import { log } from './log.js';
+
+/**
+ * OAuth client id used by Claude Code CLI for the refresh-token grant.
+ * Matches the value Claude Code itself uses; not a secret.
+ */
+const OAUTH_CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e';
 
 export type AuthMode = 'api-key' | 'oauth';
 
@@ -162,37 +180,207 @@ async function getGoogleAccessToken(): Promise<string | null> {
 }
 
 /**
- * Read the OAuth access token, preferring .env but falling back to
- * Claude CLI's credentials file. Returns null if neither is available.
+ * Read the full OAuth credential object (accessToken + refreshToken +
+ * expiresAt) from `~/.claude/.credentials.json`, falling back to the
+ * macOS keychain when the file is absent.
+ *
+ * Keychain path is gated by `process.platform === 'darwin'`; on Linux
+ * the fallback is a no-op. The keychain entry stores only the access
+ * token shape — `expiresAt` is undefined there, which the caller treats
+ * as "refresh now" so we learn the real expiry on the first API call.
  */
-function getOAuthToken(envToken?: string): string | null {
-  // Static token from .env always wins
+function readFullOAuthCredentials(): ClaudeCredentials['claudeAiOauth'] | null {
+  // Primary: credentials file written by Claude Code CLI
+  try {
+    if (fs.existsSync(CLAUDE_CREDENTIALS_PATH)) {
+      const data = JSON.parse(fs.readFileSync(CLAUDE_CREDENTIALS_PATH, 'utf-8')) as ClaudeCredentials;
+      if (data.claudeAiOauth?.accessToken) return data.claudeAiOauth;
+    }
+  } catch (err) {
+    log.warn('Failed to read Claude credentials file', { err: String(err) });
+  }
+
+  // Fallback: macOS keychain. No-op on Linux.
+  if (process.platform !== 'darwin') return null;
+  try {
+    const raw = execSync('security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null', {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+    const data = JSON.parse(raw) as ClaudeCredentials;
+    if (data.claudeAiOauth?.accessToken) return data.claudeAiOauth;
+  } catch {
+    // keychain not available or no entry — silent fallthrough
+  }
+  return null;
+}
+
+/**
+ * Persist refreshed OAuth credentials back to the credentials file so the
+ * next process restart picks up the latest token. Best-effort: failure is
+ * logged but does not propagate; the in-memory cache is the source of
+ * truth for the running process.
+ */
+function saveOAuthCredentials(updated: { accessToken: string; refreshToken: string; expiresAt: number }): void {
+  try {
+    let root: Record<string, unknown> = {};
+    if (fs.existsSync(CLAUDE_CREDENTIALS_PATH)) {
+      try {
+        root = JSON.parse(fs.readFileSync(CLAUDE_CREDENTIALS_PATH, 'utf-8')) as Record<string, unknown>;
+      } catch {
+        // file unreadable — start fresh; we own the claudeAiOauth field anyway
+      }
+    } else {
+      // Ensure parent dir exists (rare — /home/<user>/.claude is created
+      // by the Claude CLI on first run; if it isn't here, create it 0700).
+      fs.mkdirSync(path.dirname(CLAUDE_CREDENTIALS_PATH), { recursive: true, mode: 0o700 });
+    }
+    root.claudeAiOauth = {
+      ...((root.claudeAiOauth as object | undefined) ?? {}),
+      ...updated,
+    };
+    const tmp = `${CLAUDE_CREDENTIALS_PATH}.tmp-${process.pid}-${Date.now()}`;
+    fs.writeFileSync(tmp, JSON.stringify(root, null, 2), { mode: 0o600 });
+    fs.renameSync(tmp, CLAUDE_CREDENTIALS_PATH);
+  } catch (err) {
+    log.warn('Failed to persist refreshed OAuth credentials', { err: String(err) });
+  }
+}
+
+/**
+ * Exchange a refresh token for a new access token via Anthropic's OAuth
+ * endpoint. Returns the updated credentials, or null on failure.
+ */
+function refreshAnthropicOAuthToken(
+  refreshToken: string,
+): Promise<{ accessToken: string; refreshToken: string; expiresAt: number } | null> {
+  const body = new URLSearchParams({
+    grant_type: 'refresh_token',
+    refresh_token: refreshToken,
+    client_id: OAUTH_CLIENT_ID,
+  }).toString();
+
+  return new Promise((resolve) => {
+    const req = httpsRequest(
+      {
+        hostname: 'platform.claude.com',
+        port: 443,
+        path: '/v1/oauth/token',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Content-Length': Buffer.byteLength(body),
+        },
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (c) => chunks.push(c as Buffer));
+        res.on('end', () => {
+          const text = Buffer.concat(chunks).toString('utf-8');
+          if (res.statusCode !== 200) {
+            log.error('Anthropic OAuth refresh failed', {
+              status: res.statusCode,
+              body: text.slice(0, 500),
+            });
+            resolve(null);
+            return;
+          }
+          try {
+            const json = JSON.parse(text) as { access_token: string; refresh_token?: string; expires_in?: number };
+            if (!json.access_token) {
+              log.error('Anthropic OAuth refresh: no access_token in response');
+              resolve(null);
+              return;
+            }
+            const expiresAt = json.expires_in ? Date.now() + json.expires_in * 1000 : Date.now() + 60 * 60 * 1000;
+            resolve({
+              accessToken: json.access_token,
+              refreshToken: json.refresh_token ?? refreshToken,
+              expiresAt,
+            });
+          } catch (err) {
+            log.error('Anthropic OAuth refresh parse failed', { err: String(err) });
+            resolve(null);
+          }
+        });
+      },
+    );
+    req.on('error', (err) => {
+      log.error('Anthropic OAuth refresh request error', { err: String(err) });
+      resolve(null);
+    });
+    req.write(body);
+    req.end();
+  });
+}
+
+/**
+ * Single-flight refresh guard — multiple concurrent requests that hit a
+ * near-expiry condition share one in-flight refresh instead of stampeding
+ * the OAuth server.
+ */
+let refreshInFlight: Promise<void> | null = null;
+
+/**
+ * Read the OAuth access token, proactively refreshing when expired or
+ * near-expiry. Returns null if no credentials are configured at all.
+ *
+ * Order of preference:
+ *   1. Static `envToken` (CLAUDE_CODE_OAUTH_TOKEN / ANTHROPIC_AUTH_TOKEN
+ *      from .env) — never refreshed; user manages it.
+ *   2. Cached token if not near-expiry.
+ *   3. Refreshed token (file → keychain → POST /v1/oauth/token), saved
+ *      back to file and cache.
+ */
+async function getOAuthToken(envToken?: string): Promise<string | null> {
+  // Static token from .env always wins.
   if (envToken) return envToken;
 
-  // Check if cached token is still valid
+  // Cached token still has comfortable headroom — return immediately.
   if (cachedOAuthToken && Date.now() < cachedExpiresAt - REFRESH_BUFFER_MS) {
     return cachedOAuthToken;
   }
 
-  // Read from Claude CLI credentials
-  try {
-    if (!fs.existsSync(CLAUDE_CREDENTIALS_PATH)) return null;
-    const creds: ClaudeCredentials = JSON.parse(fs.readFileSync(CLAUDE_CREDENTIALS_PATH, 'utf-8'));
-    if (!creds.claudeAiOauth?.accessToken) return null;
+  const oauth = readFullOAuthCredentials();
+  if (!oauth) return null;
 
-    cachedOAuthToken = creds.claudeAiOauth.accessToken;
-    cachedExpiresAt = creds.claudeAiOauth.expiresAt;
-
-    const expiresIn = Math.round((cachedExpiresAt - Date.now()) / 1000 / 60 / 60);
-    log.debug('Loaded OAuth token from Claude CLI credentials', {
-      expiresInHours: expiresIn,
-    });
-
+  // Token has time left — adopt it as the cache and return.
+  // expiresAt is undefined on the keychain path; treat that as "refresh now"
+  // so we learn the real expiry from Anthropic's response.
+  if (oauth.expiresAt !== undefined && Date.now() < oauth.expiresAt - REFRESH_BUFFER_MS) {
+    cachedOAuthToken = oauth.accessToken;
+    cachedExpiresAt = oauth.expiresAt;
     return cachedOAuthToken;
-  } catch (err) {
-    log.warn('Failed to read Claude CLI credentials', { err });
-    return null;
   }
+
+  // Need to refresh. Coalesce concurrent callers behind one in-flight refresh.
+  if (!refreshInFlight && oauth.refreshToken) {
+    const refreshToken = oauth.refreshToken;
+    refreshInFlight = (async () => {
+      try {
+        const updated = await refreshAnthropicOAuthToken(refreshToken);
+        if (updated) {
+          cachedOAuthToken = updated.accessToken;
+          cachedExpiresAt = updated.expiresAt;
+          saveOAuthCredentials(updated);
+          log.info('Anthropic OAuth token refreshed', {
+            expiresInMin: Math.round((updated.expiresAt - Date.now()) / 60_000),
+          });
+        }
+      } finally {
+        refreshInFlight = null;
+      }
+    })();
+  }
+
+  if (refreshInFlight) {
+    await refreshInFlight;
+  }
+
+  // After refresh attempt: prefer the freshly-cached token; fall back to the
+  // pre-refresh access token from the file/keychain (better than null even
+  // if it's near-expiry — Anthropic may still accept it for a few minutes).
+  return cachedOAuthToken ?? oauth.accessToken ?? null;
 }
 
 export function startCredentialProxy(port: number, host = '127.0.0.1'): Promise<Server> {
@@ -300,7 +488,7 @@ export function startCredentialProxy(port: number, host = '127.0.0.1'): Promise<
           // through without token injection.
           if (headers['authorization']) {
             delete headers['authorization'];
-            const token = getOAuthToken(envOAuthToken);
+            const token = await getOAuthToken(envOAuthToken);
             if (token) {
               headers['authorization'] = `Bearer ${token}`;
             }
