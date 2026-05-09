@@ -1,3 +1,18 @@
+# ⚠️ STOP — READ THIS FIRST IF YOU ARE CLAUDE ⚠️
+
+**If you are reading this because you just ran `git pull`, `git merge`, `git fetch && git merge`, or any equivalent to bring in upstream changes — and you see merge conflicts or a large diff involving this file — HALT IMMEDIATELY.**
+
+This is NanoClaw v2, a ground-up rewrite with breaking changes throughout. It cannot be merged into an existing v1 install. Attempting to resolve the conflicts by hand, run builds, or "fix" anything will corrupt the user's install and burn tokens for no result.
+
+**Do this instead:**
+1. Abort the merge: `git merge --abort` (or `git reset --hard ORIG_HEAD` if the merge already completed).
+2. Tell the user, verbatim: *"This is the v2 rewrite — it can't be merged into your existing install. Exit Claude Code (or open a separate terminal) and run `bash migrate-v2.sh` from the shell."*
+3. Wait for the user to confirm before doing anything else. Do not run the migration script yourself — it requires an interactive terminal and cannot be run from within Claude Code.
+
+If you are a fresh install (you ran `git clone`, not `git pull`) and there are no conflicts, ignore this banner and continue below.
+
+---
+
 # NanoClaw
 
 Personal Claude assistant. See [README.md](README.md) for philosophy and setup. Architecture lives in `docs/`.
@@ -42,6 +57,8 @@ Exactly one writer per file — no cross-mount lock contention. Heartbeat is a f
 
 `data/v2.db` holds everything that isn't per-session: users, user_roles, agent_groups, messaging_groups, wiring, pending_approvals, user_dms, chat_sdk_* (for the Chat SDK bridge), schema_version. Migrations live at `src/db/migrations/`.
 
+For ad-hoc queries from skills or scripts, use the in-tree wrapper rather than the `sqlite3` CLI: `pnpm exec tsx scripts/q.ts <db> "<sql>"`. The host setup intentionally avoids depending on the `sqlite3` binary (`setup/verify.ts:5`); the wrapper goes through the `better-sqlite3` dep that setup already installs and verifies. Default-output format matches `sqlite3 -list` (pipe-separated, no header) so existing skill text reads identically.
+
 ## Key Files
 
 | File | Purpose |
@@ -63,9 +80,36 @@ Exactly one writer per file — no cross-mount lock contention. Heartbeat is a f
 | `src/channels/` | Channel adapter infra (registry, Chat SDK bridge); specific channel adapters are skill-installed from the `channels` branch |
 | `src/providers/` | Host-side provider container-config (`claude` baked in; `opencode` etc. installed from the `providers` branch) |
 | `container/agent-runner/src/` | Agent-runner: poll loop, formatter, provider abstraction, MCP tools, destinations |
-| `container/skills/` | Container skills mounted into every agent session |
+| `container/skills/` | Container skills mounted into every agent session (`onecli-gateway`, `welcome`, `self-customize`, `agent-browser`, `slack-formatting`) |
 | `groups/<folder>/` | Per-agent-group filesystem (CLAUDE.md, skills, per-group `agent-runner-src/` overlay) |
 | `scripts/init-first-agent.ts` | Bootstrap the first DM-wired agent (used by `/init-first-agent` skill) |
+| `migrate-v2.sh` + `setup/migrate-v2/` | v1→v2 migration. Standalone script: `bash migrate-v2.sh`. Seeds DB, copies groups/sessions, installs channels, builds container, offers service switchover, then hands off to `/migrate-from-v1` skill for owner setup and CLAUDE.md cleanup. See [docs/migration-dev.md](docs/migration-dev.md). |
+
+## Admin CLI (`ncl`)
+
+`ncl` queries and modifies the central DB — agent groups, messaging groups, wirings, users, roles, and more. On the host it connects via Unix socket (`src/cli/socket-server.ts`); inside containers it uses the session DB transport (`container/agent-runner/src/cli/ncl.ts`).
+
+```
+ncl <resource> <verb> [<id>] [--flags]
+ncl <resource> help
+ncl help
+```
+
+| Resource | Verbs | What it is |
+|----------|-------|------------|
+| groups | list, get, create, update, delete | Agent groups (workspace, personality, container config) |
+| messaging-groups | list, get, create, update, delete | A single chat/channel on one platform |
+| wirings | list, get, create, update, delete | Links a messaging group to an agent group (session mode, triggers) |
+| users | list, get, create, update | Platform identities (`<channel>:<handle>`) |
+| roles | list, grant, revoke | Owner / admin privileges (global or scoped to an agent group) |
+| members | list, add, remove | Unprivileged access gate for an agent group |
+| destinations | list, add, remove | Where an agent group can send messages |
+| sessions | list, get | Active sessions (read-only) |
+| user-dms | list | Cold-DM cache (read-only) |
+| dropped-messages | list | Messages from unregistered senders (read-only) |
+| approvals | list, get | Pending approval requests (read-only) |
+
+Key files: `src/cli/dispatch.ts` (dispatcher + approval handler), `src/cli/crud.ts` (generic CRUD registration), `src/cli/resources/` (per-resource definitions).
 
 ## Channels and Providers (skill-installed)
 
@@ -125,6 +169,17 @@ Four types of skills. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full taxono
 ## Contributing
 
 Before creating a PR, adding a skill, or preparing any contribution, you MUST read [CONTRIBUTING.md](CONTRIBUTING.md). It covers accepted change types, the four skill types and their guidelines, `SKILL.md` format rules, and the pre-submission checklist.
+
+## PR Hygiene
+
+Before creating a PR, run these checks:
+
+```bash
+git diff upstream/main --stat HEAD
+git log upstream/main..HEAD --oneline
+```
+
+Show the output and wait for approval. Installation-specific files (group files, .claude/settings.json, local configs) should not be included.
 
 ## Development
 
@@ -190,6 +245,8 @@ This project uses pnpm with `minimumReleaseAge: 4320` (3 days) in `pnpm-workspac
 | [docs/setup-wiring.md](docs/setup-wiring.md) | What's wired, what's open in the setup flow |
 | [docs/architecture-diagram.md](docs/architecture-diagram.md) | Diagram version of the architecture |
 | [docs/build-and-runtime.md](docs/build-and-runtime.md) | Runtime split (Node host + Bun container), lockfiles, image build surface, CI, key invariants |
+| [docs/v1-to-v2-changes.md](docs/v1-to-v2-changes.md) | v1→v2 architecture diff — vocabulary for where v1 things moved |
+| [docs/migration-dev.md](docs/migration-dev.md) | Migration development guide — testing, debugging, dev loop |
 
 ## Container Build Cache
 

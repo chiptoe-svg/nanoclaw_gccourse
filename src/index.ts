@@ -60,6 +60,12 @@ import './modules/index.js';
 // registers against (codex auth resolver, container env contributor,
 // playground draft gate, pair consumer, telegram command).
 
+// CLI command barrel — populates the `ncl` registry before the CLI server
+// accepts connections.
+import './cli/commands/index.js';
+import './cli/delivery-action.js';
+import { startCliServer, stopCliServer } from './cli/socket-server.js';
+
 import type { ChannelAdapter, ChannelSetup } from './channels/adapter.js';
 import { initChannelAdapters, teardownChannelAdapters, getChannelAdapter } from './channels/channel-registry.js';
 
@@ -177,6 +183,9 @@ async function main(): Promise<void> {
   startHostSweep();
   log.info('Host sweep started');
 
+  // 7. Start the `ncl` CLI socket server (data/ncl.sock).
+  await startCliServer();
+
   log.info('NanoClaw running');
 }
 
@@ -193,6 +202,7 @@ async function shutdown(signal: string): Promise<void> {
   stopDeliveryPolls();
   stopHostSweep();
   proxyServer?.close();
+  await stopCliServer();
   try {
     await teardownChannelAdapters();
   } finally {
