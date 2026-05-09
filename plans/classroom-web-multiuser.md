@@ -165,6 +165,21 @@ per-request lookup from the session map.
 Lets students access the playground without Telegram, and establishes
 the home-page surface that later phases expand.
 
+> **Reuses existing classroom role plumbing — no new permission tables.**
+> `/add-classroom` already wires the four-tier structure (admin =
+> instance owner; instructor = global `admin` role; TA = `admin`
+> scoped to every student/TA agent group; student = `member` of own
+> group only). Mechanism is `user_roles` rows granted at pair-time by
+> `class-pair-instructor.ts`, `class-pair-ta.ts`, and the student
+> greeting consumer. Folder prefixes (`student_NN/`, `ta_NN/`,
+> `instructor_NN/`) are canonical for role detection. The Phase 2
+> roster table is just `email → user_id` mapping, where `user_id`
+> resolves to the same `class:student_NN` IDs the existing pair
+> consumers produce. The role grants happen exactly as before;
+> Google login swaps out the discovery channel (was Telegram pair
+> → now web magic-link OR Google OAuth) but the resulting role
+> assignment code path is unchanged.
+
 **Why Google over email-magic-link:**
 
 - Zero account creation. Students already have school/personal
@@ -1183,3 +1198,57 @@ walk away with their persona-tweaked agent).
 - Course content management (lectures, assignments, grading) — this
   plan delivers the *workbench*; what students DO with it is course
   design, separate from infrastructure.
+
+## Naturally layered skills (after this plan)
+
+These compose with the plan's output but ship as their own skills,
+post-deployment. Listed so they're not lost — each is small enough
+to be a sibling skill, large enough to deserve its own plan when
+the time comes.
+
+### `/add-classroom-wiki` — shared class knowledge base
+
+Combines `/add-karpathy-llm-wiki` with the classroom infrastructure
+to give the whole class one shared, contributor-attributed wiki:
+
+- **Shared mount**: `data/class-shared/wiki/` on the host, bind-mounted
+  RW into every student / TA / instructor container at
+  `/workspace/wiki`. Same skeleton-mount-registry pattern
+  `/add-classroom-gws` uses for Drive folders.
+- **Per-student git identity** (already configured by `/add-classroom`)
+  attributes every wiki commit to the real student's name + email.
+  The audit trail is git history.
+- **Wiki skill** (already shipped as `/add-karpathy-llm-wiki`'s
+  container skill) instructs the agent to `git pull → edit → git
+  commit` for every contribution. The per-edit-commit discipline is
+  load-bearing for multi-writer correctness — without it, two
+  containers writing the same file at once produce a lost update.
+- **Role-aware moderation** (optional Phase 2 of the wiki skill):
+  TAs and instructors get extra wiki tools (revert, lock-page,
+  resolve-conflict) gated through the existing `canAccessAgentGroup`
+  primitive. Students contribute only.
+- **Discovery on home page**: a "Class Wiki" link in the Phase 4
+  home page sidebar, opens an external read-only HTML render of
+  the wiki (just `git log` + Markdown render of `wiki/index.md`).
+  No editing UI — students contribute through their agent, not
+  through a wiki editor. Keeps the agent the primary surface.
+
+Estimated: ~6–8 hr. Skill spec lives in `plans/classroom-wiki.md`
+when it's time.
+
+### `/add-classroom-anthropic-auth` (or refactored `/add-classroom-auth`)
+
+Per-student Anthropic API key + OAuth handling, parallel to the
+existing Codex per-student auth. See Decision 10 in the open
+questions for the refactor-vs-sibling choice. Shipped alongside
+Phase 4 of this plan if Decision 10 lands as "new sibling skill,"
+or absorbed into `/add-classroom-auth` if it lands as "refactor."
+
+### `/add-rag-lab` — generalized expert-system builder
+
+Phase 7 + 8 ship as `/add-classroom-rag` because the pedagogical
+framing (instructor pre-ingests shared corpora; per-student-private
+sources) is class-specific. A generalized version that strips the
+class roster + role gates would be useful for solo NanoClaw
+operators experimenting with strategies. Probably ships as
+`/add-rag-lab` once `/add-classroom-rag` proves the pattern.
