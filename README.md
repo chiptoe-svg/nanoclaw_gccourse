@@ -26,7 +26,7 @@ NanoClaw provides that same core functionality, but in a codebase small enough t
 ## Quick Start
 
 ```bash
-git clone https://github.com/qwibitai/nanoclaw.git nanoclaw-v2
+git clone https://github.com/chiptoe-svg/nanoclaw_gccourse.git nanoclaw-v2
 cd nanoclaw-v2
 bash nanoclaw.sh
 ```
