@@ -8,6 +8,18 @@ Wire the `setup/lib/setup-cli/` registry (already committed) into the existing s
 2. The user is asked once which CLI to use (Claude Code, OpenAI Codex, …), with the choice persisted to `.env` as `NANOCLAW_SETUP_CLI`.
 3. README Quick Start reflects dual-CLI support honestly.
 
+## Three independent choices — do not conflate
+
+NanoClaw has three CLI/provider knobs that look related but are deliberately separate. The picker this plan adds is **only** about #2:
+
+| # | Choice | What runs it | Affects | How it's switched |
+|---|---|---|---|---|
+| 1 | **Agent runtime backend** (`agent_groups.agent_provider`) | Per-session container; Felix calls Anthropic API or OpenAI App-Server | Every chat with the agent — model speed, cost, feature parity | `/provider <name>` Telegram admin command (already shipped) |
+| 2 | **Setup-CLI helper** (`NANOCLAW_SETUP_CLI` env var) | Host, only when a setup step fails or for headless utility (e.g. tz parsing) | First-time setup + step-failure handoff. Does NOT touch the running agent. | Picker on first run; `--reconfigure-cli` flag (Phase F); manual `.env` edit |
+| 3 | **Operator's personal dev tool** | Your laptop while editing code | You, the developer | Your own choice — NanoClaw doesn't know or care |
+
+**The canonical mixed case** is fully supported and not coupled anywhere: `NANOCLAW_SETUP_CLI=claude` + `agent_provider=codex` (operator likes Claude Code for setup debugging but the agent uses OpenAI for runtime). The picker in Phase D MUST NOT read `agent_provider`, and `/provider` MUST NOT touch `NANOCLAW_SETUP_CLI`. Don't add "convenience" cross-defaults.
+
 ## Current state (as of commit `bb26617`)
 
 **Done — framework + adapters:**
