@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  This fork is an AI assistant with just a few skills (google workspace, telegram, websearch, etc.) ready to be deployed and tested in an academic environment. It runs agents securely in their own containers, and is lightweight, built to be easily understood and completely customized for your needs.
+  This fork is an AI assistant with just a few skills (google workspace, telegram, websearch, etc.) ready to be deployed and tested in an academic environment. It runs agents securely in their own containers, and is lightweight, built to be easily understood and completely customized for your needs. This environment has been extended to provide multi-user access to agents (each configuarable with their own persona and skills) with instructor, TA and student levels of privaleges.
 </p>
 
 <p align="center">
@@ -21,7 +21,7 @@
 
 [OpenClaw](https://github.com/openclaw/openclaw) is an impressive project, but I wouldn't have been able to sleep if I had given complex software I didn't understand full access to my life (or those of the students in a class). OpenClaw has nearly half a million lines of code, 53 config files, and 70+ dependencies. Its security is at the application level (allowlists, pairing codes) rather than true OS-level isolation. Everything runs in one Node process with shared memory.
 
-NanoClaw provides that same core functionality, but in a codebase small enough to understand: one process and a handful of files. Claude or Codex agents run in their own Linux containers with filesystem isolation, not merely behind permission checks. And this environment has been extended to provide multi-user access to agents (each configuarable with their own persona and skills) within a controlled environment with instructor, TA and student levels of privaleges.
+NanoClaw provides that same core functionality, but in a codebase small enough to understand: one process and a handful of files. Claude or Codex agents run in their own Linux containers with filesystem isolation, not merely behind permission checks. 
 
 ## Quick Start
 
