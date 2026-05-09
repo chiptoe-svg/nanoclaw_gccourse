@@ -314,7 +314,7 @@ If any of these surface a bug, file as a follow-up commit before announcing the 
 ## Progress
 
 - [x] Framework: `setup/lib/setup-cli/` registry + Claude + Codex adapters + tests
-- [ ] Phase A: `tz-from-claude.ts` → `tz-from-cli.ts` (registry-aware)
+- [x] Phase A: `tz-from-claude.ts` → `tz-from-cli.ts` (registry-aware)
 - [ ] Phase B: `claude-handoff.ts` → `cli-handoff.ts`
 - [ ] Phase C: `claude-assist.ts` → `cli-assist.ts`
 - [ ] Phase D: Picker prompt + `.env` persistence
