@@ -14,12 +14,7 @@ import fs from 'fs';
 import path from 'path';
 import { request as httpsRequest } from 'https';
 
-const DEFAULT_GWS_CREDENTIALS_PATH = path.join(
-  process.env.HOME || '/home/node',
-  '.config',
-  'gws',
-  'credentials.json',
-);
+const DEFAULT_GWS_CREDENTIALS_PATH = path.join(process.env.HOME || '/home/node', '.config', 'gws', 'credentials.json');
 
 /**
  * Standard scopes minted by the original taylorwilsdon-MCP install.
