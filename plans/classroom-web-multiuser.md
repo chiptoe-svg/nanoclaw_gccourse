@@ -23,6 +23,13 @@ student gets:
   hosted model behind an OpenAI-compatible endpoint (mlx, Ollama,
   LM Studio). Wiring goes through the existing Codex provider path,
   not a new provider.
+- **Expert-system / RAG-alternatives lab** — students build
+  knowledge sources from class materials and try multiple ingest
+  strategies (filesystem, agentic, vector, sparse, hybrid,
+  long-context, hierarchical, graph), then run query sets to
+  *measure* which strategy works best for their queries.
+  Pedagogical core: there's no single right answer; the point is
+  to surface tradeoffs.
 
 Today's gap (verified against `src/channels/playground.ts` and the
 `add-classroom*` skills):
@@ -40,7 +47,7 @@ Today's gap (verified against `src/channels/playground.ts` and the
 
 ## Architectural shape
 
-Six pieces, sequenced so each lands independently and is testable:
+Eight pieces, sequenced so each lands independently and is testable:
 
 ```
 1. Multi-user session store        ─► fixes "kicked-out" today
@@ -54,6 +61,12 @@ Six pieces, sequenced so each lands independently and is testable:
                                        → Claude/Codex/JSON formats
 6. Local-LLM via codex provider    ─► OPENAI_BASE_URL → mlx-omni-server
                                        (or Ollama/LM Studio)
+7. Expert system builder tab       ─► per-draft knowledge sources;
+                                       multiple ingest strategies
+                                       (filesystem, agentic, vector,
+                                       sparse, hybrid, long-context, …)
+8. Evaluation framework            ─► run query sets across strategies,
+                                       score, compare side-by-side
 ```
 
 Pieces 2 and 3 share the same OAuth dance — one Google consent screen,
@@ -64,6 +77,11 @@ Pieces 4–6 each stand alone and can be deferred without blocking a
 working class deployment. Phase 2 ships a *minimal* home page (login
 screen + "Open Playground" button); Phase 4 turns it into a real
 dashboard.
+
+Pieces 7 + 8 are the "lab payload" — what students *do* in class once
+the infrastructure (1–6) is in place. Phase 7 builds the strategies;
+Phase 8 makes them measurable. They're independent of each other
+ordering-wise but only useful together.
 
 ## Phase 1 — Multi-user session store
 
@@ -427,6 +445,237 @@ The actual config flip is a handful of `.env` lines.
 
 ---
 
+---
+
+## Phase 7 — Expert System Builder tab (knowledge ingest)
+
+A new tab on the home page where each student builds and explores a
+"knowledge source" attached to their agent — the modern descendant of
+classical expert systems, where the question becomes "how do I get
+*this* corpus into the agent's effective context?"
+
+The pedagogical hook: there is no single right answer. Pure RAG (embed
++ retrieve) is one approach; long-context dumping, agentic search,
+graph-of-knowledge, hierarchical summarization, BM25, and hybrid
+schemes all have different strengths. Students pick a strategy, ingest
+content, and *measure* (Phase 8) which works best for their queries.
+
+**Strategies to support out of the box:**
+
+| Strategy | What it is | Where it already lives in this codebase |
+|---|---|---|
+| **Filesystem wiki** (Karpathy LLM Wiki) | Markdown files in a folder; agent uses Read + Grep on demand | `/add-karpathy-llm-wiki` skill |
+| **Graph memory** | Entities + relations stored in a graph, recalled before responding | `/add-mnemon` skill |
+| **Agentic search** | No pre-ingest; agent uses Grep/Bash on the raw corpus per turn | Free — agent already has Read/Bash/Grep tools |
+| **Vector RAG** | Chunk + embed + store; retrieve top-k by cosine similarity | NEW — `chromadb` or `qdrant` running in container; openai-embeddings via codex provider OR a local embedding model |
+| **Sparse RAG (BM25)** | Token-frequency retrieval, no embeddings needed | NEW — ripgrep + tf-idf in a small Bun module, or `bm25` npm package |
+| **Hybrid (sparse + dense)** | BM25 + vector, reranked | NEW — combination of above |
+| **Long-context dump** | Just paste the whole corpus into the system prompt | NEW — chunker that fits-or-truncates to context window |
+| **Hierarchical summarization** (Raptor / HiRAG style) | Recursively summarize sub-trees; agent navigates the tree | NEW — needs implementation |
+| **Cache-augmented generation (CAG)** | KV-cache the entire corpus; query against the cache | Provider-dependent — Anthropic prompt-caching is the closest analog |
+
+**Per-draft "knowledge source" model:**
+
+Each draft gets one or more *sources*, each with a strategy +
+ingested artifacts. Stored under the draft's group folder so it
+travels with the draft and the agent export.
+
+```
+groups/draft_<target>/
+  knowledge/
+    source-01/
+      strategy.json       { strategy: 'vector', model: '...', chunkSize: 512, ... }
+      ingested/           strategy-specific files
+        chunks.jsonl
+        embeddings.bin
+      raw/                original input files (preserved for re-ingest)
+        textbook-ch3.pdf
+        notes.md
+```
+
+Switching strategies = re-ingest from `raw/` with new params. Cheap
+to A/B compare.
+
+**UI panel:**
+
+The Expert System tab has three sub-views:
+
+1. **Sources** — list current sources, add new one (upload file, paste
+   text, point at Drive folder via Phase 3 GWS access, or paste URL
+   to scrape).
+2. **Strategy editor** — pick strategy, set params, watch ingest
+   progress in a live log pane.
+3. **Inspect** — view what was ingested (chunk preview for vector,
+   graph view for mnemon, file tree for wiki, summary tree for HiRAG).
+
+**API:**
+
+```
+POST   /api/draft/<folder>/knowledge/sources                — create source
+PUT    /api/draft/<folder>/knowledge/sources/:id/upload     — multipart upload
+PUT    /api/draft/<folder>/knowledge/sources/:id/strategy   — change strategy + re-ingest
+DELETE /api/draft/<folder>/knowledge/sources/:id            — discard
+GET    /api/draft/<folder>/knowledge/sources/:id/inspect    — strategy-specific preview
+GET    /api/draft/<folder>/knowledge/sources/:id/log        — ingest log (SSE)
+```
+
+**Files:**
+
+- `src/knowledge/index.ts` — orchestrator; dispatches by strategy.
+- `src/knowledge/strategies/{filesystem,vector,sparse,hybrid,long-context,hierarchical,graph}.ts` —
+  one module per strategy. `ingest(rawPath, opts) → ingestedPath`,
+  `attach(agentGroupFolder)` (writes container.json + skills as
+  needed so the agent uses the source).
+- `src/channels/playground/home/expert-system-pane.{html,js}` — UI.
+- `src/channels/playground/api-knowledge.ts` — REST.
+
+**Hours est:** ~10–14 hr. Filesystem + agentic strategies are nearly
+free (they reuse existing skills); vector + sparse + hybrid need real
+work; hierarchical and CAG are research-y and probably ship in a
+later iteration.
+
+**Recommended Phase 7 cut for first class:** filesystem + agentic +
+vector + long-context. That's the four most commonly-discussed
+strategies and gives meaningful comparison material. Sparse, hybrid,
+hierarchical, graph as fast-follows or as student extension projects.
+
+---
+
+## Phase 8 — Evaluation framework (the lab piece)
+
+Phase 7 gives students *strategies*. Phase 8 gives them a way to
+*compare* strategies on real queries — the actual pedagogical payload.
+
+**Mental model: per-source experiments.**
+
+```
+experiment {
+  draftFolder
+  sources[]       — one or more from Phase 7 (or "no source" baseline)
+  queries[]       — the question set
+  judge           — optional LLM-as-judge config
+  results[]       — {sourceId, queryId, response, latency, tokens, retrieved, score}
+}
+```
+
+A student picks 2–4 sources to compare, picks (or writes) a query
+set, hits Run. The framework fires each query against each source,
+records everything, and shows side-by-side results.
+
+**API:**
+
+```
+POST  /api/draft/<folder>/experiments              — create experiment
+PUT   /api/draft/<folder>/experiments/:id/run      — start run (SSE for progress)
+GET   /api/draft/<folder>/experiments/:id          — view results
+GET   /api/draft/<folder>/experiments/:id/export   — JSON / CSV
+```
+
+**Query-set sources:**
+
+- **Pre-canned** — instructor uploads a CSV per assignment: `query, expected_answer, category`. Lives in `data/class-shared/queries/<assignment>.csv`, symlinked into student folders the same way `class-shared-students.md` is today.
+- **Student-authored** — text editor in the UI; student writes their own.
+- **Auto-generated** — for advanced labs: an LLM generates queries from the corpus itself ("synth eval"). Risky as a primary metric but useful for exploration.
+
+**Scoring:**
+
+Three modes, students pick:
+
+1. **No score** — just side-by-side responses; the student eyeballs which is better. Good for small query sets.
+2. **String / regex match** — instructor's expected_answer column is a substring or regex; binary pass/fail. Cheap and reproducible.
+3. **LLM-as-judge** — use a separate model invocation (Anthropic Sonnet, or local model in Phase 6 if instructor doesn't want billable judge calls) to rate response vs expected. Returns a score 0–1 with rationale. Slower and stochastic but handles open-ended answers.
+
+Mode 3 should be off by default; instructors enable it explicitly per lab.
+
+**UI:**
+
+Experiment-results view as a table:
+
+|  | Source A: Vector | Source B: Wiki | Source C: Agentic |
+|---|---|---|---|
+| Q1: "What is X?" | ✅ 0.92 (1.2s, 850 tok) | ✅ 0.88 (3.1s, 4200 tok) | ❌ 0.41 (8.7s, 2100 tok) |
+| Q2: "Why does Y?" | ❌ 0.32 | ✅ 0.95 | ✅ 0.81 |
+| ... |
+
+Click a cell → see the actual response, retrieved chunks, judge
+rationale. Click a column header → see strategy params.
+
+**Files:**
+
+- `src/eval/index.ts` — runner. Iterates queries × sources,
+  invokes the agent with each source attached, captures everything.
+- `src/eval/judge.ts` — LLM-as-judge invocation; routes through
+  the existing provider abstraction so it works with Anthropic +
+  local models.
+- `src/db/migrations/017-experiments.ts` — `experiments` and
+  `experiment_results` tables.
+- `src/channels/playground/home/experiment-pane.{html,js}` — UI.
+
+**Hours est:** ~8–10 hr including a comparison-view UI that's actually
+useful. Less if students are okay with raw JSON output for the first
+iteration.
+
+---
+
+## Classroom / lab scenario ideas
+
+How the Phase 7 + 8 stack actually gets used in a course. These are
+prompts for course design rather than implementation requirements:
+
+**Lab 1: Same corpus, different strategies.** Provide one PDF (e.g.,
+a course chapter). Each student ingests it with all 4 default
+strategies (filesystem, agentic, vector, long-context). Runs the
+same 10 queries against each. Reports: which strategy was best
+overall, where each was worst, why.
+
+**Lab 2: Strategy parameter sweep.** Pick one strategy (e.g.,
+vector). Vary one parameter at a time (chunk size, k, embedding
+model). Find the optimum for a fixed query set. Plot results.
+
+**Lab 3: Cross-strategy ensembles.** Use two strategies in
+combination (vector for high-precision lookup, agentic Grep for
+fallback). Implement the routing logic in a custom skill. Compare
+to single-strategy baselines.
+
+**Lab 4: Hostile queries.** Instructor provides a corpus + 20
+queries, half answerable from the corpus, half adversarial
+("hallucination bait" — questions whose answers aren't in the
+corpus). Score = correct + correctly-says-don't-know. Different
+strategies fail differently here; teaches the practical limit
+of "just throw more docs at it."
+
+**Lab 5: The student's own corpus.** Each student picks a domain
+they care about (their hobby, their other course, their personal
+notes) and builds an "expert in X" agent. Final deliverable is the
+agent export (Phase 5) + their evaluation results.
+
+**Lab 6: Compare against humans.** Same corpus + queries used
+elsewhere in the course (e.g., reading assignment + comprehension
+quiz). Student configures an agent to score well on the quiz.
+Surfaces tradeoffs between memorization, retrieval, and reasoning.
+
+**Cross-cutting design choices for the labs:**
+
+- **Pre-canned starting kits** — instructor pre-loads sources/queries
+  the student can clone with one click. Lowers the "blank-page"
+  barrier for Lab 1; advanced labs let students build from scratch.
+- **Reproducibility as a first-class output** — each experiment
+  exports as a JSON spec + results CSV. Students share, instructors
+  grade, future students see prior runs.
+- **Leaderboard (optional)** — anonymized scoreboard per assignment.
+  Friendly competition, also surfaces "this strategy scored 0.2
+  higher than the next-best on this corpus" patterns.
+- **Time + cost tracking** — Phase 8 records latency and token
+  counts. Strategies that win on accuracy often lose on cost; the
+  comparison view should make that tradeoff visible.
+- **Local-LLM friendly** — running 25 students × 4 strategies × 10
+  queries × 1 judge call = ~1000 inference calls per assignment.
+  Phase 6's local-LLM path is cost-essential here; the student
+  comparing 4 strategies on a vector store doesn't need Claude
+  Opus to do it.
+
+---
+
 ## Hosting / TLS
 
 Out of scope for code, but on the path for any real deployment:
@@ -458,9 +707,11 @@ end up exposing plain HTTP.
 | 4 | Home page expansion (settings, dashboard, picker filter) | ~400 new (UI-heavy) | 6–8 |
 | 5 | Agent export (nanoclaw / claude-code / codex / json) | ~250 new | 4–5 |
 | 6 | Local-LLM via codex provider (audit + runbook) | ~50 changed + docs | 2–3 |
+| 7 | Expert system builder tab + 4 default strategies | ~600 new (UI + 4 ingest modules) | 10–14 |
+| 8 | Evaluation framework + comparison UI | ~500 new + migration | 8–10 |
 | Hosting | Document Caddy / Cloudflare Tunnel in skill | docs only | 1 |
 
-Total: ~28–35 hours of focused work for the full set; ~15 hours for the
+Total: ~46–58 hours for the full set; ~16 hours for the
 bare-minimum (Phases 1 + 2 + 3) classroom-deployable cut.
 
 Each phase ends with passing tests and a focused commit.
@@ -485,12 +736,22 @@ Phase 4. Phase 5 (export) is a self-contained backend feature.
 Phase 6 (local-LLM) is mostly a runbook + small audit; it doesn't
 block any other work.
 
+**Phases 7 + 8 are the "lab" payload** — they define what students
+*do* in class beyond persona-tweaking. Phase 7 is the bigger build
+(strategy implementations); Phase 8 makes Phase 7 pedagogical (no
+point comparing strategies if you can't measure them). Both depend
+on Phase 6 in practice — running 25 students × multiple strategies
+× many queries against billable models gets expensive fast.
+
 **Recommended cut for "first class":**
 
-- Phases 1 + 2 + 3 + Hosting docs (= MVP) → ~16 hr
-- Phase 6 if you're committed to local-LLM for the course → +3 hr
+- Phases 1 + 2 + 3 + Hosting docs (= deployable MVP) → ~16 hr
+- Phase 6 if local-LLM is committed → +3 hr
 - Phase 4 + 5 as fast-follows in the gap between provisioning and
-  first lecture, or after first class as feedback comes in.
+  first lecture
+- Phase 7 + 8 if the course is RAG/expert-systems focused →
+  +18–24 hr, and probably the bulk of the second-half-of-semester
+  lab content. If the course doesn't go there, defer.
 
 ## Risks
 
@@ -534,6 +795,25 @@ block any other work.
   Mac Studio. Sizing is empirical; bench mlx-omni-server against
   Qwen 2.5 32B Q4 with `--batch` before committing a course schedule
   around it.
+- **Vector-store choice (Phase 7)** — Chromadb is the easy default
+  (in-process, file-backed, no separate daemon). Qdrant or LanceDB
+  if students need bigger corpora. Decision can be deferred to
+  Phase 7 implementation; the strategy module abstracts it.
+- **Embedding model for vector RAG (Phase 7)** — `text-embedding-3-small`
+  via codex provider works but burns the OpenAI key (or local mlx
+  embedding via mlx-omni-server). Picking one default + letting
+  students pick alternatives is the right shape; choosing the
+  default is a Phase 7 sub-decision.
+- **LLM-as-judge model selection (Phase 8)** — using the same model
+  as the agent under test biases the score. Need a separate "judge"
+  config: probably Anthropic Sonnet by default, with an option to
+  use a local model in fully-local-LLM deployments.
+- **Lab corpus copyright** — instructor uploads pre-canned datasets;
+  students upload their own. Default policy: per-student folders
+  are private to that student + scoped admins; class-shared corpora
+  read-only for students. Document the boundary explicitly so
+  students don't accidentally upload copyrighted material into a
+  shared space.
 
 ## Out of scope (for this plan)
 
