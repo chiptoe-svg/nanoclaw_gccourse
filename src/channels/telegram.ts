@@ -48,6 +48,12 @@ import { tryConsume } from './telegram-pairing.js';
 import { runPairConsumers } from './pair-consumer-registry.js';
 import { dispatchTelegramCommand, registerTelegramCommand } from './telegram-commands.js';
 
+// Admin-handler barrel: each installed admin tool (auth/model/provider) self-
+// registers via registerTelegramCommand at module scope. Importing this barrel
+// triggers all installed registrations as a side effect. Empty when no admin
+// tools are installed; the /add-admintools skill appends import lines into it.
+import '../admin-handlers/index.js';
+
 /**
  * Retry a one-shot operation that can fail on transient network errors at
  * cold-start (DNS hiccups, brief upstream outages). Exponential backoff capped
@@ -505,102 +511,6 @@ async function handlePlaygroundCommand(token: string, platformId: string, text: 
   return true;
 }
 
-/**
- * Handle the /model Telegram command.
- * - `/model`        → show current model (per agent group wired to this chat) + hint list
- * - `/model <name>` → persist <name> as the group's model, kill running container
- *                     so the next inbound spawns with the new model.
- *
- * Trust-first: any string is accepted. If the model is invalid, the
- * provider's server-side rejection surfaces as the agent's reply.
- *
- * Returns true if consumed.
- */
-async function handleModelCommand(token: string, platformId: string, text: string): Promise<boolean> {
-  if (!text.startsWith('/model')) return false;
-
-  const chatId = platformId.split(':').slice(1).join(':');
-  if (!chatId) return false;
-
-  const { getMessagingGroupByPlatform, getMessagingGroupAgents } = await import('../db/messaging-groups.js');
-  const { getAgentGroup } = await import('../db/agent-groups.js');
-  const { expandAlias, hintsForProvider, resolveEffectiveModel, setModel } = await import('../model-switch.js');
-  const { isContainerRunning, killContainer } = await import('../container-runner.js');
-  const { getActiveSessions } = await import('../db/sessions.js');
-
-  const mg = getMessagingGroupByPlatform('telegram', platformId);
-  const agents = mg ? getMessagingGroupAgents(mg.id) : [];
-  if (agents.length === 0) {
-    await sendTelegram(token, chatId, 'No agent group wired to this chat.');
-    return true;
-  }
-  if (agents.length > 1) {
-    await sendTelegram(
-      token,
-      chatId,
-      `${agents.length} agent groups wired to this chat — /model on multi-agent chats not yet supported.`,
-    );
-    return true;
-  }
-  const group = getAgentGroup(agents[0].agent_group_id);
-  if (!group) {
-    await sendTelegram(token, chatId, 'Agent group lookup failed.');
-    return true;
-  }
-
-  const parts = text.trim().split(/\s+/);
-  const arg = parts.slice(1).join(' ').trim();
-  let reply: string;
-
-  if (!arg) {
-    const hints = await hintsForProvider(group.agent_provider);
-    // Pad aliases to a constant width so the dashes line up — easier to scan
-    // when picking which short token to type.
-    const aliasWidth = hints.reduce((w, h) => Math.max(w, h.alias.length), 0);
-    const list =
-      hints.length > 0
-        ? hints
-            .map((h) => `  • ${h.alias.padEnd(aliasWidth)}  — ${h.note || h.id}`)
-            .join('\n')
-        : '  (no hints for this provider)';
-    const effective = resolveEffectiveModel(group);
-    const modelLine = group.model ? `Model: ${group.model}` : `Model: ${effective} (provider default)`;
-    reply =
-      `Group: ${group.name}\n` +
-      `Provider: ${group.agent_provider ?? 'claude (default)'}\n` +
-      `${modelLine}\n` +
-      `\n` +
-      `Suggested models:\n${list}\n` +
-      `\n` +
-      `Use /model <alias|full-id> to switch. Aliases above (e.g. "${hints[0]?.alias ?? 'opus'}") expand to the full id.`;
-  } else {
-    const newModel =
-      arg === 'reset' || arg === 'default' ? null : await expandAlias(group.agent_provider, arg);
-    const ok = setModel(group.folder, newModel);
-    if (!ok) {
-      reply = 'Failed to persist — group not found by folder.';
-    } else {
-      // Kill any running container for sessions in this group so the next
-      // inbound spawns fresh with the new model.
-      const sessions = getActiveSessions().filter((s) => s.agent_group_id === group.id);
-      for (const s of sessions) {
-        if (isContainerRunning(s.id)) {
-          try {
-            killContainer(s.id, 'model change');
-          } catch {
-            /* best-effort */
-          }
-        }
-      }
-      reply = newModel
-        ? `✅ Model set to \`${newModel}\`. Next message uses it. (Server rejects unknown models with a clear error.)`
-        : `✅ Model reset — group will use provider default.`;
-    }
-  }
-
-  await sendTelegram(token, chatId, reply);
-  return true;
-}
 
 /**
  * Send a plain-text reply to a Telegram chat. No parse_mode — legacy
@@ -608,7 +518,7 @@ async function handleModelCommand(token: string, platformId: string, text: strin
  * escaping a long list of metacharacters; plain text is the most
  * predictable for multi-line status replies.
  */
-async function sendTelegram(token: string, chatId: string, text: string): Promise<void> {
+export async function sendTelegram(token: string, chatId: string, text: string): Promise<void> {
   try {
     const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: 'POST',
@@ -624,152 +534,11 @@ async function sendTelegram(token: string, chatId: string, text: string): Promis
   }
 }
 
-/**
- * Handle the /auth Telegram command.
- * - `/auth`       → show current mode + OAuth status
- * - `/auth api`   → switch to API key mode
- * - `/auth oauth` → switch to OAuth mode (checks credentials first)
- *
- * Returns true if the message was consumed (short-circuit), false if not.
- */
-async function handleAuthCommand(token: string, platformId: string, text: string): Promise<boolean> {
-  if (!text.startsWith('/auth')) return false;
-
-  const chatId = platformId.split(':').slice(1).join(':');
-  if (!chatId) return false;
-
-  const { getCurrentAuthMode, hasValidOAuthCredentials, switchAuthMode } = await import('../auth-switch.js');
-
-  const parts = text.trim().split(/\s+/);
-  const subcommand = parts[1]?.toLowerCase();
-
-  let reply: string;
-
-  if (!subcommand) {
-    const mode = getCurrentAuthMode();
-    const oauthOk = hasValidOAuthCredentials();
-    reply =
-      `Current mode: *${mode}*\n` +
-      `OAuth credentials: ${oauthOk ? '✅ valid' : '❌ missing or expired'}\n\n` +
-      `Use \`/auth api\` or \`/auth oauth\` to switch.`;
-  } else if (subcommand === 'api') {
-    await switchAuthMode('api-key');
-    reply = '✅ Switched to API key mode. Restarting…';
-  } else if (subcommand === 'oauth') {
-    if (!hasValidOAuthCredentials()) {
-      reply = '❌ No valid OAuth credentials found. Run `claude login` first.';
-    } else {
-      await switchAuthMode('oauth');
-      reply = '✅ Switched to OAuth mode. Restarting…';
-    }
-  } else {
-    reply = `Unknown subcommand: \`${subcommand}\`\nUsage: /auth | /auth api | /auth oauth`;
-  }
-
-  try {
-    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, text: reply, parse_mode: 'Markdown' }),
-    });
-  } catch (err) {
-    log.warn('Failed to send /auth reply', { platformId, err });
-  }
-
-  return true;
-}
-
-/**
- * Handle the /provider Telegram command.
- * - `/provider`        → show current provider (per agent group wired to this chat) + hint list
- * - `/provider <name>` → persist <name>, kill running container so the next
- *                        inbound spawns with the new provider.
- *
- * Trust-first: any string is accepted. If the provider isn't registered
- * the next spawn fails with a clear error, surfaced as the agent's reply.
- *
- * Returns true if consumed.
- */
-async function handleProviderCommand(token: string, platformId: string, text: string): Promise<boolean> {
-  if (!text.startsWith('/provider')) return false;
-
-  const chatId = platformId.split(':').slice(1).join(':');
-  if (!chatId) return false;
-
-  const { getMessagingGroupByPlatform, getMessagingGroupAgents } = await import('../db/messaging-groups.js');
-  const { getAgentGroup } = await import('../db/agent-groups.js');
-  const { getCurrentProvider, listProviderHints, setProvider } = await import('../provider-switch.js');
-
-  const mg = getMessagingGroupByPlatform('telegram', platformId);
-  const agents = mg ? getMessagingGroupAgents(mg.id) : [];
-  if (agents.length === 0) {
-    await sendTelegram(token, chatId, 'No agent group wired to this chat.');
-    return true;
-  }
-  if (agents.length > 1) {
-    await sendTelegram(
-      token,
-      chatId,
-      `${agents.length} agent groups wired to this chat — /provider on multi-agent chats not yet supported.`,
-    );
-    return true;
-  }
-  const group = getAgentGroup(agents[0].agent_group_id);
-  if (!group) {
-    await sendTelegram(token, chatId, 'Agent group lookup failed.');
-    return true;
-  }
-
-  const parts = text.trim().split(/\s+/);
-  const arg = parts.slice(1).join(' ').trim();
-  let reply: string;
-
-  if (!arg) {
-    const current = getCurrentProvider(group.folder);
-    const hints = listProviderHints();
-    const list = hints.map((h) => `  • ${h.name} — ${h.note}`).join('\n');
-    reply =
-      `Group: ${group.name}\n` +
-      `Provider: ${current?.provider ?? 'claude (default)'}\n` +
-      `\n` +
-      `Available providers:\n${list}\n` +
-      `\n` +
-      `Use /provider <name> to switch. Persona, CLAUDE.local.md, skills, and the wiki carry over;\n` +
-      `per-turn chat history does not (each provider keeps its own session store).`;
-  } else {
-    const result = setProvider(group.folder, arg);
-    if (!result.ok) {
-      switch (result.reason) {
-        case 'no-change':
-          reply = `Already on \`${arg}\` — no change.`;
-          break;
-        case 'no-container-json':
-          reply = `Failed: no container.json for ${group.folder}.`;
-          break;
-        case 'group-not-found':
-          reply = `Failed: agent group not found by folder.`;
-          break;
-        default:
-          reply = `Failed: ${result.reason ?? 'unknown reason'}.`;
-      }
-    } else {
-      reply =
-        `✅ Provider: \`${result.previousProvider}\` → \`${result.newProvider}\`. ` +
-        `${result.containersStopped ?? 0} container(s) stopped. Next message respawns with the new provider.`;
-    }
-  }
-
-  await sendTelegram(token, chatId, reply);
-  return true;
-}
 
 // ── Built-in command registrations ─────────────────────────────────────────
 // /auth, /model, /provider, /playground all ship with main. /login (class
 // feature) registers itself from src/class-telegram-commands.ts when imported.
 
-registerTelegramCommand('/auth', (ctx) => handleAuthCommand(ctx.token, ctx.platformId, ctx.text));
-registerTelegramCommand('/model', (ctx) => handleModelCommand(ctx.token, ctx.platformId, ctx.text));
-registerTelegramCommand('/provider', (ctx) => handleProviderCommand(ctx.token, ctx.platformId, ctx.text));
 registerTelegramCommand('/playground', (ctx) => handlePlaygroundCommand(ctx.token, ctx.platformId, ctx.text));
 
 /**
