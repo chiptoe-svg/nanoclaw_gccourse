@@ -85,9 +85,23 @@ screen + "Open Playground" button); Phase 4 turns it into a real
 dashboard.
 
 Pieces 7 + 8 are the "lab payload" — what students *do* in class once
-the infrastructure (1–6) is in place. Phase 7 builds the strategies;
-Phase 8 makes them measurable. They're independent of each other
-ordering-wise but only useful together.
+the infrastructure (1–6) is in place. Phase 7 builds the pipeline
+framework + named strategies; Phase 8 makes them measurable. They're
+independent of each other ordering-wise but only useful together.
+
+## Skill packaging (each phase ships into the right skill)
+
+Per the project's skill-extraction philosophy — additive, layered,
+each skill scoped to one concern:
+
+| Phase | Skill |
+|-------|-------|
+| 1 | trunk fix on `/add-agent-playground` (the single-cookie bug was never a feature) |
+| 2 + 3 + 4 | `/add-classroom` (expanded) — roster, Google OAuth, home page are core class infra |
+| 5 | `/add-agent-export` (new, generic) — useful outside class for anyone wanting a portable agent |
+| 6 | docs + `.env` runbook in `/add-classroom`'s SKILL.md (no code to install) |
+| 7 + 8 | `/add-classroom-rag` (new, layered onto classroom) — not every class wants the RAG lab; this is the "expert assistant" workbench, distinct from the base class feature |
+| 9 | `/add-walkaway` (new, generic) — per-student bundle export → bootstrap → run; useful for any single-student install, not just classroom |
 
 ## Phase 1 — Multi-user session store
 
@@ -455,13 +469,33 @@ The actual config flip is a handful of `.env` lines.
 
 ## Phase 7 — Expert System Builder tab (knowledge ingest)
 
-> **⚠️ Scope open — pending RAG-design discussion.** The earlier draft
-> below assumed mostly text corpora. Real course content includes
-> video lectures, multimodal PDFs (figures, tables, equations), long
-> complex documents with cross-references, and corpora that don't fit
-> any single retrieval model. The strategy list and ingest pipelines
-> need expansion before this phase locks. Treat the section below as a
-> first-pass sketch, not the final spec.
+> **⚠️ Scope open — RAG-design discussion in progress.** Some decisions
+> have been locked (see "Design decisions" sub-section below); others
+> are still open and noted explicitly. The earlier draft assumed mostly
+> text corpora. Real course content includes video lectures, multimodal
+> PDFs (figures, tables, equations), long complex documents with
+> cross-references, and corpora that don't fit any single retrieval
+> model. Sections below reflect locked decisions; structure-only
+> placeholder until the open items resolve.
+
+### Design decisions (locked)
+
+| # | Decision | Rationale |
+|---|----------|-----------|
+| 1 | **Pipeline framework**, not discrete strategies. Stages: `Reader → Splitter → Embedder/Captioner → Indexer → Retriever → Reranker → Synthesizer`. Pre-built pipelines for each named strategy; students compose custom pipelines by mixing stages. | Composability *is* part of the lesson. Multimodal/video/long-doc pipelines naturally share stages (embedders, indexers); discrete-strategy modules would duplicate. Closer to LangChain/LlamaIndex shape but scoped tight to the playground. |
+| 2 | **Model is a pipeline-stage parameter, not a global setting.** Cost is a first-class metric — every stage that hits a model declares input/output token counts (or vision API calls), and the comparison view in Phase 8 surfaces total $ per query alongside accuracy/latency. | Lets students compare "Anthropic vision vs local mlx-vision on the same multimodal PDF" with cost in the picture, not as an afterthought. The lesson "vision is great but expensive" only lands if cost is visible. |
+| 3 | **Storage budget: not enforced per-student.** Local Mac Studio host; disk is cheap relative to model-inference cost. | Lets students iterate freely without an unrelated quota error. Add cleanup tooling later if needed. |
+| 4 | **Two-tier corpus model**: instructor-shared (read-only across class) + student-private. Instructor pre-ingests big shared corpora once; students get their own private space for personal experiments. | Avoids 25× redundant ingest of a 500-page textbook. Sharing is the natural collaborative-classroom shape; per-student-private respects the lab-experiment privacy boundary. |
+| 5 | **Pluggable stage interface.** Each stage is a class implementing a small interface (`process(input) → output`); custom stages can be dropped in `groups/<draft>/knowledge/stages/` and the pipeline framework picks them up. | Required for the "build your own strategy" capstone lab (still open — Decision 6 below). |
+
+### Decisions still open
+
+| # | Question | Notes |
+|---|----------|-------|
+| 6 | **Lab sequence** — what order do students hit the content types? Linear (text → code → PDF → video → graph) or thematic (build a course-textbook expert using all techniques)? | Affects which pipeline stages need to ship in the first cut vs. as fast-follows. Mark for further discussion. |
+| 7 | **"Build your own strategy" capstone** — final lab where students write a custom stage module? | If yes, the plugin interface needs documentation + an example "skeleton stage" to copy. If no, ship a fixed set of stages. Mark for further discussion. |
+| 8 | **Async-ingest UX** — long ingests (a 500-page textbook + figure captioning) take real minutes. Background-job queue with progress UI? | Required for video and large multimodal PDFs. Probably yes; spec'd at Phase 7 implementation time. |
+| 9 | **Cost tracking implementation** — needs the agent-runner to emit token counts, which it doesn't track in `outbound.db` today. | Mentioned in Phase 4 too. Likely a small follow-up plan rather than bundled here. |
 
 A new tab on the home page where each student builds and explores a
 "knowledge source" attached to their agent — the modern descendant of
@@ -474,84 +508,166 @@ graph-of-knowledge, hierarchical summarization, BM25, and hybrid
 schemes all have different strengths. Students pick a strategy, ingest
 content, and *measure* (Phase 8) which works best for their queries.
 
-**Strategies to support out of the box:**
+### Pipeline framework + initial stage catalogue
 
-| Strategy | What it is | Where it already lives in this codebase |
+The pipeline is a directed list of stages. Each stage takes typed
+input, produces typed output, and declares its cost (token counts,
+vision-API calls). A "strategy" is a named pre-built pipeline; a
+custom pipeline is a list of stages students assemble.
+
+```
+Reader  →  Splitter  →  Embedder/Captioner  →  Indexer
+                                                  ↓
+                       Reranker  ←  Retriever  ←──┘
+                          ↓
+                      Synthesizer
+```
+
+**Stage taxonomy (initial):**
+
+| Stage | Examples | Cost shape |
 |---|---|---|
-| **Filesystem wiki** (Karpathy LLM Wiki) | Markdown files in a folder; agent uses Read + Grep on demand | `/add-karpathy-llm-wiki` skill |
-| **Graph memory** | Entities + relations stored in a graph, recalled before responding | `/add-mnemon` skill |
-| **Agentic search** | No pre-ingest; agent uses Grep/Bash on the raw corpus per turn | Free — agent already has Read/Bash/Grep tools |
-| **Vector RAG** | Chunk + embed + store; retrieve top-k by cosine similarity | NEW — `chromadb` or `qdrant` running in container; openai-embeddings via codex provider OR a local embedding model |
-| **Sparse RAG (BM25)** | Token-frequency retrieval, no embeddings needed | NEW — ripgrep + tf-idf in a small Bun module, or `bm25` npm package |
-| **Hybrid (sparse + dense)** | BM25 + vector, reranked | NEW — combination of above |
-| **Long-context dump** | Just paste the whole corpus into the system prompt | NEW — chunker that fits-or-truncates to context window |
-| **Hierarchical summarization** (Raptor / HiRAG style) | Recursively summarize sub-trees; agent navigates the tree | NEW — needs implementation |
-| **Cache-augmented generation (CAG)** | KV-cache the entire corpus; query against the cache | Provider-dependent — Anthropic prompt-caching is the closest analog |
+| **Reader** | text-file, markdown, web-scrape, pdf-marker, pdf-nougat, pdf-page-as-image, video-yt-dlp+ffmpeg, drive-folder, github-repo | bytes in, structured units out; cheap |
+| **Splitter** | fixed-size, sentence-aware, heading-outline, code-symbol, video-scene-boundary, pdf-page | unit-count growth |
+| **Embedder/Captioner** | openai-text-embedding-3-small, mlx-text-embed (local), claude-vision-caption, mlx-vision-caption (local), whisper-transcribe (local) | TOKENS or VISION_CALLS — first place real $ shows up |
+| **Indexer** | chromadb, qdrant, lance, bm25-ripgrep, neo4j-graph, hnsw-flat | storage + ingest CPU; query latency varies |
+| **Retriever** | top-k-cosine, bm25, hybrid-rrf, graph-walk, hierarchy-descent, agentic-grep (no-op pre-ingest) | per-query latency |
+| **Reranker** | none, cross-encoder-local, claude-rerank, llm-judge | tokens × candidates |
+| **Synthesizer** | direct-context-stuff, summary-then-answer, multi-hop-agentic, cite-and-answer | tokens; same model as the agent itself |
 
-**Per-draft "knowledge source" model:**
+Each stage is a class implementing:
 
-Each draft gets one or more *sources*, each with a strategy +
-ingested artifacts. Stored under the draft's group folder so it
-travels with the draft and the agent export.
-
-```
-groups/draft_<target>/
-  knowledge/
-    source-01/
-      strategy.json       { strategy: 'vector', model: '...', chunkSize: 512, ... }
-      ingested/           strategy-specific files
-        chunks.jsonl
-        embeddings.bin
-      raw/                original input files (preserved for re-ingest)
-        textbook-ch3.pdf
-        notes.md
+```ts
+interface PipelineStage<In, Out> {
+  name: string;
+  configSchema: ZodSchema;
+  cost(input: In, config: Config): CostEstimate;
+  ingest?(input: In, config: Config, log: LogStream): Promise<Out>;
+  query?(query: Query, state: PipelineState, config: Config): Promise<Out>;
+}
 ```
 
-Switching strategies = re-ingest from `raw/` with new params. Cheap
-to A/B compare.
+Stages live at `src/knowledge/stages/<name>.ts`. Custom stages added
+to a draft go at `groups/<draft>/knowledge/stages/<name>.ts` —
+auto-discovered by the pipeline framework. (This is the open
+Decision 7 hook — if we ship "build your own stage" as a capstone
+lab, this is its plug-in point.)
 
-**UI panel:**
+### Pre-built pipelines (named strategies)
 
-The Expert System tab has three sub-views:
+Each is a stage list + default config. Students start from one of
+these and tweak.
 
-1. **Sources** — list current sources, add new one (upload file, paste
-   text, point at Drive folder via Phase 3 GWS access, or paste URL
-   to scrape).
-2. **Strategy editor** — pick strategy, set params, watch ingest
-   progress in a live log pane.
-3. **Inspect** — view what was ingested (chunk preview for vector,
-   graph view for mnemon, file tree for wiki, summary tree for HiRAG).
+| Pipeline | Stages | Best for |
+|---|---|---|
+| **agentic-search** | (none — agent reads raw on demand) | Code, small text corpora |
+| **filesystem-wiki** | text-reader → markdown-splitter | Markdown notes, mid-size text |
+| **vector-text** | text-reader → sentence-splitter → text-embedder → chromadb-indexer → top-k → direct-stuff | Standard text RAG baseline |
+| **sparse-bm25** | text-reader → token-splitter → bm25-indexer → bm25-retriever → direct-stuff | Code, exact-term search |
+| **hybrid-rrf** | text-reader → sentence-splitter → (text-embedder + bm25-indexer) → hybrid-rrf-retriever → cross-encoder-rerank → direct-stuff | Mixed precision/recall needs |
+| **long-context** | text-reader → fits-context-splitter → direct-stuff (no retrieval) | Anything that fits in 200k tokens |
+| **hierarchical-tree** | text-reader → heading-outline-splitter → recursive-summarize → tree-descent-retriever → direct-stuff | Long structured docs (textbooks) |
+| **multimodal-pdf** | pdf-marker-reader → page+figure-splitter → (text-embedder + vision-captioner) → chromadb-indexer → top-k → direct-stuff | PDFs with figures/tables |
+| **vision-pdf** | pdf-page-as-image-reader → page-splitter → vision-captioner → chromadb-indexer → top-k → direct-stuff | Slide decks, figure-heavy PDFs |
+| **video-transcript** | video-yt-dlp-reader → whisper-transcribe → sentence-splitter → text-embedder → chromadb → top-k-temporal | Lecture videos, podcasts |
+| **video-multimodal** | video-yt-dlp-reader → scene-splitter → (whisper-transcribe + frame-vision-captioner) → chromadb → top-k-temporal | Lectures with on-screen content |
+| **graph-rag** | text-reader → entity-extract → graph-indexer (neo4j or in-mem) → graph-walk-retriever → direct-stuff | Relational queries; uses mnemon as primitive |
 
-**API:**
+**Recommended first-class cut:** `agentic-search`, `filesystem-wiki`,
+`vector-text`, `sparse-bm25`, `hybrid-rrf`, `long-context`,
+`multimodal-pdf`, `video-transcript`. Eight pipelines covers the
+five-content-types matrix (text, code, simple-PDF, multimodal-PDF,
+video-transcript) plus the discrete-vs-continuous-retrieval axis.
+Hierarchical, vision-pdf, video-multimodal, graph-rag as
+fast-follows; each is a separate "build my own pipeline" student
+exercise.
+
+### Two-tier corpus model
 
 ```
-POST   /api/draft/<folder>/knowledge/sources                — create source
-PUT    /api/draft/<folder>/knowledge/sources/:id/upload     — multipart upload
-PUT    /api/draft/<folder>/knowledge/sources/:id/strategy   — change strategy + re-ingest
-DELETE /api/draft/<folder>/knowledge/sources/:id            — discard
-GET    /api/draft/<folder>/knowledge/sources/:id/inspect    — strategy-specific preview
+data/class-shared/corpora/<name>/                  ← instructor-ingested, read-only
+  raw/                                              ← original files
+  pipelines/<pipeline-name>/                        ← per-pipeline ingested artifacts
+    chunks.jsonl
+    embeddings.bin
+    bm25.idx
+
+groups/<student-draft>/knowledge/sources/<id>/      ← student-private
+  raw/                                              ← uploaded by the student
+  pipelines/<pipeline-name>/                        ← their ingest
+  pipeline.json                                     ← stage list + config
+```
+
+**Sharing rules:**
+
+- Student drafts can attach a *shared* corpus → reads from
+  `class-shared/`, no re-ingest. Read-only.
+- Student drafts can also have private sources, ingested into their
+  own folder. Read+write to that source only.
+- Instructor-side: `class-skeleton.ts` learns a `--corpus <path>`
+  flag for pre-ingesting shared corpora at provisioning time.
+
+**Why shared makes sense here:** A 500-page textbook ingested via
+multimodal-pdf with vision captioning could be ~$5–10 per ingest
+(or hours of local-vision time). Re-ingesting per student × 25 is
+silly. Instructor pays once; students attach + experiment.
+
+### UI panel
+
+The Expert System tab has four sub-views:
+
+1. **Pipelines** — list current sources (private + shared) with
+   their pipeline. New source: upload file / pick shared corpus /
+   pick from Drive (Phase 3) / scrape URL.
+2. **Pipeline editor** — visual stage chain; pick a pre-built
+   pipeline or compose. Each stage shows config form + estimated
+   cost given input size.
+3. **Ingest log** — live progress for in-flight ingests (SSE).
+   Background-job queue (Decision 8 still open).
+4. **Inspect** — browse ingested artifacts: chunk previews,
+   graph viz, hierarchy tree, frame thumbnails for video,
+   per-page captions for multimodal-PDF.
+
+### API
+
+```
+POST   /api/draft/<folder>/knowledge/sources                — create (private) or attach (shared)
+PUT    /api/draft/<folder>/knowledge/sources/:id/upload     — multipart upload (private only)
+PUT    /api/draft/<folder>/knowledge/sources/:id/pipeline   — update pipeline config + re-ingest
+DELETE /api/draft/<folder>/knowledge/sources/:id            — discard (or detach if shared)
+GET    /api/draft/<folder>/knowledge/sources/:id/inspect    — pipeline-specific preview
 GET    /api/draft/<folder>/knowledge/sources/:id/log        — ingest log (SSE)
+GET    /api/class-shared/corpora                            — list shared corpora
+GET    /api/class-shared/corpora/:name/cost                 — estimated cost to ingest with pipeline X (instructor-only)
 ```
 
-**Files:**
+### Files
 
-- `src/knowledge/index.ts` — orchestrator; dispatches by strategy.
-- `src/knowledge/strategies/{filesystem,vector,sparse,hybrid,long-context,hierarchical,graph}.ts` —
-  one module per strategy. `ingest(rawPath, opts) → ingestedPath`,
-  `attach(agentGroupFolder)` (writes container.json + skills as
-  needed so the agent uses the source).
-- `src/channels/playground/home/expert-system-pane.{html,js}` — UI.
+- `src/knowledge/pipeline.ts` — orchestrator. Loads pipeline JSON,
+  resolves stages from registry + custom-stage folder, runs
+  ingest/query.
+- `src/knowledge/stages/` — built-in stages (one file per stage).
+- `src/knowledge/cost.ts` — cost-tracking primitives. Stages declare
+  cost; framework aggregates per ingest + per query.
+- `src/knowledge/pipelines/` — pre-built pipeline JSON specs (one
+  file per named strategy).
+- `src/channels/playground/home/expert-system-pane.{html,js,css}` — UI.
 - `src/channels/playground/api-knowledge.ts` — REST.
 
-**Hours est:** ~10–14 hr. Filesystem + agentic strategies are nearly
-free (they reuse existing skills); vector + sparse + hybrid need real
-work; hierarchical and CAG are research-y and probably ship in a
-later iteration.
+### Hours est
 
-**Recommended Phase 7 cut for first class:** filesystem + agentic +
-vector + long-context. That's the four most commonly-discussed
-strategies and gives meaningful comparison material. Sparse, hybrid,
-hierarchical, graph as fast-follows or as student extension projects.
+TBD — depends on Decision 6 (which pipelines are first-class) and 7
+(custom-stage support). Rough order-of-magnitude:
+
+- **Framework + 4 baseline pipelines** (agentic-search,
+  filesystem-wiki, vector-text, long-context): ~12–15 hr.
+- **Multimodal-PDF + video-transcript pipelines**: +6–8 hr each
+  (the readers/splitters/captioners are real new work; mlx-vision
+  and mlx-whisper integration adds an extra hour or two).
+- **Hybrid + sparse + hierarchical + graph + vision-pdf +
+  video-multimodal**: another 4–6 hr each as fast-follows.
+- **Custom-stage support** (Decision 7 = yes): +3–4 hr (interface
+  doc + skeleton + auto-discovery).
 
 ---
 
