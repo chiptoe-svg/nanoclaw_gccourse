@@ -228,7 +228,39 @@ After setup, opt into the optional pieces this fork is built around:
 
 ---
 
-### Phase F — End-to-end smoke test
+### Phase F — Post-setup switching
+
+**Why this exists:** Phase D persists `NANOCLAW_SETUP_CLI` once and never re-prompts. If the user installs Codex after setup and wants to switch, or installs both later and changes their mind, there's no clean path. The user could manually edit `.env`, but that's not discoverable and easy to typo.
+
+**Note on scope:** this is *only* about the setup-CLI choice (what runs on setup-step failure). It is NOT the LLM backend `/provider` switcher — that already exists as a Telegram admin command and is unrelated.
+
+**Three options, ship at least one:**
+
+1. **CLI flag — minimum viable.** Add a `--reconfigure-cli` flag to `setup/auto.ts` that re-runs just the picker phase, then exits. User invocation: `pnpm exec tsx setup/auto.ts --reconfigure-cli`. ~15 minutes of work; no new UI surface; the existing `setup:auto` arg parser already exists in `nanoclaw.sh`.
+
+2. **`/setup-cli` Telegram admin command** — ship as a fourth tool in the `add-admintools` skill. User runs `/setup-cli` to see the current choice + list installed CLIs, `/setup-cli codex` to switch. Same shape as `/provider` and `/model`. Persists to `.env` and confirms in chat. ~1 hour; consistent with the existing admin-command pattern.
+
+3. **Auto re-prompt when the persisted CLI becomes uninstalled** — `resolveSetupCli()` already falls back when the configured one is missing; extend the picker logic to also trigger when running `setup:auto` interactively if the persisted CLI is gone, so the user is asked once instead of getting silent fallback. Implicitly handled by Phase D's "configured but not installed" path; explicit prompt is one branch of code.
+
+**Recommendation: do #1 + #3 in this plan, and add #2 as a separate `add-admintool-setup-cli` skill in a follow-up commit** if the operator-UX win seems worth it.
+
+**File changes for #1 + #3:**
+
+- `setup/auto.ts` — handle `--reconfigure-cli` arg (search for the existing `process.argv` parsing; add one branch); inside the picker logic from Phase D, also re-prompt when `configured && !cli.isInstalled()` (with a warning line).
+- `nanoclaw.sh` — document the flag in the script's header comment (`# Reconfigure CLI: pnpm exec tsx setup/auto.ts --reconfigure-cli`).
+- README — add a sentence about how to switch.
+
+**Verification:**
+
+- `pnpm exec tsx setup/auto.ts --reconfigure-cli` → just shows the picker, persists, exits 0.
+- Set `NANOCLAW_SETUP_CLI=mystery-cli` (a name no adapter knows) and rerun setup → re-prompts.
+- Set `NANOCLAW_SETUP_CLI=codex`, uninstall codex → re-prompts on next setup run with a "configured CLI not installed" warning.
+
+**Commit:** `feat(setup): --reconfigure-cli flag + auto-re-prompt on missing CLI`
+
+---
+
+### Phase G — End-to-end smoke test
 
 Not a commit — a manual verification step before merging to origin/main.
 
@@ -255,9 +287,10 @@ If any of these surface a bug, file as a follow-up commit before announcing the 
 - Phase C: 1 hour
 - Phase D: 1 hour (picker UX + env-write helper hookup)
 - Phase E: 15 min
-- Phase F: 30 min manual
+- Phase F: 30 min (`--reconfigure-cli` flag + auto-re-prompt)
+- Phase G: 30 min manual smoke test
 
-**Total: ~4 hours of focused work.** Should be doable in one fresh session.
+**Total: ~4.5 hours of focused work.** Should be doable in one fresh session.
 
 ## Resumability cues for a future Claude
 
@@ -274,4 +307,5 @@ If any of these surface a bug, file as a follow-up commit before announcing the 
 - [ ] Phase C: `claude-assist.ts` → `cli-assist.ts`
 - [ ] Phase D: Picker prompt + `.env` persistence
 - [ ] Phase E: README + docs update
-- [ ] Phase F: End-to-end smoke test
+- [ ] Phase F: `--reconfigure-cli` flag + auto-re-prompt when persisted CLI is uninstalled
+- [ ] Phase G: End-to-end smoke test
