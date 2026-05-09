@@ -63,10 +63,16 @@ Eight pieces, sequenced so each lands independently and is testable:
                                        (or Ollama/LM Studio)
 7. Expert system builder tab       ─► per-draft knowledge sources;
                                        multiple ingest strategies
-                                       (filesystem, agentic, vector,
-                                       sparse, hybrid, long-context, …)
+                                       (text, multimodal PDF, video,
+                                       long-doc tree, graph, …) —
+                                       SCOPE OPEN, see "RAG phase"
+                                       discussion below
 8. Evaluation framework            ─► run query sets across strategies,
                                        score, compare side-by-side
+9. Walk-away cloud deploy          ─► export the student's full state
+                                       (agent + knowledge + experiments)
+                                       into a bootstrap-able NanoClaw
+                                       instance on their own VPS
 ```
 
 Pieces 2 and 3 share the same OAuth dance — one Google consent screen,
@@ -449,6 +455,14 @@ The actual config flip is a handful of `.env` lines.
 
 ## Phase 7 — Expert System Builder tab (knowledge ingest)
 
+> **⚠️ Scope open — pending RAG-design discussion.** The earlier draft
+> below assumed mostly text corpora. Real course content includes
+> video lectures, multimodal PDFs (figures, tables, equations), long
+> complex documents with cross-references, and corpora that don't fit
+> any single retrieval model. The strategy list and ingest pipelines
+> need expansion before this phase locks. Treat the section below as a
+> first-pass sketch, not the final spec.
+
 A new tab on the home page where each student builds and explores a
 "knowledge source" attached to their agent — the modern descendant of
 classical expert systems, where the question becomes "how do I get
@@ -617,6 +631,122 @@ iteration.
 
 ---
 
+---
+
+## Phase 9 — Walk-away cloud deploy
+
+End-of-course capstone: a "Walk Away" button on the home page that
+turns the student's playground state — agent, knowledge sources,
+experiments — into a running NanoClaw instance on a cloud server they
+own. They leave the course with a working agent, not a tarball.
+
+**Three deploy modes, instructor decides which to support:**
+
+1. **BYO-cloud (default, recommended)** — student provisions a VPS
+   themselves (DigitalOcean / Hetzner / Linode / a Mac Mini at
+   home), runs one bootstrap command. Class server hosts only the
+   bundle + verification.
+2. **Auto-provision** — instructor's class server holds API
+   credentials for a cloud provider, mints a VPS on the student's
+   behalf. Faster but the instructor pays for VPS billing or has a
+   pre-arranged student-billing flow.
+3. **Local-only fallback** — student downloads a tarball + a
+   `setup.sh` and runs it on their own laptop / home server. No
+   class-server involvement at deploy time.
+
+Phase 9 implements **mode 1** in trunk (the others are layerable
+follow-ups).
+
+**Walk-away flow:**
+
+```
+Student clicks "Walk Away" on home page
+  → confirms what's bundled (agent, knowledge, experiments)
+  → confirms target: "I have a fresh Ubuntu/macOS machine ready"
+  → class server mints a one-time install token (24h TTL)
+  → home page shows:
+       ssh user@your-server.com
+       bash <(curl https://class.example.com/walkaway?t=ABC123)
+  → student runs that on their server
+  → bootstrap script:
+       1. clone NanoClaw
+       2. run setup (the existing nanoclaw.sh flow, no
+          interactive prompts — config from token bundle)
+       3. fetch student's bundle from class server (token-authed)
+       4. import: agent_groups, knowledge sources, experiments,
+          container.json, CLAUDE.local.md, persona, skills
+       5. prompt student for THEIR creds:
+            - their own bot token (or skip Telegram)
+            - their own Anthropic key (or codex auth, or
+              local-LLM endpoint URL)
+            - their own GWS account (re-do the OAuth dance —
+              the class instance's per-student refresh token
+              is NOT exportable for security)
+       6. start the service
+  → student has a working agent on their own infra in ~10–15 min
+```
+
+**Bundle contents** (extends Phase 5's export):
+
+```
+walkaway-<student>.tar.gz
+  manifest.json              version, schema, what's included
+  groups/<their-folder>/     agent persona, container.json, skills
+  knowledge/                 ingested sources from Phase 7
+  experiments/               their experiment history (optional)
+  setup-config.json          channel + provider config the import
+                             script applies non-interactively
+```
+
+**Security boundaries — what is NOT exported:**
+
+- Per-student GWS refresh tokens (Phase 3) — must be re-acquired on
+  the new server. Same boundary Google enforces; we don't break it.
+- The class server's OAuth client — student needs their own GCP
+  project and client. Documented in the post-deploy README.
+- Other students' agent groups, even if the role gates would let
+  them see them in the class playground. Walk-away is strictly
+  per-student.
+- The class roster, instructor identity, other students' personas.
+
+**API:**
+
+```
+POST  /api/home/walkaway/prepare       — generates bundle, returns token
+GET   /walkaway?t=<token>              — bootstrap script (text/plain bash)
+GET   /walkaway/bundle?t=<token>       — bundle download (single-use, then revoked)
+```
+
+The bootstrap script is dynamically rendered with the bundle URL
+embedded; it's not a static asset. The token is single-use for the
+bundle download and burns on first fetch.
+
+**Files:**
+
+- `src/walkaway/index.ts` — bundle generator (extends Phase 5).
+- `src/walkaway/bootstrap.sh.ts` — bash-script template renderer.
+- `src/walkaway/import.ts` — runs on the new server; reads bundle,
+  populates DB, runs migrations.
+- `src/channels/playground/home/walkaway-pane.{html,js}` — UI.
+- `.claude/skills/add-classroom/SKILL.md` — operator-side notes on
+  enabling the feature (which deploy modes, bundle TTL, etc.).
+
+**Hours est:** ~6–8 hr. The bundle format is mostly Phase 5's work
+extended; the bootstrap-script + import side is the new work.
+
+**Out of scope for Phase 9:**
+
+- Auto-provisioning a VPS (mode 2 above) — separate skill,
+  layerable, post-Phase-9.
+- Importing a bundle into an *existing* NanoClaw install (i.e.,
+  merge with their already-running setup) — adds conflict-resolution
+  surface; defer until requested.
+- Cloud-cost optimization, autoscaling, monitoring — those are
+  general-purpose-cloud concerns and belong in the user's hosting
+  setup, not in this plan.
+
+---
+
 ## Classroom / lab scenario ideas
 
 How the Phase 7 + 8 stack actually gets used in a course. These are
@@ -707,12 +837,14 @@ end up exposing plain HTTP.
 | 4 | Home page expansion (settings, dashboard, picker filter) | ~400 new (UI-heavy) | 6–8 |
 | 5 | Agent export (nanoclaw / claude-code / codex / json) | ~250 new | 4–5 |
 | 6 | Local-LLM via codex provider (audit + runbook) | ~50 changed + docs | 2–3 |
-| 7 | Expert system builder tab + 4 default strategies | ~600 new (UI + 4 ingest modules) | 10–14 |
+| 7 | Expert system builder tab + default strategies (scope tbd) | tbd — see "RAG phase open design" below | tbd |
 | 8 | Evaluation framework + comparison UI | ~500 new + migration | 8–10 |
+| 9 | Walk-away cloud deploy (BYO-cloud mode) | ~400 new + bootstrap.sh template | 6–8 |
 | Hosting | Document Caddy / Cloudflare Tunnel in skill | docs only | 1 |
 
-Total: ~46–58 hours for the full set; ~16 hours for the
-bare-minimum (Phases 1 + 2 + 3) classroom-deployable cut.
+Total: ~52–66 hours for the full set (Phase 7 hours TBD pending
+RAG-design discussion); ~16 hours for the bare-minimum (Phases 1 + 2
++ 3) classroom-deployable cut.
 
 Each phase ends with passing tests and a focused commit.
 
@@ -743,6 +875,11 @@ point comparing strategies if you can't measure them). Both depend
 on Phase 6 in practice — running 25 students × multiple strategies
 × many queries against billable models gets expensive fast.
 
+**Phase 9 is the capstone** — student walks away with a working
+agent on their own infra. Depends on Phase 5 (export tooling);
+independent of Phases 6–8 (a student without lab content can still
+walk away with their persona-tweaked agent).
+
 **Recommended cut for "first class":**
 
 - Phases 1 + 2 + 3 + Hosting docs (= deployable MVP) → ~16 hr
@@ -750,8 +887,12 @@ on Phase 6 in practice — running 25 students × multiple strategies
 - Phase 4 + 5 as fast-follows in the gap between provisioning and
   first lecture
 - Phase 7 + 8 if the course is RAG/expert-systems focused →
-  +18–24 hr, and probably the bulk of the second-half-of-semester
-  lab content. If the course doesn't go there, defer.
+  +tbd, and probably the bulk of the second-half-of-semester
+  lab content. RAG-phase scope is still open — see discussion
+  thread before locking.
+- Phase 9 (Walk Away) at end of semester regardless of which other
+  phases ship — the export bundle works for any agent state, with
+  or without Phase 7/8 lab data.
 
 ## Risks
 
