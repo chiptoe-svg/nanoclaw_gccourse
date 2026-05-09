@@ -524,7 +524,7 @@ async function handleModelCommand(token: string, platformId: string, text: strin
 
   const { getMessagingGroupByPlatform, getMessagingGroupAgents } = await import('../db/messaging-groups.js');
   const { getAgentGroup } = await import('../db/agent-groups.js');
-  const { hintsForProvider, resolveEffectiveModel, setModel } = await import('../model-switch.js');
+  const { expandAlias, hintsForProvider, resolveEffectiveModel, setModel } = await import('../model-switch.js');
   const { isContainerRunning, killContainer } = await import('../container-runner.js');
   const { getActiveSessions } = await import('../db/sessions.js');
 
@@ -553,9 +553,16 @@ async function handleModelCommand(token: string, platformId: string, text: strin
   let reply: string;
 
   if (!arg) {
-    const hints = hintsForProvider(group.agent_provider);
+    const hints = await hintsForProvider(group.agent_provider);
+    // Pad aliases to a constant width so the dashes line up — easier to scan
+    // when picking which short token to type.
+    const aliasWidth = hints.reduce((w, h) => Math.max(w, h.alias.length), 0);
     const list =
-      hints.length > 0 ? hints.map((h) => `  • ${h.name} — ${h.note}`).join('\n') : '  (no hints for this provider)';
+      hints.length > 0
+        ? hints
+            .map((h) => `  • ${h.alias.padEnd(aliasWidth)}  — ${h.note || h.id}`)
+            .join('\n')
+        : '  (no hints for this provider)';
     const effective = resolveEffectiveModel(group);
     const modelLine = group.model ? `Model: ${group.model}` : `Model: ${effective} (provider default)`;
     reply =
@@ -565,9 +572,10 @@ async function handleModelCommand(token: string, platformId: string, text: strin
       `\n` +
       `Suggested models:\n${list}\n` +
       `\n` +
-      `Use /model <name> to switch. Any string is accepted; the server validates.`;
+      `Use /model <alias|full-id> to switch. Aliases above (e.g. "${hints[0]?.alias ?? 'opus'}") expand to the full id.`;
   } else {
-    const newModel = arg === 'reset' || arg === 'default' ? null : arg;
+    const newModel =
+      arg === 'reset' || arg === 'default' ? null : await expandAlias(group.agent_provider, arg);
     const ok = setModel(group.folder, newModel);
     if (!ok) {
       reply = 'Failed to persist — group not found by folder.';
