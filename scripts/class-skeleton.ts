@@ -24,9 +24,18 @@
  *     --tas "Dave,Eve" \
  *     --instructors "Frank,Grace" \
  *     --kb /srv/class-kb \
- *     --wiki /srv/class-wiki
+ *     --wiki /srv/class-wiki \
+ *     --roster /srv/class-roster.csv
  *
  * --tas and --instructors are optional (defaults to none).
+ *
+ * --roster is the email→user_id map the playground's Google OAuth
+ * callback consults to decide who's enrolled. CSV: `email,user_id`
+ * one per line. Optional `email,user_id` header. UPSERT on email so
+ * re-running with the same CSV is idempotent. Without --roster the
+ * playground still works for Telegram-paired users (instructors / TAs)
+ * but the no-Telegram Google sign-in path will see "not enrolled" for
+ * every student.
  *
  * With /add-classroom-gws installed, additional flags `--drive-parent
  * <folder-id>` and `--drive-mount-root <path>` become available.
@@ -42,6 +51,7 @@ import path from 'path';
 import { DATA_DIR, GROUPS_DIR } from '../src/config.js';
 import { createPairing } from '../src/channels/telegram-pairing.js';
 import { createAgentGroup, getAgentGroupByFolder } from '../src/db/agent-groups.js';
+import { upsertRosterEntry } from '../src/db/classroom-roster.js';
 import { initDb, getDb } from '../src/db/connection.js';
 import { runMigrations } from '../src/db/migrations/index.js';
 import { writeContainerConfig, type ContainerConfig } from '../src/container-config.js';
@@ -62,6 +72,7 @@ interface CliArgs {
   instructors: string[];
   kb: string | null;
   wiki: string | null;
+  roster: string | null; // path to a CSV of `email,user_id` rows
 }
 
 function parseArgs(): CliArgs {
@@ -92,7 +103,31 @@ function parseArgs(): CliArgs {
     instructors: splitNames(get('--instructors')),
     kb: get('--kb'),
     wiki: get('--wiki'),
+    roster: get('--roster'),
   };
+}
+
+/**
+ * Parse a roster CSV mapping authenticated email → canonical user_id.
+ * Expected shape: `email,user_id` rows. Optional header row beginning
+ * with `email,` is skipped. Blank lines and `# …` comment lines are
+ * ignored. Returns parsed rows; the caller decides what to do with them
+ * (typically: validate user_ids match provisioned folders, then upsert).
+ */
+export function parseRosterCsv(text: string): Array<{ email: string; user_id: string }> {
+  const rows: Array<{ email: string; user_id: string }> = [];
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) continue;
+    const cols = line.split(',').map((c) => c.trim());
+    if (cols.length < 2) continue;
+    const [email, userId] = cols;
+    // Header row: `email,user_id` literal — skip.
+    if (email!.toLowerCase() === 'email') continue;
+    if (!email || !userId) continue;
+    rows.push({ email: email!, user_id: userId! });
+  }
+  return rows;
 }
 
 function shortId(prefix: string): string {
@@ -187,8 +222,38 @@ The default above is just a starting point.
  * Default content for `data/class-shared-students.md`. Symlinked into
  * each student's group dir as `.class-shared.md`. The instructor can
  * edit this one file to change the class-wide stance for every student.
+ *
+ * The "How students reach the playground" section reflects the two
+ * routes available after Phase 2 of plans/classroom-web-multiuser.md:
+ *   - Web (Google sign-in) — preferred for students with a Google
+ *     account on the class roster. URL substituted from
+ *     PLAYGROUND_PUBLIC_URL at provisioning time.
+ *   - Telegram magic link — fallback for instructors and anyone whose
+ *     email isn't on the roster yet.
  */
-const CLASS_SHARED_STUDENT_MD = `## How you teach
+function classSharedStudentMd(): string {
+  const playgroundUrl = process.env.PLAYGROUND_PUBLIC_URL || process.env.NANOCLAW_PUBLIC_URL || null;
+  const webHowto = playgroundUrl
+    ? `Visit ${playgroundUrl}/login and sign in with the Google account on the
+class roster. You'll land on a home page; click "Open Playground" to
+edit my persona, skills, and provider settings.`
+    : `(Ask your instructor for the playground URL. Sign in with the Google
+account on the class roster.)`;
+
+  return `## How students reach the playground
+
+You can iterate on my persona / skills / provider any time via the
+**playground** — a web workbench scoped to your draft.
+
+**Web sign-in (preferred):** ${webHowto}
+
+**Telegram fallback:** if you don't have a Google account on the class
+roster, send \`/playground\` to the class bot on Telegram and it will
+DM you a magic-link URL that opens the same workbench. Same multi-user
+session store as the web path — your session won't kick out anyone
+else's.
+
+## How you teach
 
 Approach learning Socratically. When a student asks a question, prefer
 asking *them* a question that nudges them toward the answer over
@@ -213,6 +278,7 @@ classmates' sites — never write to \`/var/www/sites/\` directly.
 The host's Caddy server serves your site at
 \`http://<host>/<your-folder>/<sitename>/\`. Send the URL when done.
 `;
+}
 
 const STUDENT_CLAUDE_MD = `@./.claude-shared.md
 @./.class-shared.md
@@ -355,7 +421,7 @@ async function main(): Promise<void> {
   fs.mkdirSync(DATA_DIR, { recursive: true });
   const classSharedPath = path.join(DATA_DIR, 'class-shared-students.md');
   if (!fs.existsSync(classSharedPath)) {
-    fs.writeFileSync(classSharedPath, CLASS_SHARED_STUDENT_MD);
+    fs.writeFileSync(classSharedPath, classSharedStudentMd());
   }
 
   const roster: Array<{ name: string; folder: string; code: string; role: string }> = [];
@@ -399,6 +465,34 @@ async function main(): Promise<void> {
   const classConfigPath = path.join(DATA_DIR, 'class-config.json');
   fs.writeFileSync(classConfigPath, JSON.stringify(classConfig, null, 2));
 
+  // --roster: populate classroom_roster from operator-supplied CSV. Lets the
+  // playground's Google OAuth callback look up authenticated emails against
+  // the canonical user_ids the rest of the class skeleton produces. Idempotent
+  // re-runs (UPSERT keyed on email).
+  if (args.roster) {
+    if (!fs.existsSync(args.roster)) {
+      throw new Error(`--roster file not found: ${args.roster}`);
+    }
+    const rows = parseRosterCsv(fs.readFileSync(args.roster, 'utf8'));
+    const knownFolders = new Set([
+      ...students.map((s) => s.folder),
+      ...tas.map((t) => t.folder),
+      ...instructors.map((i) => i.folder),
+    ]);
+    let upserted = 0;
+    let warned = 0;
+    for (const r of rows) {
+      const folderHint = r.user_id.includes(':') ? r.user_id.split(':').slice(1).join(':') : r.user_id;
+      if (!knownFolders.has(folderHint)) {
+        console.warn(`  [warn] roster row ${r.email} → ${r.user_id}: no provisioned folder matches`);
+        warned += 1;
+      }
+      upsertRosterEntry({ email: r.email, user_id: r.user_id });
+      upserted += 1;
+    }
+    console.log(`Roster ingested:     ${upserted} entries (${warned} warned) from ${args.roster}`);
+  }
+
   // Roster CSV gains a role column.
   const csvPath = path.join(process.cwd(), 'class-roster.csv');
   const lines = ['role,name,folder,pairing_code,instructions'];
@@ -415,7 +509,12 @@ async function main(): Promise<void> {
   console.log(`\n${roster.length} pairing codes generated. Distribute to class members.`);
 }
 
-main().catch((err) => {
-  console.error('class-skeleton failed:', err);
-  process.exit(1);
-});
+// Only run when invoked as a CLI, not when imported by tests.
+import { fileURLToPath } from 'url';
+const isMainScript = process.argv[1] === fileURLToPath(import.meta.url);
+if (isMainScript) {
+  main().catch((err) => {
+    console.error('class-skeleton failed:', err);
+    process.exit(1);
+  });
+}
