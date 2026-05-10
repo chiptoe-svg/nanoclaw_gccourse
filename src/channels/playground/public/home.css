@@ -1,0 +1,84 @@
+/* Minimal home + login page styling. Visually compatible with the
+   workbench (style.css) but standalone — the home page intentionally
+   doesn't depend on workbench layout primitives. */
+
+:root {
+  --bg: #fafafa;
+  --fg: #1a1a1a;
+  --muted: #666;
+  --border: #e0e0e0;
+  --accent: #1a73e8;
+  --accent-hover: #1764cf;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+body.centered {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+}
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 0.75rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+  background: white;
+}
+
+.brand { font-weight: 600; }
+.who { color: var(--muted); font-size: 0.9rem; }
+
+.card {
+  max-width: 32rem;
+  margin: 2rem auto;
+  padding: 2rem;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+}
+
+.card h1 { margin-top: 0; }
+.card hr { margin: 1.5rem 0; border: none; border-top: 1px solid var(--border); }
+
+.primary-btn {
+  display: inline-block;
+  padding: 0.6rem 1.2rem;
+  background: var(--accent);
+  color: white;
+  text-decoration: none;
+  border-radius: 0.25rem;
+  font-weight: 500;
+}
+
+.primary-btn:hover { background: var(--accent-hover); }
+
+.muted { color: var(--muted); font-size: 0.9rem; }
+
+.placeholder {
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.placeholder h2 { font-size: 1rem; margin-top: 0; }
+.placeholder ul { padding-left: 1.25rem; }
+
+code {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  background: #f0f0f0;
+  padding: 0.1rem 0.3rem;
+  border-radius: 0.2rem;
+  font-size: 0.9rem;
+}
