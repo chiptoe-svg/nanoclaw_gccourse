@@ -8,7 +8,7 @@ sequencing layer.
 
 | Subsystem | Where it landed |
 |---|---|
-| Setup-CLI picker (Phases A–F) | `main`, commits per `plans/setup-cli-pick.md` |
+| AI-coding-CLI picker (Phases A–F) | `main`, commits per `plans/ai-coding-cli-pick.md` |
 | Agent Playground v2 | installed via `/add-agent-playground`, declared SHIPPED in `plans/agent-playground-v2.md` |
 | Class feature foundation (`/add-classroom*` skills) | `origin/classroom` branch |
 | Multi-user playground session store (Phase 1) | `main` (merge `7e5398d`) |
@@ -25,7 +25,7 @@ Latest tracker: `plans/upstream-pr-prep.md` for the per-item PR-readiness state.
 | [classroom-web-multiuser.md](classroom-web-multiuser.md) | Phases 4–9 of the class web rebuild | Phases 1–3 (A) shipped; 4–9 pending |
 | [credential-proxy-per-call-attribution.md](credential-proxy-per-call-attribution.md) | Per-call agent-group attribution in the credential proxy | Plan only; **keystone for tier 2** |
 | [gws-mcp.md](gws-mcp.md) | Host-side Google Workspace MCP (Doc/Drive/Sheet tools) | 13.0 done; 13.1–13.4 pending |
-| [setup-cli-pick.md](setup-cli-pick.md) | Setup-CLI picker | A–F shipped; only Phase G (smoke matrix) left |
+| [ai-coding-cli-pick.md](ai-coding-cli-pick.md) | AI-coding-CLI picker | A–F shipped; only Phase G (smoke matrix) left |
 
 ## Sub-plans (archived as historical)
 
@@ -53,8 +53,8 @@ on the same architectural decision.
    Full plan in `credential-proxy-per-call-attribution.md`. Recommended
    mechanism: header injection (Candidate A). Implementation phases
    X.1–X.6 in that plan.
-3. **setup-cli Phase G — smoke matrix.** ~2 hr.
-   Per `setup-cli-pick.md` Phase G + the test list in
+3. **ai-coding-cli Phase G — smoke matrix.** ~2 hr.
+   Per `ai-coding-cli-pick.md` Phase G + the test list in
    `upstream-pr-prep.md` §1. Pure verification work; clears the
    upstream-PR signal for that subsystem.
 
