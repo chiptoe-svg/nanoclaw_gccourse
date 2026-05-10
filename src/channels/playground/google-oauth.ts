@@ -26,16 +26,19 @@ import { DATA_DIR, PLAYGROUND_BIND_HOST, PLAYGROUND_PORT } from '../../config.js
 import { lookupRosterByEmail } from '../../db/classroom-roster.js';
 import { buildAuthorizationUrl, DEFAULT_GWS_SCOPES, exchangeCodeForTokens, loadOAuthClient } from '../../gws-auth.js';
 import { log } from '../../log.js';
-import { COOKIE_NAME, mintSessionForUser, type PlaygroundSession } from '../playground.js';
+import { formatSessionCookie, mintSessionForUser, type PlaygroundSession } from './auth-store.js';
+import { escapeHtml, send, sendHtml } from './http-helpers.js';
+import { TtlMap } from './ttl-map.js';
 
 const STATE_TTL_MS = 5 * 60 * 1000;
-const SESSION_COOKIE_MAX_AGE_S = 7 * 24 * 60 * 60;
 
+// Marker type so the TtlMap declaration carries intent. The state token
+// itself doesn't need any payload — its presence is the assertion.
 interface PendingOAuthState {
-  expiresAt: number;
+  /* intentionally empty */
 }
 
-const pendingStates = new Map<string /*state*/, PendingOAuthState>();
+const pendingStates = new TtlMap<string /*state*/, PendingOAuthState>(STATE_TTL_MS);
 
 function detectPublicBase(): string {
   const override = process.env.PLAYGROUND_PUBLIC_URL || process.env.NANOCLAW_PUBLIC_URL;
@@ -57,20 +60,12 @@ function redirectUri(): string {
  */
 function mintState(): string {
   const state = crypto.randomBytes(24).toString('base64url');
-  pendingStates.set(state, { expiresAt: Date.now() + STATE_TTL_MS });
-  // Opportunistic GC of expired states so the map doesn't grow unbounded
-  // when nobody completes the dance.
-  for (const [key, entry] of pendingStates) {
-    if (Date.now() > entry.expiresAt) pendingStates.delete(key);
-  }
+  pendingStates.set(state, {});
   return state;
 }
 
 function consumeState(state: string): boolean {
-  const entry = pendingStates.get(state);
-  if (!entry) return false;
-  pendingStates.delete(state);
-  return Date.now() <= entry.expiresAt;
+  return pendingStates.take(state) !== undefined;
 }
 
 interface GoogleIdTokenPayload {
@@ -157,15 +152,6 @@ export function persistStudentGwsCredentials(opts: {
 }
 
 // ── HTTP handlers ─────────────────────────────────────────────────────────
-
-function send(res: http.ServerResponse, status: number, body: string, contentType: string): void {
-  res.writeHead(status, { 'content-type': contentType });
-  res.end(body);
-}
-
-function sendHtml(res: http.ServerResponse, status: number, html: string): void {
-  send(res, status, html, 'text/html; charset=utf-8');
-}
 
 export function handleOAuthStart(url: URL, res: http.ServerResponse): boolean {
   if (url.pathname !== '/oauth/google/start') return false;
@@ -301,12 +287,11 @@ export async function processOAuthCallback(opts: {
   const session: PlaygroundSession = mintSessionForUser(entry.user_id);
   log.info('Google OAuth login succeeded', { userId: entry.user_id, email });
 
-  const setCookie = `${COOKIE_NAME}=${session.cookieValue}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_COOKIE_MAX_AGE_S}`;
   return {
     status: 302,
     contentType: 'text/plain',
     body: '',
-    setCookie,
+    setCookie: formatSessionCookie(session.cookieValue),
   };
 }
 
@@ -326,25 +311,6 @@ export async function handleOAuthCallback(url: URL, res: http.ServerResponse): P
   return true;
 }
 
-function escapeHtml(s: string): string {
-  return s.replace(/[&<>"']/g, (c) => {
-    switch (c) {
-      case '&':
-        return '&amp;';
-      case '<':
-        return '&lt;';
-      case '>':
-        return '&gt;';
-      case '"':
-        return '&quot;';
-      case "'":
-        return '&#39;';
-      default:
-        return c;
-    }
-  });
-}
-
 /** Test-only: drop the in-memory pending-state map. */
 export function _resetOAuthStateForTest(): void {
   pendingStates.clear();
@@ -352,5 +318,5 @@ export function _resetOAuthStateForTest(): void {
 
 /** Test-only: insert a state so callers can drive the callback path. */
 export function _seedOAuthStateForTest(state: string, ttlMs = STATE_TTL_MS): void {
-  pendingStates.set(state, { expiresAt: Date.now() + ttlMs });
+  pendingStates.set(state, {}, ttlMs);
 }
