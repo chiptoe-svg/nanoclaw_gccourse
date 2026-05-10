@@ -141,9 +141,9 @@ gongrzhe/cocal MCPs).
 
 #### 13.0 — Plan ✅
 
-#### 13.1 — Clean up OneCLI-only skills
-- [ ] Delete `.claude/skills/add-gmail-tool/`
-- [ ] Delete `.claude/skills/add-gcal-tool/`
+#### 13.1 — Clean up OneCLI-only skills ✅
+- [x] Delete `.claude/skills/add-gmail-tool/` (removed in 8f5f040).
+- [x] Delete `.claude/skills/add-gcal-tool/` (removed in 8f5f040).
 
 These don't work on this install (require OneCLI gateway). Phase
 13's `/add-gws-tool` supersedes them.
