@@ -24,12 +24,7 @@ import path from 'path';
 
 import { DATA_DIR, PLAYGROUND_BIND_HOST, PLAYGROUND_PORT } from '../../config.js';
 import { lookupRosterByEmail } from '../../db/classroom-roster.js';
-import {
-  buildAuthorizationUrl,
-  DEFAULT_GWS_SCOPES,
-  exchangeCodeForTokens,
-  loadOAuthClient,
-} from '../../gws-auth.js';
+import { buildAuthorizationUrl, DEFAULT_GWS_SCOPES, exchangeCodeForTokens, loadOAuthClient } from '../../gws-auth.js';
 import { log } from '../../log.js';
 import { COOKIE_NAME, mintSessionForUser, type PlaygroundSession } from '../playground.js';
 
@@ -46,7 +41,8 @@ function detectPublicBase(): string {
   const override = process.env.PLAYGROUND_PUBLIC_URL || process.env.NANOCLAW_PUBLIC_URL;
   if (override) return override.replace(/\/$/, '');
   // PLAYGROUND_BIND_HOST may be 0.0.0.0; use a routable substitute.
-  const host = PLAYGROUND_BIND_HOST === '0.0.0.0' ? process.env.PLAYGROUND_PUBLIC_HOST || 'localhost' : PLAYGROUND_BIND_HOST;
+  const host =
+    PLAYGROUND_BIND_HOST === '0.0.0.0' ? process.env.PLAYGROUND_PUBLIC_HOST || 'localhost' : PLAYGROUND_BIND_HOST;
   return `http://${host}:${PLAYGROUND_PORT}`;
 }
 

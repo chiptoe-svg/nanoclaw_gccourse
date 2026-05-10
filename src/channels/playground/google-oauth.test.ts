@@ -196,9 +196,10 @@ describe('processOAuthCallback', () => {
       }),
     });
 
-    const cred = JSON.parse(
-      fs.readFileSync(studentGwsCredentialsPath('class:student_07'), 'utf8'),
-    ) as { refresh_token: string; access_token: string };
+    const cred = JSON.parse(fs.readFileSync(studentGwsCredentialsPath('class:student_07'), 'utf8')) as {
+      refresh_token: string;
+      access_token: string;
+    };
     expect(cred.refresh_token).toBe('refresh-1'); // preserved
     expect(cred.access_token).toBe('access-2'); // updated
   });
