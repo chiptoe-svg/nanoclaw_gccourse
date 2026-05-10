@@ -105,6 +105,11 @@ each skill scoped to one concern:
 
 ## Phase 1 — Multi-user session store
 
+> **Status: ✅ shipped** on `origin/feat/playground-multiuser` (gccourse).
+> 7 unit tests + 12-assertion in-process HTTP smoke green. Live
+> two-browser verification still pending real-host run. See
+> `plans/upstream-pr-prep.md` §3 for the per-tick smoke matrix.
+
 **File:** `src/channels/playground.ts` (rework auth section, ~50 LoC
 changed)
 
@@ -161,6 +166,15 @@ per-request lookup from the session map.
 ---
 
 ## Phase 2 — Google OAuth login + roster + minimal home page
+
+> **Status: ✅ shipped (slice A)** on `origin/feat/playground-google-oauth`
+> (gccourse), stacked on Phase 1. Slice A = `classroom_roster` table +
+> `google-oauth.ts` handlers + `login.html` + `home.html` + `/playground/`
+> route move + `/api/home/me`. **Slice B deferred** to a follow-up against
+> `origin/classroom`: the `--roster <csv>` flag in `class-skeleton.ts`.
+> 13 unit tests + 18-assertion in-process HTTP smoke green. Live
+> in-browser verification gated on the GCP redirect-URI registration —
+> see `project_gcp_oauth_pending` memory.
 
 Lets students access the playground without Telegram, and establishes
 the home-page surface that later phases expand.
@@ -238,6 +252,17 @@ in the roster → "you're not enrolled in this class" page.
 ---
 
 ## Phase 3 — Per-student GWS refresh token (= gws-mcp Phase 14)
+
+> **Status: ✅ shipped (slice A — write side)** alongside Phase 2 on
+> `origin/feat/playground-google-oauth`. The OAuth callback persists the
+> per-student refresh token to
+> `data/student-google-auth/<sanitized_user_id>/credentials.json`,
+> preserving the on-disk token if Google omits one on re-consent.
+> **Slice B deferred** to `origin/classroom`: the credential-proxy
+> per-request *read-side* lookup that swaps the instructor's bearer for
+> the per-student token. Until B lands, agents still call Google with
+> the instructor's OAuth — the per-student credentials sit on disk
+> waiting for the proxy to consult them.
 
 This is the per-student-OAuth piece from `plans/gws-mcp.md` Phase 14,
 folded into this plan because it's the same OAuth dance as Phase 2.

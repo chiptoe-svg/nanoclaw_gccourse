@@ -163,11 +163,25 @@ Fix lands BEFORE the marketplace submission, not after.
 
 ## 3. Multi-user playground + Google login (`plans/classroom-web-multiuser.md`)
 
-Code state: **🛠 not started** — plan locked, all decisions made.
+Code state:
+- **Phase 1** ✅ shipped on `origin/feat/playground-multiuser` (gccourse).
+- **Phase 2 + Phase 3 (slice A)** ✅ shipped on `origin/feat/playground-google-oauth`
+  (gccourse), stacked on Phase 1. Slice A is the playground-side OAuth + roster
+  + minimal home + per-student GWS *write-side* persistence.
+- **Phase 3 slice B** 🛠 deferred — credential-proxy per-student GWS *read-side*
+  lookup needs the per-agent-group resolver from `/add-classroom-auth`'s
+  Phase 9 (lives on `origin/classroom`).
+- **`/add-classroom --roster <csv>`** 🛠 deferred — needs class-skeleton.ts
+  (lives on `origin/classroom`).
+- **Phases 4–9** 🛠 not started.
+
+Live in-browser smoke for Phases 2+3 is gated on registering the redirect
+URI in GCP Console — pending the Mac Studio LAN IP being assigned. See
+the per-phase smoke sections below.
 
 The 9-phase rebuild that turns the class feature into a real
 25-student web deployment. MVP cut for first class is Phases 1+2+3
-(~16 hr).
+(~16 hr; ~12 hr now landed via slices, ~4 hr deferred to slice B).
 
 **Upstream path:** Mixed.
 - **Phase 1 (multi-user playground fix)**: trunk PR to upstream-of-
@@ -181,28 +195,44 @@ The 9-phase rebuild that turns the class feature into a real
 ### Local smoke (per phase, as each lands)
 
 Phase 1 — Multi-user session store:
-- [ ] Two browsers, two cookies, both authed; neither kicks the
-      other.
-- [ ] `/playground stop --self` only revokes caller; other sessions
-      survive.
-- [ ] `/playground stop` (no flag) revokes all (preserves current
-      behavior).
-- [ ] Idle sweep drops only the idle session.
+- [x] Two browsers, two cookies, both authed; neither kicks the
+      other. — covered by `scripts/smoke-playground-multiuser.ts`
+      (12 assertions, in-process HTTP). Live two-browser pass still
+      pending real-host run.
+- [x] `/playground stop --self` only revokes caller; other sessions
+      survive. — `revokeSessionsForUser` covered in unit tests +
+      smoke; Telegram-driven path covered in code review only.
+- [x] `/playground stop` (no flag) revokes all (preserves current
+      behavior). — covered by smoke (`stopPlaygroundServer` step).
+- [x] Idle sweep drops only the idle session. — covered by
+      `playground.test.ts > sweepIdleSessions`.
 
 Phase 2 — Google OAuth + roster + minimal home page:
 - [ ] Student visits `/`, clicks "Sign in with Google", picks
-      school account, lands on home page.
-- [ ] Email NOT in roster → "you're not enrolled in this class."
-- [ ] Telegram magic-link path still works for instructors.
-- [ ] `/add-classroom --roster <csv>` provisions roster cleanly.
-- [ ] Re-running `/add-classroom` is idempotent (UPSERT).
+      school account, lands on home page. — **gated on GCP redirect
+      URI registration** (see project_gcp_oauth_pending memory).
+- [x] Email NOT in roster → "you're not enrolled in this class." —
+      covered by `google-oauth.test.ts` + smoke (miss-path returns
+      403 with the expected body).
+- [ ] Telegram magic-link path still works for instructors. — Phase 1
+      smoke covers the magic-link auth flow; live verification pending.
+- [ ] `/add-classroom --roster <csv>` provisions roster cleanly. —
+      **deferred to slice B (origin/classroom)**.
+- [ ] Re-running `/add-classroom` is idempotent (UPSERT). —
+      **deferred to slice B**; the underlying `upsertRosterEntry`
+      idempotence IS covered by `classroom-roster.test.ts`.
 
 Phase 3 — Per-student GWS refresh token:
+- [x] Per-student credentials.json gets written to
+      `data/student-google-auth/<sanitized_id>/credentials.json` on
+      OAuth callback success. — covered by `google-oauth.test.ts`
+      (refresh-token-preservation case included).
 - [ ] Student's agent calls `drive_doc_read_as_markdown(fileId)` →
       uses *that student's* token. Reading another student's Doc
-      returns 403 from Google.
+      returns 403 from Google. — **deferred to slice B** (needs the
+      proxy lookup from `/add-classroom-auth`'s Phase 9).
 - [ ] Falls back to instructor's bearer if no per-student auth
-      uploaded yet.
+      uploaded yet. — **deferred to slice B**.
 
 Phase 4 — Home page expansion:
 - [ ] Provider settings panel: dropdown writes
