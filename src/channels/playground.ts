@@ -48,58 +48,132 @@ import { registerChannelAdapter } from './channel-registry.js';
 
 const PLATFORM_PREFIX = 'playground:';
 
-// ── Magic-link auth ────────────────────────────────────────────────────────
+// ── Multi-user session store ──────────────────────────────────────────────
 //
-// /playground generates a fresh magic token and prints a URL containing
-// it. Hitting /auth?key=<token> validates the token, immediately
-// invalidates it, sets a signed HTTP-only cookie, and redirects to /.
-// All other endpoints require the cookie. /playground stop rotates the
-// cookie secret, killing all active sessions.
+// Two maps keyed by short-lived random tokens:
+//   pendingMagicTokens — minted by /playground (Telegram) or, in Phase 2,
+//     /oauth/google/callback. Single-use, 5-minute TTL. Consumed by
+//     /auth?key=<token>, which mints a fresh cookie + session row.
+//   sessions — one row per authenticated browser cookie. Multiple
+//     concurrent users get multiple rows; revocation is per-cookie or
+//     per-user, never the global single-cookie wipe the v1 store did.
+//
+// SSE clients are tagged with their cookie so per-session revocation
+// (idle expiry, /playground stop --self) only closes that session's
+// streams. /playground stop (no flag) still wipes all sessions, matching
+// the prior instructor-side "kick everyone" affordance.
 
 const COOKIE_NAME = 'nc_playground';
-let magicToken: string | null = null; // valid until first successful /auth, then null
-let cookieValue: string | null = null; // value the cookie must match for auth
-let cookieUserId: string | null = null; // who issued the magic link (Telegram user_id, e.g. "telegram:42"); null = anonymous session
-let lastActivityAt = 0; // ms timestamp; bumped on every authed request
+const MAGIC_TOKEN_TTL_MS = 5 * 60 * 1000;
+const IDLE_SWEEP_INTERVAL_MS = 60 * 1000;
 
-function rotateCredentials(userId: string | null = null): void {
-  magicToken = crypto.randomBytes(24).toString('base64url');
-  cookieValue = crypto.randomBytes(24).toString('base64url');
-  cookieUserId = userId;
-  lastActivityAt = Date.now();
+interface PendingMagicToken {
+  userId: string | null; // who issued the link (e.g. "telegram:42"); null = anonymous
+  expiresAt: number;
+}
+
+export interface PlaygroundSession {
+  cookieValue: string;
+  userId: string | null;
+  createdAt: number;
+  lastActivityAt: number;
+}
+
+const pendingMagicTokens = new Map<string /*token*/, PendingMagicToken>();
+const sessions = new Map<string /*cookieValue*/, PlaygroundSession>();
+
+let idleSweepTimer: NodeJS.Timeout | null = null;
+
+export function mintMagicToken(userId: string | null = null): string {
+  const token = crypto.randomBytes(24).toString('base64url');
+  pendingMagicTokens.set(token, { userId, expiresAt: Date.now() + MAGIC_TOKEN_TTL_MS });
+  return token;
+}
+
+function consumeMagicToken(token: string): PendingMagicToken | null {
+  const entry = pendingMagicTokens.get(token);
+  if (!entry) return null;
+  pendingMagicTokens.delete(token);
+  if (Date.now() > entry.expiresAt) return null;
+  return entry;
+}
+
+export function createSessionFromMagicToken(token: string): PlaygroundSession | null {
+  const entry = consumeMagicToken(token);
+  if (!entry) return null;
+  const cookieValue = crypto.randomBytes(24).toString('base64url');
+  const now = Date.now();
+  const session: PlaygroundSession = {
+    cookieValue,
+    userId: entry.userId,
+    createdAt: now,
+    lastActivityAt: now,
+  };
+  sessions.set(cookieValue, session);
+  return session;
 }
 
 /**
- * Returns true if the active session has been idle past the configured
- * limit. When that's the case, the cookie value is scrubbed (so the
- * next request gets 401), live SSE connections are closed, and the
- * playground "logs out" gracefully — re-sending /playground on Telegram
- * issues a fresh magic link.
+ * Look up a session by cookie. Returns null on unknown cookie or idle
+ * expiry; bumps `lastActivityAt` on success. Map lookup is O(1) keyed
+ * on the cookie value, so there's no per-byte timing oracle across
+ * known cookies.
  */
-function checkIdleExpiry(): boolean {
-  if (!cookieValue) return true;
-  const idleMs = Date.now() - lastActivityAt;
-  if (idleMs <= PLAYGROUND_IDLE_MS) return false;
-
-  log.info('Playground session idle-expired', { idleMinutes: Math.floor(idleMs / 60000) });
-  cookieValue = null;
-  cookieUserId = null;
-  for (const c of sseClients) {
-    try {
-      c.res.end();
-    } catch {
-      /* ignore */
-    }
+function getSessionByCookie(cookieValue: string): PlaygroundSession | null {
+  const session = sessions.get(cookieValue);
+  if (!session) return null;
+  if (Date.now() - session.lastActivityAt > PLAYGROUND_IDLE_MS) {
+    revokeSession(session.cookieValue, 'idle');
+    return null;
   }
-  sseClients.clear();
+  session.lastActivityAt = Date.now();
+  return session;
+}
+
+export function revokeSession(cookieValue: string, reason: string): boolean {
+  const session = sessions.get(cookieValue);
+  if (!session) return false;
+  sessions.delete(cookieValue);
+  closeSseClientsForCookie(cookieValue);
+  log.info('Playground session revoked', { userId: session.userId, reason });
   return true;
 }
 
-function constantTimeEquals(a: string, b: string): boolean {
-  const ab = Buffer.from(a);
-  const bb = Buffer.from(b);
-  if (ab.length !== bb.length) return false;
-  return crypto.timingSafeEqual(ab, bb);
+export function revokeSessionsForUser(userId: string): number {
+  let count = 0;
+  for (const [cookieValue, session] of sessions) {
+    if (session.userId !== userId) continue;
+    sessions.delete(cookieValue);
+    closeSseClientsForCookie(cookieValue);
+    count += 1;
+  }
+  if (count > 0) log.info('Playground sessions revoked for user', { userId, count });
+  return count;
+}
+
+function revokeAllSessions(reason: string): void {
+  const count = sessions.size;
+  sessions.clear();
+  pendingMagicTokens.clear();
+  closeAllSseClients();
+  if (count > 0) log.info('Playground sessions cleared', { count, reason });
+}
+
+/**
+ * Drop sessions past PLAYGROUND_IDLE_MS. Called on a timer while the
+ * server runs; also exported for tests.
+ */
+export function sweepIdleSessions(now: number = Date.now()): number {
+  let dropped = 0;
+  for (const [cookieValue, session] of sessions) {
+    if (now - session.lastActivityAt > PLAYGROUND_IDLE_MS) {
+      sessions.delete(cookieValue);
+      closeSseClientsForCookie(cookieValue);
+      dropped += 1;
+    }
+  }
+  if (dropped > 0) log.info('Playground idle sweep', { dropped });
+  return dropped;
 }
 
 function parseCookie(header: string | undefined, name: string): string | null {
@@ -116,6 +190,7 @@ function parseCookie(header: string | undefined, name: string): string | null {
 
 interface SseClient {
   draftFolder: string;
+  cookieValue: string;
   res: http.ServerResponse;
 }
 
@@ -131,6 +206,29 @@ function pushToDraft(draftFolder: string, eventName: string, data: unknown): voi
       // dropped connection — sweep on next iteration
     }
   }
+}
+
+function closeSseClientsForCookie(cookieValue: string): void {
+  for (const client of sseClients) {
+    if (client.cookieValue !== cookieValue) continue;
+    try {
+      client.res.end();
+    } catch {
+      /* ignore */
+    }
+    sseClients.delete(client);
+  }
+}
+
+function closeAllSseClients(): void {
+  for (const c of sseClients) {
+    try {
+      c.res.end();
+    } catch {
+      /* ignore */
+    }
+  }
+  sseClients.clear();
 }
 
 // ── Adapter implementation ─────────────────────────────────────────────────
@@ -239,13 +337,13 @@ export async function startPlaygroundServer(
       'PLAYGROUND_ENABLED is not set in env. Add PLAYGROUND_ENABLED=1 to .env or systemd unit and restart.',
     );
   }
-  // Always rotate magic token + cookie value on (re)start. Old links die.
-  // userId (when supplied) gets associated with the new cookie so role-aware
-  // gates can identify who's editing.
-  rotateCredentials(opts.userId ?? null);
+  // Mint a fresh single-use magic token bound to the requesting user.
+  // Existing sessions from earlier /playground invocations stay valid —
+  // we no longer rotate the global cookie out from under other users.
+  const token = mintMagicToken(opts.userId ?? null);
 
   if (server) {
-    return { url: urlFor(PLAYGROUND_BIND_HOST, magicToken!), alreadyRunning: true };
+    return { url: urlFor(PLAYGROUND_BIND_HOST, token), alreadyRunning: true };
   }
   if (!setupConfig) {
     throw new Error('Playground adapter setup() was never called — host startup may have failed to register channels.');
@@ -259,7 +357,9 @@ export async function startPlaygroundServer(
     });
     httpServer.listen(PLAYGROUND_PORT, PLAYGROUND_BIND_HOST, () => {
       server = httpServer;
-      const url = urlFor(PLAYGROUND_BIND_HOST, magicToken!);
+      idleSweepTimer = setInterval(() => sweepIdleSessions(), IDLE_SWEEP_INTERVAL_MS);
+      idleSweepTimer.unref?.();
+      const url = urlFor(PLAYGROUND_BIND_HOST, token);
       log.info('Playground server started', { bind: PLAYGROUND_BIND_HOST, authMode: 'magic-link' });
       resolve({ url, alreadyRunning: false });
     });
@@ -267,20 +367,13 @@ export async function startPlaygroundServer(
 }
 
 export async function stopPlaygroundServer(): Promise<void> {
-  // Even if the server is somehow null, scrub creds defensively.
-  magicToken = null;
-  cookieValue = null;
-  cookieUserId = null;
-  if (!server) return;
-  // Close all SSE connections.
-  for (const c of sseClients) {
-    try {
-      c.res.end();
-    } catch {
-      /* ignore */
-    }
+  // Clear all session state defensively even if the listener is gone.
+  revokeAllSessions('server-stop');
+  if (idleSweepTimer) {
+    clearInterval(idleSweepTimer);
+    idleSweepTimer = null;
   }
-  sseClients.clear();
+  if (!server) return;
   await new Promise<void>((resolve) => server!.close(() => resolve()));
   server = null;
   log.info('Playground server stopped');
@@ -312,43 +405,35 @@ async function readJsonBody(req: http.IncomingMessage): Promise<Record<string, u
 
 /**
  * Auth model:
- *   - GET /auth?key=<magic>  — single-shot exchange. If <magic> matches
- *     `magicToken` (constant-time), invalidate it, set the session
- *     cookie, redirect to /.
- *   - All other endpoints require a cookie matching `cookieValue`.
+ *   - GET /auth?key=<magic>  — single-shot exchange. Consumes the magic
+ *     token (5-min TTL, single-use), mints a new cookie + session row,
+ *     redirects to /. Existing sessions are untouched.
+ *   - All other endpoints require a cookie matching a row in `sessions`.
  *
- * /playground stop nulls both `magicToken` and `cookieValue`, so all
- * existing browser tabs lose access on the next request.
+ * /playground stop wipes all sessions ("kick everyone"); /playground stop
+ * --self only revokes the caller's session via revokeSessionsForUser.
  */
 function handleAuthExchange(url: URL, res: http.ServerResponse): boolean {
   if (url.pathname !== '/auth') return false;
   const submittedKey = url.searchParams.get('key') || '';
-  if (!magicToken || !constantTimeEquals(submittedKey, magicToken)) {
+  const session = createSessionFromMagicToken(submittedKey);
+  if (!session) {
     res.writeHead(401, { 'content-type': 'text/plain' });
     res.end('Invalid or expired magic link. Re-send /playground on Telegram.\n');
     return true;
   }
-  // One-shot: kill the magic token immediately. The cookie takes over.
-  magicToken = null;
-  if (!cookieValue) {
-    res.writeHead(500, { 'content-type': 'text/plain' });
-    res.end('No cookie value initialized.\n');
-    return true;
-  }
   // 7-day session. HttpOnly + SameSite=Lax. Secure flag omitted because
   // the deployment is plain HTTP — see the security note in the SKILL doc.
-  const cookie = `${COOKIE_NAME}=${cookieValue}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${7 * 24 * 60 * 60}`;
+  const cookie = `${COOKIE_NAME}=${session.cookieValue}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${7 * 24 * 60 * 60}`;
   res.writeHead(302, { location: '/', 'set-cookie': cookie });
   res.end();
   return true;
 }
 
-function isCookieAuthed(req: http.IncomingMessage): boolean {
-  if (checkIdleExpiry()) return false; // also nulls cookieValue if expired
-  if (!cookieValue) return false;
+function authenticate(req: http.IncomingMessage): PlaygroundSession | null {
   const submitted = parseCookie(req.headers['cookie'], COOKIE_NAME);
-  if (!submitted) return false;
-  return constantTimeEquals(submitted, cookieValue);
+  if (!submitted) return null;
+  return getSessionByCookie(submitted);
 }
 
 function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): void {
@@ -358,15 +443,12 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
   // /auth is the only unauthenticated endpoint.
   if (method === 'GET' && handleAuthExchange(url, res)) return;
 
-  if (!isCookieAuthed(req)) {
+  const session = authenticate(req);
+  if (!session) {
     res.writeHead(401, { 'content-type': 'text/plain' });
     res.end('Authorization required. Send /playground on Telegram for a magic link.\n');
     return;
   }
-
-  // Bump activity for any authed request. SSE long-poll counts — the
-  // browser's auto-reconnect on disconnect will keep this fresh.
-  lastActivityAt = Date.now();
 
   // Static UI
   if (method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
@@ -380,7 +462,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
   }
 
   // API
-  void route(req, res, url, method).catch((err) => {
+  void route(req, res, url, method, session).catch((err) => {
     log.error('Playground request error', { url: req.url, err });
     if (!res.headersSent) send(res, 500, { error: String(err) });
   });
@@ -398,7 +480,13 @@ function serveStatic(res: http.ServerResponse, filename: string, contentType: st
   });
 }
 
-async function route(req: http.IncomingMessage, res: http.ServerResponse, url: URL, method: string): Promise<void> {
+async function route(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  url: URL,
+  method: string,
+  session: PlaygroundSession,
+): Promise<void> {
   // GET /api/groups — list non-draft agent groups
   if (method === 'GET' && url.pathname === '/api/groups') {
     return send(res, 200, listAgentGroups());
@@ -495,7 +583,7 @@ async function route(req: http.IncomingMessage, res: http.ServerResponse, url: U
   if (method === 'PUT' && providerMatch) {
     const draftFolder = providerMatch[1]!;
     {
-      const decision = checkDraftMutation(draftFolder, 'provider_put', cookieUserId);
+      const decision = checkDraftMutation(draftFolder, 'provider_put', session.userId);
       if (!decision.allow) return send(res, 403, { error: decision.reason || 'Forbidden' });
     }
     const body = await readJsonBody(req);
@@ -603,7 +691,7 @@ async function route(req: http.IncomingMessage, res: http.ServerResponse, url: U
     // Mutation gates (file PUT only — GETs are always allowed). Class
     // feature uses this to lock student drafts down to persona edits.
     if (method === 'PUT') {
-      const decision = checkDraftMutation(draftFolder, 'file_put', cookieUserId);
+      const decision = checkDraftMutation(draftFolder, 'file_put', session.userId);
       if (!decision.allow) return send(res, 403, { error: decision.reason || 'Forbidden' });
     }
     // Path-traversal defense: reject .. or anything that resolves outside.
@@ -670,7 +758,7 @@ async function route(req: http.IncomingMessage, res: http.ServerResponse, url: U
   if (method === 'PUT' && skillsMatch) {
     const draftFolder = skillsMatch[1]!;
     {
-      const decision = checkDraftMutation(draftFolder, 'skills_put', cookieUserId);
+      const decision = checkDraftMutation(draftFolder, 'skills_put', session.userId);
       if (!decision.allow) return send(res, 403, { error: decision.reason || 'Forbidden' });
     }
     const body = await readJsonBody(req);
@@ -698,11 +786,40 @@ async function route(req: http.IncomingMessage, res: http.ServerResponse, url: U
       connection: 'keep-alive',
     });
     res.write(`event: hello\ndata: {"draftFolder":"${draftFolder}"}\n\n`);
-    const client: SseClient = { draftFolder, res };
+    const client: SseClient = { draftFolder, cookieValue: session.cookieValue, res };
     sseClients.add(client);
     req.on('close', () => sseClients.delete(client));
     return;
   }
 
   send(res, 404, { error: `No route: ${method} ${url.pathname}` });
+}
+
+// ── Test hooks ─────────────────────────────────────────────────────────────
+
+/** Wipe in-memory session + token state. Tests only. */
+export function _resetSessionsForTest(): void {
+  sessions.clear();
+  pendingMagicTokens.clear();
+  sseClients.clear();
+  if (idleSweepTimer) {
+    clearInterval(idleSweepTimer);
+    idleSweepTimer = null;
+  }
+}
+
+/** Force a session's lastActivityAt for idle-expiry tests. */
+export function _setSessionActivityForTest(cookieValue: string, lastActivityAt: number): void {
+  const session = sessions.get(cookieValue);
+  if (session) session.lastActivityAt = lastActivityAt;
+}
+
+/** Inspect session count for tests. */
+export function _sessionCountForTest(): number {
+  return sessions.size;
+}
+
+/** Check whether a cookie still maps to a session (without bumping activity). */
+export function _hasSessionForTest(cookieValue: string): boolean {
+  return sessions.has(cookieValue);
 }
