@@ -43,6 +43,7 @@ import { getActiveSessions, updateSession } from '../db/sessions.js';
 import { isContainerRunning, killContainer } from '../container-runner.js';
 import { readContainerConfig, writeContainerConfig } from '../container-config.js';
 import { getLibraryCacheStat, listLibrary } from './playground/library.js';
+import { handleOAuthCallback, handleOAuthStart } from './playground/google-oauth.js';
 import type { ChannelAdapter, ChannelSetup, InboundEvent, OutboundMessage } from './adapter.js';
 import { registerChannelAdapter } from './channel-registry.js';
 
@@ -63,7 +64,7 @@ const PLATFORM_PREFIX = 'playground:';
 // streams. /playground stop (no flag) still wipes all sessions, matching
 // the prior instructor-side "kick everyone" affordance.
 
-const COOKIE_NAME = 'nc_playground';
+export const COOKIE_NAME = 'nc_playground';
 const MAGIC_TOKEN_TTL_MS = 5 * 60 * 1000;
 const IDLE_SWEEP_INTERVAL_MS = 60 * 1000;
 
@@ -101,11 +102,20 @@ function consumeMagicToken(token: string): PendingMagicToken | null {
 export function createSessionFromMagicToken(token: string): PlaygroundSession | null {
   const entry = consumeMagicToken(token);
   if (!entry) return null;
+  return mintSessionForUser(entry.userId);
+}
+
+/**
+ * Direct path to a fresh session for an already-authenticated user.
+ * Used by Phase 2's Google OAuth callback — Google has already proved
+ * the user's identity, so no magic-token round-trip is needed.
+ */
+export function mintSessionForUser(userId: string | null): PlaygroundSession {
   const cookieValue = crypto.randomBytes(24).toString('base64url');
   const now = Date.now();
   const session: PlaygroundSession = {
     cookieValue,
-    userId: entry.userId,
+    userId,
     createdAt: now,
     lastActivityAt: now,
   };
@@ -436,28 +446,72 @@ function authenticate(req: http.IncomingMessage): PlaygroundSession | null {
   return getSessionByCookie(submitted);
 }
 
+/**
+ * GET requests for an HTML page that the user might be visiting cold
+ * (no cookie yet) get a friendlier 302 → /login than a stark 401. XHR /
+ * asset requests still 401 so client code sees the real error.
+ */
+function isHtmlPagePath(pathname: string): boolean {
+  return (
+    pathname === '/' ||
+    pathname === '/playground' ||
+    pathname === '/playground/' ||
+    pathname === '/playground/index.html'
+  );
+}
+
 function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): void {
   const url = new URL(req.url || '/', 'http://localhost');
   const method = req.method || 'GET';
 
-  // /auth is the only unauthenticated endpoint.
+  // Public endpoints — no auth required.
   if (method === 'GET' && handleAuthExchange(url, res)) return;
+  if (method === 'GET' && handleOAuthStart(url, res)) return;
+  if (method === 'GET' && url.pathname === '/oauth/google/callback') {
+    void handleOAuthCallback(url, res).catch((err) => {
+      log.error('OAuth callback error', { err });
+      if (!res.headersSent) send(res, 500, { error: String(err) });
+    });
+    return;
+  }
+  if (method === 'GET' && url.pathname === '/login') {
+    return serveStatic(res, 'login.html', 'text/html; charset=utf-8');
+  }
 
   const session = authenticate(req);
   if (!session) {
+    if (method === 'GET' && isHtmlPagePath(url.pathname)) {
+      res.writeHead(302, { location: '/login' });
+      res.end();
+      return;
+    }
     res.writeHead(401, { 'content-type': 'text/plain' });
-    res.end('Authorization required. Send /playground on Telegram for a magic link.\n');
+    res.end('Authorization required. Visit /login or send /playground on Telegram for a magic link.\n');
     return;
   }
 
-  // Static UI
-  if (method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
+  // Home page (Phase 2 minimal landing).
+  if (method === 'GET' && (url.pathname === '/' || url.pathname === '/home.html')) {
+    return serveStatic(res, 'home.html', 'text/html; charset=utf-8');
+  }
+  if (method === 'GET' && url.pathname === '/home.js') {
+    return serveStatic(res, 'home.js', 'application/javascript; charset=utf-8');
+  }
+  if (method === 'GET' && url.pathname === '/home.css') {
+    return serveStatic(res, 'home.css', 'text/css; charset=utf-8');
+  }
+  if (method === 'GET' && url.pathname === '/api/home/me') {
+    return send(res, 200, { userId: session.userId });
+  }
+
+  // Workbench static UI moved under /playground/ (was /).
+  if (method === 'GET' && (url.pathname === '/playground/' || url.pathname === '/playground/index.html')) {
     return serveStatic(res, 'index.html', 'text/html; charset=utf-8');
   }
-  if (method === 'GET' && url.pathname === '/app.js') {
+  if (method === 'GET' && url.pathname === '/playground/app.js') {
     return serveStatic(res, 'app.js', 'application/javascript; charset=utf-8');
   }
-  if (method === 'GET' && url.pathname === '/style.css') {
+  if (method === 'GET' && url.pathname === '/playground/style.css') {
     return serveStatic(res, 'style.css', 'text/css; charset=utf-8');
   }
 

@@ -120,16 +120,17 @@ async function main(): Promise<void> {
   console.log(`C2: ${c2.slice(0, 30)}…`);
   assert(c1 !== c2, 'C1 and C2 are distinct cookies');
 
-  // Both should authenticate. `/` returns 200 if the index.html exists,
-  // 404 if not — either way it's "authed". Unauthed is 401.
-  const unauthed = await get('/');
-  assert(unauthed.status === 401, `no-cookie GET / → 401 (got ${unauthed.status})`);
+  // Use /api/home/me as a stable JSON endpoint: 401 unauth, 200 authed.
+  // (Phase 2 changed `/` to redirect on miss + serve home.html on hit, so
+  // the prior "401 vs 200 on /" check no longer holds.)
+  const unauthed = await get('/api/home/me');
+  assert(unauthed.status === 401, `no-cookie GET /api/home/me → 401 (got ${unauthed.status})`);
 
-  const c1AuthedBefore = await get('/', c1);
-  assert(c1AuthedBefore.status !== 401, `C1 GET / passes auth (got ${c1AuthedBefore.status})`);
+  const c1AuthedBefore = await get('/api/home/me', c1);
+  assert(c1AuthedBefore.status === 200, `C1 GET /api/home/me passes auth (got ${c1AuthedBefore.status})`);
 
-  const c2AuthedBefore = await get('/', c2);
-  assert(c2AuthedBefore.status !== 401, `C2 GET / passes auth (got ${c2AuthedBefore.status})`);
+  const c2AuthedBefore = await get('/api/home/me', c2);
+  assert(c2AuthedBefore.status === 200, `C2 GET /api/home/me passes auth (got ${c2AuthedBefore.status})`);
 
   assert(_sessionCountForTest() === 2, `session count = 2 after both /auth (got ${_sessionCountForTest()})`);
 
@@ -137,11 +138,11 @@ async function main(): Promise<void> {
   const removed = revokeSessionsForUser('telegram:1');
   assert(removed === 1, `revokeSessionsForUser(telegram:1) → 1 (got ${removed})`);
 
-  const c1AfterRevoke = await get('/', c1);
-  assert(c1AfterRevoke.status === 401, `C1 GET / → 401 after revoke (got ${c1AfterRevoke.status})`);
+  const c1AfterRevoke = await get('/api/home/me', c1);
+  assert(c1AfterRevoke.status === 401, `C1 GET /api/home/me → 401 after revoke (got ${c1AfterRevoke.status})`);
 
-  const c2AfterRevoke = await get('/', c2);
-  assert(c2AfterRevoke.status !== 401, `C2 GET / still authed after C1 revoke (got ${c2AfterRevoke.status})`);
+  const c2AfterRevoke = await get('/api/home/me', c2);
+  assert(c2AfterRevoke.status === 200, `C2 GET /api/home/me still authed (got ${c2AfterRevoke.status})`);
 
   // Re-mint a session for telegram:1 and confirm /playground stop nukes everything.
   const t1b = mintMagicToken('telegram:1');
