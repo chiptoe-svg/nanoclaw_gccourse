@@ -42,8 +42,13 @@ import { createServer, Server } from 'http';
 import { request as httpsRequest } from 'https';
 import { request as httpRequest, RequestOptions } from 'http';
 
+import { getAgentGroupMetadata } from './db/agent-groups.js';
 import { readEnvFile } from './env.js';
 import { log } from './log.js';
+import { studentGwsCredentialsPath } from './student-creds-paths.js';
+
+/** Header containers send to identify which agent group is calling. */
+const AGENT_GROUP_HEADER = 'x-nanoclaw-agent-group';
 
 /**
  * OAuth client id used by Claude Code CLI for the refresh-token grant.
@@ -74,9 +79,16 @@ const REFRESH_BUFFER_MS = 5 * 60 * 1000;
 let cachedOAuthToken: string | null = null;
 let cachedExpiresAt = 0;
 
-/** Google OAuth — cached access token + expiry. Refreshed on demand. */
-let cachedGoogleAccessToken: string | null = null;
-let cachedGoogleExpiresAt = 0;
+/**
+ * Google OAuth — per-credentials-file token cache. Keyed on the absolute
+ * path to credentials.json so the instructor's token and each student's
+ * token cache independently. Refreshed on demand.
+ */
+interface GoogleTokenCacheEntry {
+  accessToken: string;
+  expiresAt: number;
+}
+const googleTokenCache = new Map<string /*credsPath*/, GoogleTokenCacheEntry>();
 
 interface GwsCredentials {
   type: string;
@@ -87,39 +99,41 @@ interface GwsCredentials {
   expiry_date?: number;
 }
 
-function readGwsCredentials(): GwsCredentials | null {
+function readGwsCredentialsFromPath(credsPath: string): GwsCredentials | null {
   try {
-    if (!fs.existsSync(GWS_CREDENTIALS_PATH)) return null;
-    const raw = fs.readFileSync(GWS_CREDENTIALS_PATH, 'utf-8');
+    if (!fs.existsSync(credsPath)) return null;
+    const raw = fs.readFileSync(credsPath, 'utf-8');
     const parsed = JSON.parse(raw) as Partial<GwsCredentials>;
     if (!parsed.client_id || !parsed.client_secret || !parsed.refresh_token) return null;
     return parsed as GwsCredentials;
   } catch (err) {
-    log.warn('Failed to read GWS credentials', { err: String(err) });
+    log.warn('Failed to read GWS credentials', { credsPath, err: String(err) });
     return null;
   }
 }
 
 /**
- * Get a fresh Google OAuth access token. Returns null if no credentials
- * are configured. Caches the token until 5 minutes before its expiry.
+ * Get a fresh Google OAuth access token from the credentials.json at
+ * `credsPath`. Returns null if the file is missing / malformed.
+ * Per-path cache keeps the instructor's token and each student's token
+ * isolated.
  *
  * Refresh flow: POST to oauth2.googleapis.com/token with grant_type=
  * refresh_token. Standard Google OAuth — no library needed.
  */
-async function getGoogleAccessToken(): Promise<string | null> {
-  if (cachedGoogleAccessToken && Date.now() < cachedGoogleExpiresAt - REFRESH_BUFFER_MS) {
-    return cachedGoogleAccessToken;
+async function getGoogleAccessTokenForCredsPath(credsPath: string): Promise<string | null> {
+  const cached = googleTokenCache.get(credsPath);
+  if (cached && Date.now() < cached.expiresAt - REFRESH_BUFFER_MS) {
+    return cached.accessToken;
   }
 
-  const creds = readGwsCredentials();
+  const creds = readGwsCredentialsFromPath(credsPath);
   if (!creds) return null;
 
   // First-time path: if credentials.json has a fresh access_token + expiry, use it.
   if (creds.access_token && creds.expiry_date && creds.expiry_date > Date.now() + REFRESH_BUFFER_MS) {
-    cachedGoogleAccessToken = creds.access_token;
-    cachedGoogleExpiresAt = creds.expiry_date;
-    return cachedGoogleAccessToken;
+    googleTokenCache.set(credsPath, { accessToken: creds.access_token, expiresAt: creds.expiry_date });
+    return creds.access_token;
   }
 
   // Refresh: exchange refresh_token for a new access_token.
@@ -148,6 +162,7 @@ async function getGoogleAccessToken(): Promise<string | null> {
         res.on('end', () => {
           if (res.statusCode !== 200) {
             log.error('GWS OAuth refresh failed', {
+              credsPath,
               status: res.statusCode,
               body: Buffer.concat(chunks).toString('utf-8').slice(0, 500),
             });
@@ -159,24 +174,78 @@ async function getGoogleAccessToken(): Promise<string | null> {
               access_token: string;
               expires_in: number;
             };
-            cachedGoogleAccessToken = json.access_token;
-            cachedGoogleExpiresAt = Date.now() + json.expires_in * 1000;
-            log.debug('GWS OAuth refresh OK', { expiresInMin: Math.round(json.expires_in / 60) });
-            resolve(cachedGoogleAccessToken);
+            googleTokenCache.set(credsPath, {
+              accessToken: json.access_token,
+              expiresAt: Date.now() + json.expires_in * 1000,
+            });
+            log.debug('GWS OAuth refresh OK', { credsPath, expiresInMin: Math.round(json.expires_in / 60) });
+            resolve(json.access_token);
           } catch (err) {
-            log.error('GWS OAuth refresh parse failed', { err: String(err) });
+            log.error('GWS OAuth refresh parse failed', { credsPath, err: String(err) });
             resolve(null);
           }
         });
       },
     );
     req.on('error', (err) => {
-      log.error('GWS OAuth refresh request error', { err: String(err) });
+      log.error('GWS OAuth refresh request error', { credsPath, err: String(err) });
       resolve(null);
     });
     req.write(body);
     req.end();
   });
+}
+
+/**
+ * Instructor / class-default token — used when no per-call attribution
+ * resolves or no per-student creds are on disk yet. Reads
+ * `~/.config/gws/credentials.json`.
+ */
+function getInstructorGoogleAccessToken(): Promise<string | null> {
+  return getGoogleAccessTokenForCredsPath(GWS_CREDENTIALS_PATH);
+}
+
+/**
+ * Per-student token via the per-call attribution header. Reads
+ * `agent_groups.metadata.student_user_id` (set by class-feature pair
+ * consumers), then loads creds at
+ * `data/student-google-auth/<sanitized>/credentials.json` (written by
+ * the playground's Google OAuth callback). Returns null when either the
+ * metadata field or the credentials file is missing — caller falls
+ * through to the instructor token.
+ */
+async function getStudentGoogleAccessTokenForAgentGroup(agentGroupId: string): Promise<string | null> {
+  const meta = getAgentGroupMetadata(agentGroupId);
+  const studentUserId = typeof meta.student_user_id === 'string' ? meta.student_user_id : null;
+  if (!studentUserId) return null;
+  const credsPath = studentGwsCredentialsPath(studentUserId);
+  if (!fs.existsSync(credsPath)) return null;
+  const token = await getGoogleAccessTokenForCredsPath(credsPath);
+  if (token) {
+    log.debug('Per-student GWS token resolved', { agentGroupId, studentUserId });
+  }
+  return token;
+}
+
+/**
+ * Pick the Google OAuth token for a request: per-student first if the
+ * agent-group attribution header is set AND the agent group has a
+ * student_user_id AND a per-student credentials.json exists; otherwise
+ * the instructor / class-default token.
+ *
+ * The graceful-fallback chain is the whole point — missing-header,
+ * missing-metadata, and missing-creds-file all reduce to "use the
+ * instructor's token", which is exactly the pre-Phase-3-slice-B
+ * behavior. Per-student isolation only kicks in for class deployments
+ * that have actually wired the student through the playground OAuth
+ * flow.
+ */
+async function getGoogleAccessToken(agentGroupId: string | null): Promise<string | null> {
+  if (agentGroupId) {
+    const studentToken = await getStudentGoogleAccessTokenForAgentGroup(agentGroupId);
+    if (studentToken) return studentToken;
+  }
+  return getInstructorGoogleAccessToken();
 }
 
 /**
@@ -417,6 +486,14 @@ export function startCredentialProxy(port: number, host = '127.0.0.1'): Promise<
         const isOpenAI = rawUrl.startsWith('/openai/') || rawUrl === '/openai';
         const isGoogle = rawUrl.startsWith('/googleapis/') || rawUrl === '/googleapis';
 
+        // Per-call attribution: which agent group is calling? Used by the
+        // per-student GWS resolver below; per-student Anthropic / OpenAI
+        // resolvers (Phase 4) will consult the same primitive. Missing
+        // header is fine — every resolver gracefully falls back to the
+        // class-default credential.
+        const rawAgentGroup = req.headers[AGENT_GROUP_HEADER];
+        const agentGroupId = typeof rawAgentGroup === 'string' && rawAgentGroup.length > 0 ? rawAgentGroup : null;
+
         const upstreamUrl = isGoogle ? googleUpstream : isOpenAI ? openaiUpstream : anthropicUpstream;
         const upstreamPath = isGoogle
           ? rawUrl.replace(/^\/googleapis/, '') || '/'
@@ -436,11 +513,15 @@ export function startCredentialProxy(port: number, host = '127.0.0.1'): Promise<
         delete headers['connection'];
         delete headers['keep-alive'];
         delete headers['transfer-encoding'];
+        // Don't leak the attribution header upstream — it's a NanoClaw-internal hint.
+        delete headers[AGENT_GROUP_HEADER];
 
         if (isGoogle) {
           // Google APIs: refresh access token if needed, inject as Bearer.
           // Returns 502 with an actionable message if no creds configured.
-          const token = await getGoogleAccessToken();
+          // Per-student token preferred when the agent group has one;
+          // instructor / class-default token otherwise.
+          const token = await getGoogleAccessToken(agentGroupId);
           if (!token) {
             res.writeHead(502, { 'content-type': 'application/json' });
             res.end(
