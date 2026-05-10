@@ -28,7 +28,7 @@
  */
 import { execSync } from 'child_process';
 
-import type { HeadlessOpts, SpawnArgs, SetupCli } from './types.js';
+import type { HeadlessOpts, SpawnArgs, AiCodingCli } from './types.js';
 
 function isInstalled(): boolean {
   try {
@@ -70,7 +70,7 @@ function handoff(prompt: string): SpawnArgs {
   };
 }
 
-export const opencodeCli: SetupCli = {
+export const opencodeCli: AiCodingCli = {
   name: 'opencode',
   displayName: 'OpenCode',
   binary: 'opencode',

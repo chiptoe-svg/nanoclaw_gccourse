@@ -1,11 +1,11 @@
-# Setup-CLI Picker — Integration Plan
+# AI-coding-CLI Picker — Integration Plan
 
 ## Goal
 
-Wire the `setup/lib/setup-cli/` registry (already committed) into the existing setup flow so:
+Wire the `setup/lib/ai-coding-cli/` registry (already committed) into the existing setup flow so:
 
 1. The setup-time CLI invocations (handoff on failure, headless utility) go through the registry instead of hardcoded `claude` binary calls.
-2. The user is asked once which CLI to use (Claude Code, OpenAI Codex, …), with the choice persisted to `.env` as `NANOCLAW_SETUP_CLI`.
+2. The user is asked once which CLI to use (Claude Code, OpenAI Codex, …), with the choice persisted to `.env` as `NANOCLAW_AI_CODING_CLI`.
 3. README Quick Start reflects dual-CLI support honestly.
 
 ## Three independent choices — do not conflate
@@ -15,10 +15,10 @@ NanoClaw has three CLI/provider knobs that look related but are deliberately sep
 | # | Choice | What runs it | Affects | How it's switched |
 |---|---|---|---|---|
 | 1 | **Agent runtime backend** (`agent_groups.agent_provider`) | Per-session container; Felix calls Anthropic API or OpenAI App-Server | Every chat with the agent — model speed, cost, feature parity | `/provider <name>` Telegram admin command (already shipped) |
-| 2 | **Setup-CLI helper** (`NANOCLAW_SETUP_CLI` env var) | Host, only when a setup step fails or for headless utility (e.g. tz parsing) | First-time setup + step-failure handoff. Does NOT touch the running agent. | Picker on first run; `--reconfigure-cli` flag (Phase F); manual `.env` edit |
+| 2 | **AI-coding-CLI helper** (`NANOCLAW_AI_CODING_CLI` env var) | Host, only when a setup step fails or for headless utility (e.g. tz parsing) | First-time setup + step-failure handoff. Does NOT touch the running agent. | Picker on first run; `--reconfigure-cli` flag (Phase F); manual `.env` edit |
 | 3 | **Operator's personal dev tool** | Your laptop while editing code | You, the developer | Your own choice — NanoClaw doesn't know or care |
 
-**The canonical mixed case** is fully supported and not coupled anywhere: `NANOCLAW_SETUP_CLI=claude` + `agent_provider=codex` (operator likes Claude Code for setup debugging but the agent uses OpenAI for runtime). The picker in Phase D MUST NOT read `agent_provider`, and `/provider` MUST NOT touch `NANOCLAW_SETUP_CLI`. Don't add "convenience" cross-defaults.
+**The canonical mixed case** is fully supported and not coupled anywhere: `NANOCLAW_AI_CODING_CLI=claude` + `agent_provider=codex` (operator likes Claude Code for setup debugging but the agent uses OpenAI for runtime). The picker in Phase D MUST NOT read `agent_provider`, and `/provider` MUST NOT touch `NANOCLAW_AI_CODING_CLI`. Don't add "convenience" cross-defaults.
 
 ## Current state (as of commit `bb26617`)
 
@@ -26,15 +26,15 @@ NanoClaw has three CLI/provider knobs that look related but are deliberately sep
 
 | File | Purpose |
 |---|---|
-| `setup/lib/setup-cli/types.ts` | `SetupCli` interface (binary, isInstalled, isAuthenticated, installScript, headless(prompt), handoff(prompt)) + `SpawnArgs` (argv, stdin, output) |
-| `setup/lib/setup-cli/claude.ts` | `claudeCli` — Claude Code adapter |
-| `setup/lib/setup-cli/codex.ts` | `codexCli` — OpenAI Codex adapter (`codex exec` headless, `codex [PROMPT]` handoff) |
-| `setup/lib/setup-cli/index.ts` | Registry with `listSetupClis()`, `getSetupCli(name)`, `resolveSetupCli()` |
-| `setup/lib/setup-cli/index.test.ts` | 11 tests covering both adapters' argv shapes and registry behavior |
+| `setup/lib/ai-coding-cli/types.ts` | `AiCodingCli` interface (binary, isInstalled, isAuthenticated, installScript, headless(prompt), handoff(prompt)) + `SpawnArgs` (argv, stdin, output) |
+| `setup/lib/ai-coding-cli/claude.ts` | `claudeCli` — Claude Code adapter |
+| `setup/lib/ai-coding-cli/codex.ts` | `codexCli` — OpenAI Codex adapter (`codex exec` headless, `codex [PROMPT]` handoff) |
+| `setup/lib/ai-coding-cli/index.ts` | Registry with `listAiCodingClis()`, `getAiCodingCli(name)`, `resolveAiCodingCli()` |
+| `setup/lib/ai-coding-cli/index.test.ts` | 11 tests covering both adapters' argv shapes and registry behavior |
 
-**Selection precedence in `resolveSetupCli()`:**
+**Selection precedence in `resolveAiCodingCli()`:**
 
-1. `NANOCLAW_SETUP_CLI` env var (if set + adapter exists + installed)
+1. `NANOCLAW_AI_CODING_CLI` env var (if set + adapter exists + installed)
 2. First registered adapter that's installed (Claude first)
 3. `null` if nothing works
 
@@ -70,14 +70,14 @@ Each phase ends with `pnpm run build` + `pnpm test` clean and a focused commit. 
 
 1. New file replaces hardcoded `claude` invocation:
    ```ts
-   import { resolveSetupCli } from './setup-cli/index.js';
+   import { resolveAiCodingCli } from './ai-coding-cli/index.js';
 
-   export function setupCliAvailable(): boolean {
-     return resolveSetupCli() !== null;
+   export function aiCodingCliAvailable(): boolean {
+     return resolveAiCodingCli() !== null;
    }
 
    export async function resolveTimezoneViaCli(userInput: string): Promise<string | null> {
-     const cli = resolveSetupCli();
+     const cli = resolveAiCodingCli();
      if (!cli) return null;
      const spawnArgs = cli.headless(`Convert "${userInput}" to a single IANA tz string. Reply ONLY the zone, nothing else.`);
      // ... existing spawn logic, replacing 'claude' with cli.binary and ['-p', ...] with spawnArgs.args
@@ -85,7 +85,7 @@ Each phase ends with `pnpm run build` + `pnpm test` clean and a focused commit. 
    ```
 
 2. Rename exports:
-   - `claudeCliAvailable` → `setupCliAvailable`
+   - `claudeCliAvailable` → `aiCodingCliAvailable`
    - `resolveTimezoneViaClaude` → `resolveTimezoneViaCli`
 
 3. Update `setup/auto.ts:54` import + call sites.
@@ -96,7 +96,7 @@ Each phase ends with `pnpm run build` + `pnpm test` clean and a focused commit. 
 - `pnpm test` 466/466
 - Manual: temporarily drop `claude` from PATH (e.g. `PATH=/usr/bin pnpm run setup:auto`), confirm tz resolution falls through to codex if installed.
 
-**Commit:** `refactor(setup): tz-from-cli — use setup-cli registry instead of hardcoded claude`
+**Commit:** `refactor(setup): tz-from-cli — use ai-coding-cli registry instead of hardcoded claude`
 
 ---
 
@@ -111,15 +111,15 @@ Each phase ends with `pnpm run build` + `pnpm test` clean and a focused commit. 
 
 **Changes:**
 
-1. The internal `isClaudeUsable()` helper (line 158) becomes `isSetupCliUsable()` and consults `resolveSetupCli()`.
-2. `offerClaudeHandoff(ctx)` becomes `offerSetupCliHandoff(ctx)` — internally:
+1. The internal `isClaudeUsable()` helper (line 158) becomes `isAiCodingCliUsable()` and consults `resolveAiCodingCli()`.
+2. `offerClaudeHandoff(ctx)` becomes `offerAiCodingCliHandoff(ctx)` — internally:
    ```ts
-   const cli = resolveSetupCli();
+   const cli = resolveAiCodingCli();
    if (!cli) return false;
    const spawn = cli.handoff(buildSystemPrompt(ctx));
    const child = spawn(cli.binary, spawn.args, { stdio: [spawn.stdin, spawn.output, spawn.output] });
    ```
-3. `offerClaudeOnFailure` → `offerSetupCliOnFailure` (same semantic)
+3. `offerClaudeOnFailure` → `offerAiCodingCliOnFailure` (same semantic)
 4. Public exports updated (and the 5 consumer imports renamed).
 5. The Markdown / TUI prompts in `buildSystemPrompt` and `buildFailureSystemPrompt` should be **CLI-agnostic** in wording — no "Claude Code" hardcoded strings. The system prompt should reference what the failure was, not which CLI is reading it.
 
@@ -147,10 +147,10 @@ Each phase ends with `pnpm run build` + `pnpm test` clean and a focused commit. 
 
 **Changes:**
 
-1. `isClaudeInstalled()`, `isClaudeAuthenticated()`, `ensureClaudeReady()` become `isSetupCliInstalled()`, `isSetupCliAuthenticated()`, `ensureSetupCliReady()` — all consult `resolveSetupCli()`.
-2. `ensureSetupCliReady()`'s install-script invocation respects the adapter's `installScript` field:
+1. `isClaudeInstalled()`, `isClaudeAuthenticated()`, `ensureClaudeReady()` become `isAiCodingCliInstalled()`, `isAiCodingCliAuthenticated()`, `ensureAiCodingCliReady()` — all consult `resolveAiCodingCli()`.
+2. `ensureAiCodingCliReady()`'s install-script invocation respects the adapter's `installScript` field:
    ```ts
-   const cli = resolveSetupCli();
+   const cli = resolveAiCodingCli();
    if (cli?.installScript) {
      const code = spawnSync('bash', [cli.installScript], { ... });
    } else {
@@ -158,7 +158,7 @@ Each phase ends with `pnpm run build` + `pnpm test` clean and a focused commit. 
      return false;
    }
    ```
-3. `offerClaudeAssist(ctx)` → `offerSetupCliAssist(ctx)`. The pre-built `${binary} ...` command line that's offered to the user (the editable pre-fill) needs to be rebuilt from the chosen CLI's adapter shape.
+3. `offerClaudeAssist(ctx)` → `offerAiCodingCliAssist(ctx)`. The pre-built `${binary} ...` command line that's offered to the user (the editable pre-fill) needs to be rebuilt from the chosen CLI's adapter shape.
 
 **Edge case: STEP_FILES + BIG_PICTURE_FILES context lists.**
 
@@ -176,11 +176,11 @@ These are file lists that get read and pasted into the prompt for context. They'
 
 **Behavior:**
 
-1. **Already-configured path:** if `NANOCLAW_SETUP_CLI` is set (env or `.env`), validate it's installed; if so, skip the prompt.
-2. **Auto-pick path:** exactly one CLI installed → no prompt; just persist `NANOCLAW_SETUP_CLI=<that-one>` and continue.
+1. **Already-configured path:** if `NANOCLAW_AI_CODING_CLI` is set (env or `.env`), validate it's installed; if so, skip the prompt.
+2. **Auto-pick path:** exactly one CLI installed → no prompt; just persist `NANOCLAW_AI_CODING_CLI=<that-one>` and continue.
 3. **Picker path:** zero or two-or-more installed → ask via `@clack/prompts` `select`:
    ```ts
-   const installed = listSetupClis().filter((c) => c.isInstalled());
+   const installed = listAiCodingClis().filter((c) => c.isInstalled());
    if (installed.length === 0) {
      // Offer to install Claude Code via setup/install-claude.sh; otherwise tell user
      // to install one of the listed CLIs and re-run setup.
@@ -194,15 +194,15 @@ These are file lists that get read and pasted into the prompt for context. They'
      // Persist to .env
    }
    ```
-4. **Persistence:** append/update the `.env` line `NANOCLAW_SETUP_CLI=<name>`. Reuse the same env-write helper the rest of `setup/auto.ts` uses for `TZ` etc. (search `setup/auto.ts` for `writeEnvVar` or similar).
+4. **Persistence:** append/update the `.env` line `NANOCLAW_AI_CODING_CLI=<name>`. Reuse the same env-write helper the rest of `setup/auto.ts` uses for `TZ` etc. (search `setup/auto.ts` for `writeEnvVar` or similar).
 
 **Verification:**
 
 - Run `bash nanoclaw.sh` end-to-end from a clean machine that has both CLIs installed. Picker shows; choice persists; failure handoff uses the chosen CLI.
 - Then re-run setup; picker is skipped (already configured).
-- Then `unset NANOCLAW_SETUP_CLI` + `sed -i '/^NANOCLAW_SETUP_CLI=/d' .env` + re-run; picker shows again.
+- Then `unset NANOCLAW_AI_CODING_CLI` + `sed -i '/^NANOCLAW_AI_CODING_CLI=/d' .env` + re-run; picker shows again.
 
-**Commit:** `feat(setup): picker prompt for setup CLI (Claude Code or Codex)`
+**Commit:** `feat(setup): picker prompt for AI coding CLI (Claude Code or Codex)`
 
 ---
 
@@ -242,19 +242,19 @@ After setup, opt into the optional pieces this fork is built around:
 
 ### Phase F — Post-setup switching
 
-**Why this exists:** Phase D persists `NANOCLAW_SETUP_CLI` once and never re-prompts. If the user installs Codex after setup and wants to switch, or installs both later and changes their mind, there's no clean path. The user could manually edit `.env`, but that's not discoverable and easy to typo.
+**Why this exists:** Phase D persists `NANOCLAW_AI_CODING_CLI` once and never re-prompts. If the user installs Codex after setup and wants to switch, or installs both later and changes their mind, there's no clean path. The user could manually edit `.env`, but that's not discoverable and easy to typo.
 
-**Note on scope:** this is *only* about the setup-CLI choice (what runs on setup-step failure). It is NOT the LLM backend `/provider` switcher — that already exists as a Telegram admin command and is unrelated.
+**Note on scope:** this is *only* about the AI-coding CLI choice (what runs on setup-step failure). It is NOT the LLM backend `/provider` switcher — that already exists as a Telegram admin command and is unrelated.
 
 **Three options, ship at least one:**
 
 1. **CLI flag — minimum viable.** Add a `--reconfigure-cli` flag to `setup/auto.ts` that re-runs just the picker phase, then exits. User invocation: `pnpm exec tsx setup/auto.ts --reconfigure-cli`. ~15 minutes of work; no new UI surface; the existing `setup:auto` arg parser already exists in `nanoclaw.sh`.
 
-2. **`/setup-cli` Telegram admin command** — ship as a fourth tool in the `add-admintools` skill. User runs `/setup-cli` to see the current choice + list installed CLIs, `/setup-cli codex` to switch. Same shape as `/provider` and `/model`. Persists to `.env` and confirms in chat. ~1 hour; consistent with the existing admin-command pattern.
+2. **`/ai-coding-cli` Telegram admin command** — ship as a fourth tool in the `add-admintools` skill. User runs `/ai-coding-cli` to see the current choice + list installed CLIs, `/ai-coding-cli codex` to switch. Same shape as `/provider` and `/model`. Persists to `.env` and confirms in chat. ~1 hour; consistent with the existing admin-command pattern.
 
-3. **Auto re-prompt when the persisted CLI becomes uninstalled** — `resolveSetupCli()` already falls back when the configured one is missing; extend the picker logic to also trigger when running `setup:auto` interactively if the persisted CLI is gone, so the user is asked once instead of getting silent fallback. Implicitly handled by Phase D's "configured but not installed" path; explicit prompt is one branch of code.
+3. **Auto re-prompt when the persisted CLI becomes uninstalled** — `resolveAiCodingCli()` already falls back when the configured one is missing; extend the picker logic to also trigger when running `setup:auto` interactively if the persisted CLI is gone, so the user is asked once instead of getting silent fallback. Implicitly handled by Phase D's "configured but not installed" path; explicit prompt is one branch of code.
 
-**Recommendation: do #1 + #3 in this plan, and add #2 as a separate `add-admintool-setup-cli` skill in a follow-up commit** if the operator-UX win seems worth it.
+**Recommendation: do #1 + #3 in this plan, and add #2 as a separate `add-admintool-ai-coding-cli` skill in a follow-up commit** if the operator-UX win seems worth it.
 
 **File changes for #1 + #3:**
 
@@ -265,8 +265,8 @@ After setup, opt into the optional pieces this fork is built around:
 **Verification:**
 
 - `pnpm exec tsx setup/auto.ts --reconfigure-cli` → just shows the picker, persists, exits 0.
-- Set `NANOCLAW_SETUP_CLI=mystery-cli` (a name no adapter knows) and rerun setup → re-prompts.
-- Set `NANOCLAW_SETUP_CLI=codex`, uninstall codex → re-prompts on next setup run with a "configured CLI not installed" warning.
+- Set `NANOCLAW_AI_CODING_CLI=mystery-cli` (a name no adapter knows) and rerun setup → re-prompts.
+- Set `NANOCLAW_AI_CODING_CLI=codex`, uninstall codex → re-prompts on next setup run with a "configured CLI not installed" warning.
 
 **Commit:** `feat(setup): --reconfigure-cli flag + auto-re-prompt on missing CLI`
 
@@ -281,11 +281,11 @@ Not a commit — a manual verification step before merging to origin/main.
 | Scenario | Expected |
 |---|---|
 | Fresh clone, no CLI installed | Setup detects, offers to run `install-claude.sh`. User declines → setup tells them to install one and re-run. |
-| Only Claude installed | No picker; auto-picks Claude; persists `NANOCLAW_SETUP_CLI=claude`. |
-| Only Codex installed | No picker; auto-picks Codex; persists `NANOCLAW_SETUP_CLI=codex`. Failure handoff invokes `codex [PROMPT]`. |
+| Only Claude installed | No picker; auto-picks Claude; persists `NANOCLAW_AI_CODING_CLI=claude`. |
+| Only Codex installed | No picker; auto-picks Codex; persists `NANOCLAW_AI_CODING_CLI=codex`. Failure handoff invokes `codex [PROMPT]`. |
 | Both installed, first run | Picker shows; user picks one; persists choice. |
 | Both installed, second run | No picker; uses persisted choice. |
-| `NANOCLAW_SETUP_CLI=codex` in env, only Claude installed | Falls back to Claude; warns about misconfig but doesn't fail. |
+| `NANOCLAW_AI_CODING_CLI=codex` in env, only Claude installed | Falls back to Claude; warns about misconfig but doesn't fail. |
 | Step failure during setup | Handoff happens via chosen CLI; user types `/exit` or equivalent; setup resumes. |
 
 If any of these surface a bug, file as a follow-up commit before announcing the feature.
@@ -307,16 +307,16 @@ If any of these surface a bug, file as a follow-up commit before announcing the 
 ## Resumability cues for a future Claude
 
 - The framework commit is `bb26617` on `main`.
-- This plan file (`plans/setup-cli-pick.md`) is the source of truth for what's left.
+- This plan file (`plans/ai-coding-cli-pick.md`) is the source of truth for what's left.
 - After each phase commit, tick the corresponding `[x]` box below.
 - If you find a phase has subtle complications not captured here, **update this file before continuing** so the next session inherits the discovery.
 
 ## Progress
 
-- [x] Framework: `setup/lib/setup-cli/` registry + Claude + Codex adapters + tests
+- [x] Framework: `setup/lib/ai-coding-cli/` registry + Claude + Codex adapters + tests
 - [x] Phase A: `tz-from-claude.ts` → `tz-from-cli.ts` (registry-aware)
 - [x] Phase B: `claude-handoff.ts` → `cli-handoff.ts`
-- [x] Phase C: `claude-assist.ts` → `cli-assist.ts` (also: SetupCli.headless gained `tools?: boolean` opt; dropped Claude-specific stream-json UI and --resume session for cross-CLI uniformity)
+- [x] Phase C: `claude-assist.ts` → `cli-assist.ts` (also: AiCodingCli.headless gained `tools?: boolean` opt; dropped Claude-specific stream-json UI and --resume session for cross-CLI uniformity)
 - [x] Phase D: Picker prompt + `.env` persistence
 - [x] Phase E: README + docs update
 - [x] Phase F: `--reconfigure-cli` flag + auto-re-prompt when persisted CLI is uninstalled (the auto-re-prompt was already covered by Phase D's stale-config fall-through)

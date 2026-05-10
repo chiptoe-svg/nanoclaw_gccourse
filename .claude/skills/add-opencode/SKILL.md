@@ -42,12 +42,12 @@ git show origin/providers:container/agent-runner/src/providers/mcp-to-opencode.t
 git show origin/providers:container/agent-runner/src/providers/opencode.factory.test.ts > container/agent-runner/src/providers/opencode.factory.test.ts
 ```
 
-If this install has the setup-CLI picker (Phases A–F of `plans/setup-cli-pick.md`), also copy the OpenCode setup-helper adapter so the picker offers OpenCode alongside Claude Code and Codex:
+If this install has the AI-coding CLI picker (Phases A–F of `plans/ai-coding-cli-pick.md`), also copy the OpenCode setup-helper adapter so the picker offers OpenCode alongside Claude Code and Codex:
 
 ```bash
-# Skip if `setup/lib/setup-cli/` doesn't exist — older installs don't have the registry.
-[ -d setup/lib/setup-cli ] && \
-  git show origin/providers:setup/lib/setup-cli/opencode.ts > setup/lib/setup-cli/opencode.ts
+# Skip if `setup/lib/ai-coding-cli/` doesn't exist — older installs don't have the registry.
+[ -d setup/lib/ai-coding-cli ] && \
+  git show origin/providers:setup/lib/ai-coding-cli/opencode.ts > setup/lib/ai-coding-cli/opencode.ts
 ```
 
 ### 3. Append the self-registration imports
@@ -66,7 +66,7 @@ import './opencode.js';
 import './opencode.js';
 ```
 
-If you copied the setup-CLI adapter in step 2, also register it. Edit `setup/lib/setup-cli/index.ts`:
+If you copied the AI-coding CLI adapter in step 2, also register it. Edit `setup/lib/ai-coding-cli/index.ts`:
 
 1. Add the import alongside the existing claude/codex imports (alphabetical):
    ```typescript
@@ -74,7 +74,7 @@ If you copied the setup-CLI adapter in step 2, also register it. Edit `setup/lib
    ```
 2. Append `opencodeCli` to the `BUILTIN_CLIS` array:
    ```typescript
-   const BUILTIN_CLIS: SetupCli[] = [claudeCli, codexCli, opencodeCli];
+   const BUILTIN_CLIS: AiCodingCli[] = [claudeCli, codexCli, opencodeCli];
    ```
 3. Append `opencodeCli` to the bottom-of-file re-export:
    ```typescript

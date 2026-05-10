@@ -21,7 +21,7 @@ Two distribution shapes for our skills:
 
 - **Upstream PR** — for skills that should land in trunk
   `qwibitai/nanoclaw` so every install sees them. Best for:
-  general-purpose infrastructure improvements (setup-CLI picker,
+  general-purpose infrastructure improvements (AI-coding CLI picker,
   multi-user playground fix), bug fixes, and core trunk concerns.
 - **Plugin / marketplace submission** — for skills that should be
   *opt-in* across all NanoClaw installs (and beyond). Best for:
@@ -33,14 +33,14 @@ For each item below, the "Upstream path" line specifies which.
 
 ---
 
-## 1. Setup-CLI picker (Phases A–F of `plans/setup-cli-pick.md`)
+## 1. AI-coding-CLI picker (Phases A–F of `plans/ai-coding-cli-pick.md`)
 
 Code state: **✅ shipped on this fork's `main`** (commits `cb75eaf`,
 `7719770`, `d6765a2`, `09ce248`, `234de14`, `599cf35`, `48ed9ad`).
 
 Includes registry + Claude Code + Codex + OpenCode adapters,
 `--reconfigure-cli` flag, README docs, picker prompt persisted to
-`.env` as `NANOCLAW_SETUP_CLI`.
+`.env` as `NANOCLAW_AI_CODING_CLI`.
 
 **Upstream path:** Trunk PR to `qwibitai/nanoclaw`. This is core
 infrastructure (replaces the hardcoded `claude` invocations in
@@ -49,24 +49,24 @@ install benefits.
 
 ### Local smoke (Phase G of the plan)
 
-- [ ] Fresh clone, no setup-CLI installed → setup detects, offers
+- [ ] Fresh clone, no AI-coding CLI installed → setup detects, offers
       `setup/install-claude.sh`. Decline → tells user to install one
       and re-run.
 - [ ] Only Claude installed → no picker; auto-picks `claude`;
-      persists `NANOCLAW_SETUP_CLI=claude`.
+      persists `NANOCLAW_AI_CODING_CLI=claude`.
 - [ ] Only Codex installed → no picker; auto-picks `codex`;
-      persists `NANOCLAW_SETUP_CLI=codex`. Failure handoff invokes
+      persists `NANOCLAW_AI_CODING_CLI=codex`. Failure handoff invokes
       `codex [PROMPT]`.
 - [ ] Only OpenCode installed → no picker; auto-picks `opencode`;
-      persists `NANOCLAW_SETUP_CLI=opencode`. Failure handoff
+      persists `NANOCLAW_AI_CODING_CLI=opencode`. Failure handoff
       invokes `opencode [PROMPT]`. Headless `tz-from-cli` resolves
       via `opencode run "<prompt>"`.
 - [ ] Two-or-more installed (any combination) → picker shows;
       user picks one; persists choice. Re-run setup → picker is
       skipped (already configured).
-- [ ] `NANOCLAW_SETUP_CLI=mystery` (unknown adapter) → re-prompts
+- [ ] `NANOCLAW_AI_CODING_CLI=mystery` (unknown adapter) → re-prompts
       with warning.
-- [ ] `NANOCLAW_SETUP_CLI=codex`, then uninstall codex → re-prompts
+- [ ] `NANOCLAW_AI_CODING_CLI=codex`, then uninstall codex → re-prompts
       on next setup run with "configured CLI not installed" warning.
 - [ ] Step-failure mid-setup (force a fail with
       `NANOCLAW_SKIP=force_fail` or similar) → handoff happens via
@@ -84,7 +84,7 @@ install benefits.
 
 - [ ] Branch off `upstream/main` (not this fork's `main`, which has
       classroom + admin tools).
-- [ ] Cherry-pick the setup-cli-picker commits cleanly. Commits to
+- [ ] Cherry-pick the ai-coding-cli-picker commits cleanly. Commits to
       include:
       - framework + adapters (`bb26617`)
       - Phase A: tz-from-cli (`7719770`)
@@ -99,7 +99,7 @@ install benefits.
         own providers branch instead. Coordinate.
 - [ ] PR description: link to plan, list verified smoke matrix from
       above, note the registry-typo fix (`adapter` → `cli` in
-      `setup/lib/setup-cli/index.ts:58`).
+      `setup/lib/ai-coding-cli/index.ts:58`).
 - [ ] Address review comments.
 
 ---
@@ -392,17 +392,17 @@ expansion.
 **Note**: PRs #2135 and #2137 (CLOSED) appear to be earlier
 iterations of the same work. #2136 is the current one.
 
-### 7b. Gemini setup-CLI adapter (independent of 7a)
+### 7b. Gemini AI-coding CLI adapter (independent of 7a)
 
 Code state: **🛠 not started, optional**.
 
 This is the *setup-helper CLI* track — analogous to the OpenCode
-setup-CLI adapter we just shipped (`3bad076`). Independent of the
+AI-coding CLI adapter we just shipped (`3bad076`). Independent of the
 agent-provider work above: 7a uses Gemini for runtime agent calls;
 7b uses Gemini CLI to debug failed setup steps. An operator could
 have either, both, or neither.
 
-Google's `gemini-cli` is a credible fourth setup-CLI candidate
+Google's `gemini-cli` is a credible fourth AI-coding CLI candidate
 alongside Claude Code, Codex, and OpenCode. Free tier (60 rpm,
 1k rpd) with personal Google accounts plus enterprise tier via
 Vertex AI.
@@ -412,12 +412,12 @@ Vertex AI.
       print mode? Tools-on flag for headless? Interactive prompt
       passthrough? (Same three questions we answered for opencode.)
 - [ ] If yes to all three, write the adapter (~50 LoC) and ship to
-      `origin/providers` + register in `setup/lib/setup-cli/index.ts`.
+      `origin/providers` + register in `setup/lib/ai-coding-cli/index.ts`.
 
 **Upstream path:** Same shape as opencode — adapter file lives on
 `origin/providers`, skill on main; potential trunk PR if adapter is
 small and uncontroversial. Could ship as part of `/add-gemini`
-(7a's skill) once that exists, parallel to how OpenCode's setup-CLI
+(7a's skill) once that exists, parallel to how OpenCode's AI-coding CLI
 adapter ships through `/add-opencode`.
 
 ---
@@ -428,11 +428,11 @@ When the time comes to submit upstream:
 
 1. **Branch from `upstream/main` cleanly** — not from this fork's
    `main`, which has classroom + admin tools mixed in.
-2. **One PR per logical unit.** Don't bundle setup-cli + classroom
+2. **One PR per logical unit.** Don't bundle ai-coding-cli + classroom
    + agent-playground in a single PR; reviewers will reject for
    scope.
 3. **Recommended ordering:**
-   1. Setup-CLI picker (broadest applicability, smallest review
+   1. AI-coding-CLI picker (broadest applicability, smallest review
       surface, no controversial decisions)
    2. Multi-user playground fix (when it lands; bug fix character)
    3. Anything else considered for trunk inclusion

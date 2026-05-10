@@ -30,8 +30,8 @@ import path from 'path';
 import * as p from '@clack/prompts';
 import k from 'kleur';
 
-import { offerSetupCliAssist } from './lib/cli-assist.js';
-import { offerSetupCliHandoff } from './lib/cli-handoff.js';
+import { offerAiCodingCliAssist } from './lib/cli-assist.js';
+import { offerAiCodingCliHandoff } from './lib/cli-handoff.js';
 import * as setupLog from './logs.js';
 import { ensureAnswer, fail } from './lib/runner.js';
 import { brandBold, dimWrap } from './lib/theme.js';
@@ -253,7 +253,7 @@ async function stepOwner(ex: V1ExtractResult): Promise<void> {
   const raw = ensureAnswer(answer);
 
   if (raw === '?' ) {
-    await offerSetupCliHandoff({
+    await offerAiCodingCliHandoff({
       channel: 'migrate',
       step: 'owner',
       stepDescription: 'The migration needs to identify the operator (owner) for v2',
@@ -350,7 +350,7 @@ async function stepSeed(v1Root: string, v2Root: string): Promise<SeedStats> {
     const msg = (err as Error).message;
     p.log.error(msg);
 
-    const tryAgain = await offerSetupCliAssist({
+    const tryAgain = await offerAiCodingCliAssist({
       stepName: 'migrate-seed',
       msg,
       hint: `v1 root: ${v1Root}. Check src/channels/ for the adapters the seeder expected.`,
@@ -484,7 +484,7 @@ async function stepRebuild(ex: V1ExtractResult): Promise<void> {
     setupLog.step('rebuild', 'skipped', 0, {});
     return;
   }
-  await offerSetupCliHandoff({
+  await offerAiCodingCliHandoff({
     channel: 'migrate',
     step: 'rebuild',
     stepDescription: 'Reapply v1 source customizations on v2 using the migration guide',
@@ -517,7 +517,7 @@ async function stepVerify(v2Root: string, seed: SeedStats | null): Promise<void>
 
   if (warnings.length > 0) {
     for (const w of warnings) p.log.warn(w);
-    await offerSetupCliAssist({
+    await offerAiCodingCliAssist({
       stepName: 'migrate-verify',
       msg: 'Verification completed with issues.',
       hint: warnings.join(' · '),
