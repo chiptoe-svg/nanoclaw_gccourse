@@ -485,9 +485,8 @@ async function handlePlaygroundCommand(
   const chatId = platformId.split(':').slice(1).join(':');
   if (!chatId) return false;
 
-  const { startPlaygroundServer, stopPlaygroundServer, getPlaygroundStatus, revokeSessionsForUser } = await import(
-    './playground.js'
-  );
+  const { startPlaygroundServer, stopPlaygroundServer, getPlaygroundStatus, revokeSessionsForUser } =
+    await import('./playground.js');
 
   const parts = text.trim().split(/\s+/);
   const sub = parts[1]?.toLowerCase();
