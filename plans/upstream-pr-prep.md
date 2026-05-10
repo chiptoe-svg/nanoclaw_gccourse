@@ -168,11 +168,15 @@ Code state:
 - **Phase 2 + Phase 3 (slice A)** ✅ shipped on `origin/feat/playground-google-oauth`
   (gccourse), stacked on Phase 1. Slice A is the playground-side OAuth + roster
   + minimal home + per-student GWS *write-side* persistence.
-- **Phase 3 slice B** 🛠 deferred — credential-proxy per-student GWS *read-side*
-  lookup needs the per-agent-group resolver from `/add-classroom-auth`'s
-  Phase 9 (lives on `origin/classroom`).
-- **`/add-classroom --roster <csv>`** 🛠 deferred — needs class-skeleton.ts
-  (lives on `origin/classroom`).
+- **Phase 3 slice B** 🛠 promoted to its own plan
+  (`plans/credential-proxy-per-call-attribution.md`) — turned out to need
+  per-call agent-group attribution that the proxy doesn't have. Earlier
+  draft of the multi-user plan claimed this primitive existed; corrected
+  in `plans/classroom-web-multiuser.md` Phase 4 prose.
+- **`/add-classroom --roster <csv>`** ✅ shipped on
+  `origin/feat/classroom-roster-flag` (gccourse, off `origin/classroom`).
+  Adds the `--roster` flag + parseRosterCsv helper + class-shared template
+  refresh with Google sign-in instructions.
 - **Phases 4–9** 🛠 not started.
 
 Live in-browser smoke for Phases 2+3 is gated on registering the redirect

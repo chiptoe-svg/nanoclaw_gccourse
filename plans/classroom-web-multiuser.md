@@ -394,11 +394,25 @@ data/student-creds/<sanitized_user_id>/
   custom.json          { baseUrl, key }
 ```
 
-The credential proxy already supports per-request lookup keyed on
-the calling agent group (Phase 9 of the existing `/add-classroom-auth`
-work). Phase 4 just extends the lookup table to consult these new
-files, and falls back to the instructor's bearer if no per-student
-cred for the chosen provider.
+**⚠️ Correction (2026-05-10):** an earlier draft of this plan said
+*"the credential proxy already supports per-request lookup keyed on
+the calling agent group (Phase 9 of `/add-classroom-auth`)."* This was
+wrong. Verified by grepping `origin/classroom`'s `src/credential-proxy.ts`
+during slice B work: no per-call agent-group attribution exists. The
+codex per-student auth pattern (`src/class-codex-auth.ts`) works via
+`auth.json` files mounted at container-spawn time — never goes through
+the proxy at request time.
+
+So the per-student-credentials wiring this section needs is genuine
+new infrastructure, not a "free" extension. It's been promoted to its
+own plan: see `plans/credential-proxy-per-call-attribution.md` for the
+attribution mechanism choice (header / port / source-IP) and the
+proxy-side lookup design. Phase 4 + Phase 3 slice B both depend on it.
+
+What Phase 4 (and Phase 3 slice B) actually need to do, post-attribution:
+extend the proxy's per-credential resolution chain to consult these
+per-student paths first, falling back to the instructor's bearer if no
+per-student cred exists for the chosen provider.
 
 **Default-provider determination on draft creation:**
 
