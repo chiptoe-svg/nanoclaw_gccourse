@@ -202,6 +202,17 @@ via the codex resolver chain. Useful as a temporary backup if the API
 path breaks, but expect the instructor's ChatGPT plan to absorb the
 cost. Set the key for the steady-state class deploy.
 
+**Local-LLM alternative:** the class can run entirely off a local
+OpenAI-compatible server (mlx-omni-server / Ollama / LM Studio) — no
+paid API at all. See [`docs/local-llm.md`](../../../docs/local-llm.md)
+for the runbook. Set `OPENAI_BASE_URL=http://127.0.0.1:<port>` +
+`OPENAI_API_KEY=local` in `.env` and the credential proxy routes
+`/openai/*` to your local model instead of `api.openai.com`. The
+`CLASS_OPENAI_API_KEY` step above becomes optional — just leaving it
+unset works fine when `OPENAI_BASE_URL` points local. (You still want
+a key set for cloud-fallback if your local server is down — pick one
+approach as the primary; the other is a backup.)
+
 ### 5b. Configure the public playground URL (`PUBLIC_PLAYGROUND_URL`)
 
 Class login tokens get distributed as URLs like

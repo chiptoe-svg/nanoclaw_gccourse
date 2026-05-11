@@ -105,10 +105,13 @@ it. Items at the same nesting depth can run in parallel.
    unblocks browser smoke + Mac Studio LAN IP is assigned. Web
    self-serve "Lost your link?" form + Resend integration tracked as
    a Phase 1 #6 follow-up (~1.5 hr) — not blocking #7 onward.
-7. **classroom Phase 6 — local-LLM runbook + .env.** Mostly docs +
-   small `credential-proxy.ts` audit for arbitrary upstream-host
-   `OPENAI_BASE_URL` correctness. Bundle into Phase 1 because it's
-   cheap and unlocks cost-economical RAG prep in Phase 2.
+7. ✅ **classroom Phase 6 — local-LLM runbook + .env.** Shipped:
+   `docs/local-llm.md` (mlx-omni-server / Ollama / LM Studio install +
+   `.env` config + sizing guidance + troubleshooting). Credential-proxy
+   audit done — `OPENAI_BASE_URL` already supports arbitrary upstream
+   hosts cleanly (no hardcoded `openai.com` checks, host/port/protocol
+   driven by the parsed URL). `/add-classroom` SKILL.md links the
+   runbook as a local-LLM alternative to `CLASS_OPENAI_API_KEY`.
 8. **ai-coding-cli Phase G — smoke matrix** (~2 hr). Pure
    verification work for the CLI-picker subsystem. Clears the
    upstream-PR signal for that subsystem.
