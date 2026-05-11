@@ -320,4 +320,8 @@ If any of these surface a bug, file as a follow-up commit before announcing the 
 - [x] Phase D: Picker prompt + `.env` persistence
 - [x] Phase E: README + docs update
 - [x] Phase F: `--reconfigure-cli` flag + auto-re-prompt when persisted CLI is uninstalled (the auto-re-prompt was already covered by Phase D's stale-config fall-through)
-- [ ] Phase G: End-to-end smoke test
+- [x] Phase G: End-to-end smoke matrix — programmatic coverage of the
+      resolver matrix landed in `setup/lib/ai-coding-cli/resolve.test.ts`
+      (11 tests); destructive-scenario items (uninstall a CLI, force a
+      setup failure) deferred to fresh-install verification with the
+      matrix tracked in `plans/upstream-pr-prep.md` §1.

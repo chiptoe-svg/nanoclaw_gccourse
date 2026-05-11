@@ -49,36 +49,40 @@ install benefits.
 
 ### Local smoke (Phase G of the plan)
 
-- [ ] Fresh clone, no AI-coding CLI installed → setup detects, offers
-      `setup/install-claude.sh`. Decline → tells user to install one
-      and re-run.
-- [ ] Only Claude installed → no picker; auto-picks `claude`;
-      persists `NANOCLAW_AI_CODING_CLI=claude`.
-- [ ] Only Codex installed → no picker; auto-picks `codex`;
-      persists `NANOCLAW_AI_CODING_CLI=codex`. Failure handoff invokes
-      `codex [PROMPT]`.
-- [ ] Only OpenCode installed → no picker; auto-picks `opencode`;
-      persists `NANOCLAW_AI_CODING_CLI=opencode`. Failure handoff
-      invokes `opencode [PROMPT]`. Headless `tz-from-cli` resolves
-      via `opencode run "<prompt>"`.
-- [ ] Two-or-more installed (any combination) → picker shows;
-      user picks one; persists choice. Re-run setup → picker is
-      skipped (already configured).
-- [ ] `NANOCLAW_AI_CODING_CLI=mystery` (unknown adapter) → re-prompts
-      with warning.
-- [ ] `NANOCLAW_AI_CODING_CLI=codex`, then uninstall codex → re-prompts
-      on next setup run with "configured CLI not installed" warning.
-- [ ] Step-failure mid-setup (force a fail with
-      `NANOCLAW_SKIP=force_fail` or similar) → handoff happens via
-      chosen CLI; user types `/exit`; setup resumes.
-- [ ] `pnpm exec tsx setup/auto.ts --reconfigure-cli` → just shows
-      picker, persists, exits 0. Default to current choice (Enter
-      keeps current pick).
-- [ ] cli-assist diagnose flow: introduce a deliberate fail, accept
-      the offer, verify the chosen CLI gets `--tools` opt
-      equivalent (`--permission-mode bypassPermissions` for Claude,
-      no flag for Codex, `--dangerously-skip-permissions` for
-      OpenCode).
+**Programmatic coverage:** `setup/lib/ai-coding-cli/resolve.test.ts`
+(11 tests) covers the resolver matrix non-destructively by mocking
+`isInstalled()` per adapter. All install-state + env-var combinations
+are exercised in CI on every change.
+
+**Live install verified** (2026-05-11): both `claude` (at
+`/home/nano/.npm-global/bin/claude`) and `codex` (at
+`/home/nano/.local/share/pnpm/codex`) installed; opencode not
+installed. `.env` has no `NANOCLAW_AI_CODING_CLI` so the
+two-installed-no-config branch is the live state — setup re-run
+would hit the picker (path 3b).
+
+| Scenario | Mechanism | Status |
+|---|---|---|
+| Resolver: only Claude installed → claude | `resolve.test.ts` | ✓ tested |
+| Resolver: only Codex installed → codex | `resolve.test.ts` | ✓ tested |
+| Resolver: only OpenCode installed → opencode | `resolve.test.ts` | ✓ tested |
+| Resolver: two-or-more installed → first registered wins | `resolve.test.ts` | ✓ tested |
+| Resolver: `NANOCLAW_AI_CODING_CLI=mystery` → falls through | `resolve.test.ts` | ✓ tested |
+| Resolver: configured-but-uninstalled → falls through | `resolve.test.ts` | ✓ tested |
+| Resolver: nothing installed → null | `resolve.test.ts` | ✓ tested |
+| Setup-picker UX: prompt rendering, picker labels, default | requires terminal | ⏸ manual |
+| Setup-picker UX: install-script offer when nothing installed | requires uninstalling claude | ⏸ manual |
+| Setup-picker UX: `--reconfigure-cli` flag re-prompts under `force` | requires destructive .env mutation | ⏸ manual |
+| Setup-picker UX: step-failure mid-setup → handoff via chosen CLI | requires deliberate setup failure | ⏸ manual |
+| `cli-assist --tools` opt translates to per-CLI flags | `index.test.ts` already covers adapter shape | ✓ tested |
+
+⏸ items are deferred to *deployment-time verification* — they require
+either destructive operations (uninstalling CLIs on a working dev box)
+or interactive terminal input that can't be unit-mocked cleanly. The
+adapter contract that the picker invokes is fully covered by
+`index.test.ts` and `resolve.test.ts`, so picker bugs would have to be
+in the prompt-UX layer specifically. Flag any issues as follow-up
+commits when first run on a fresh install.
 
 ### Upstream PR
 

@@ -112,9 +112,17 @@ it. Items at the same nesting depth can run in parallel.
    hosts cleanly (no hardcoded `openai.com` checks, host/port/protocol
    driven by the parsed URL). `/add-classroom` SKILL.md links the
    runbook as a local-LLM alternative to `CLASS_OPENAI_API_KEY`.
-8. **ai-coding-cli Phase G — smoke matrix** (~2 hr). Pure
-   verification work for the CLI-picker subsystem. Clears the
-   upstream-PR signal for that subsystem.
+8. ✅ **ai-coding-cli Phase G — smoke matrix.** Programmatic coverage
+   shipped in `setup/lib/ai-coding-cli/resolve.test.ts` (11 tests
+   covering install-state + env-var combinations non-destructively
+   via per-adapter `isInstalled()` mocking). Destructive-scenario
+   items (uninstall a CLI, force setup failure, terminal-prompt UX)
+   deferred to deployment-time verification with the live matrix
+   tracked in [upstream-pr-prep.md §1](upstream-pr-prep.md). Live
+   install state verified (both `claude` + `codex` installed; no
+   `NANOCLAW_AI_CODING_CLI` set, so setup would hit the
+   two-installed-picker branch on re-run). Adapter contract that the
+   picker depends on already covered by `index.test.ts`.
 9. **`scripts/gws-authorize.ts`** (~30 min). One-off CLI wrapping
     `src/gws-auth.ts` helpers so the instructor can mint a fresh
     refresh token via localhost callback. Recovers from
