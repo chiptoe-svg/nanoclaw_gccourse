@@ -200,7 +200,12 @@ include the relay's origin in the set of "proxy-bound" hosts.
       are inline. Defers OAuth bootstrap to manual or the future
       `scripts/gws-authorize.ts` (still pending — see Phase 14).
 
-#### 13.5 — V2 tool surface (separate plan, write when needed)
+#### 13.5 — V2 tool surface (separate plan)
+
+Detailed sub-plan: [plans/gws-mcp-v2.md](gws-mcp-v2.md). Splits V2 into
+four independent sub-phases (sheets, calendar, drive-listing, gmail),
+each gated on a real use case. Sheets (13.5a) is the suggested first
+landing target when a classroom gradebook need appears.
 
 ## Out of scope (V1)
 
