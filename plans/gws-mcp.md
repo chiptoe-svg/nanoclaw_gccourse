@@ -207,7 +207,7 @@ five sub-phases (sheets, calendar, drive-listing, gmail, slides), each
 gated on a real use case. Sheets (13.5a) is the suggested first
 landing target when a classroom gradebook need appears.
 
-#### 13.6 — Mode A ownership primitive (unblocks shared-workspace mode)
+#### 13.6 — Mode A ownership primitive (unblocks shared-workspace mode) ✅
 
 V1 + V2 tools assume Google's own permissions are the boundary. For
 **Mode A** — one shared class-workspace OAuth account, students
@@ -249,28 +249,28 @@ Sheets and Slides ride on Drive's `customProperties` — same tools work.
 
 **Substeps:**
 
-- [ ] `src/gws-mcp-tools.ts` — add `readOwners(fileId)`,
-      `claimOrCheck(fileId, callerAgentGroupId)` helpers. Wire
-      `driveDocWriteFromMarkdown` through `claimOrCheck`; on create,
-      set initial `customProperties` + `anyone-with-link` share via
-      `drive.permissions.create`.
-- [ ] `src/gws-mcp-tools.ts` — add `driveGrantOwnership`,
+- [x] `src/gws-ownership.ts` (extracted from gws-mcp-tools for reuse) — add `readDriveOwners(fileId)`,
+      `claimOrCheckDriveOwnership(fileId, callerAgentGroupId)`,
+      `writeDriveOwners`, `stampNewDriveFile`, `formatHardBlockMessage`
+      helpers. Wire `driveDocWriteFromMarkdown` through the check;
+      on create, set initial `customProperties` + `anyone-with-link`
+      share via `drive.permissions.create`.
+- [x] `src/gws-mcp-tools.ts` — add `driveGrantOwnership`,
       `driveRevokeOwnership`, `driveListOwners`. Each resolves
       display names from `agent_groups` table for the error/list
       response.
-- [ ] `src/gws-mcp-server.ts` — register the three new tools in the
+- [x] `src/gws-mcp-server.ts` — register the three new tools in the
       `TOOL_REGISTRY`. Validators accept `file_id` + `agent_group_id`.
-- [ ] `src/gws-mcp-server.test.ts` — extend `listToolNames` expectations;
-      add validator unit tests.
-- [ ] `container/agent-runner/src/mcp-tools/gws.ts` — three new shims
+- [x] `src/gws-mcp-server.test.ts` — extend `listToolNames` expectations;
+      add dispatch unit tests for the three new tools.
+- [x] `container/agent-runner/src/mcp-tools/gws.ts` — three new shims
       mirroring the host signature. Export each for tests.
-- [ ] `container/agent-runner/src/mcp-tools/gws.test.ts` — add cases
-      for grant/revoke/list. Add a "hard block" case verifying the
+- [x] `container/agent-runner/src/mcp-tools/gws.test.ts` — add cases
+      for grant/revoke/list + a "hard block" case verifying the
       error text includes a display name (not just an ID).
-- [ ] Operational note in `.claude/skills/add-gws-tool/SKILL.md`
-      — flag the single-point-of-failure caveat for Mode A: use a
-      dedicated Workspace account (not personal Gmail), keep recovery
-      codes safe; account lockout = whole class down.
+- [x] Operational note in `.claude/skills/add-gws-tool/SKILL.md`
+      — flag the single-point-of-failure caveat for Mode A, plus
+      per-account API quota + polite-enforcement-not-secure notes.
 
 ## Out of scope (V1)
 

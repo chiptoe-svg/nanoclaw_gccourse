@@ -7,12 +7,39 @@ description: Wire the host-side Google Workspace MCP relay so agents can read an
 
 Wires up Phase 13 Google Workspace tools (Drive / Docs as markdown today; Sheets / Calendar / Gmail as separate sub-phases when needed). The tools live in `container/agent-runner/src/mcp-tools/gws.ts` and forward every call to `src/gws-mcp-relay.ts` on the host. The relay reads `X-NanoClaw-Agent-Group`, applies role-based access checks via `canAccessAgentGroup`, and resolves an OAuth bearer per-agent (instructor's token today; per-student tokens once Phase 14 lands).
 
-Two tools surface to every agent:
+Tools surfaced to every agent:
 
 - `drive_doc_read_as_markdown(file_id)` — export a Google Doc to markdown.
 - `drive_doc_write_from_markdown(file_id, markdown, ...)` — overwrite (or create-if-missing) a Doc from markdown.
+- `drive_doc_grant_ownership(file_id, agent_group_id)` — add a co-owner.
+- `drive_doc_revoke_ownership(file_id, agent_group_id)` — remove a co-owner (refuses to leave a file unowned).
+- `drive_doc_list_owners(file_id)` — list owners by display name.
 
 The relay starts with the host on `pnpm run dev` / `systemctl --user start nanoclaw`, so there's no separate service to manage.
+
+## Mode A operational caveats
+
+When deploying this to a class against a shared workspace account
+(Mode A — instructor signs in once, everyone consumes the bearer):
+
+- **Single point of failure.** Class workspace account lockout =
+  whole class down. Mitigations:
+  - Use a **dedicated Workspace account**, not your personal Gmail.
+  - Store recovery codes off the host machine.
+  - Don't enable hardware-key 2FA without a backup.
+  - If you're paranoid, set up a second workspace-admin email so
+    you can recover from inside the same Workspace org.
+- **Drive/Calendar/Sheets API quotas are per-OAuth-user.** With
+  every student hammering one account, a busy class can hit
+  Drive's 1000-req/100-sec/user limit. Workspace plans raise this
+  but not infinitely. Symptoms: 429 errors in `logs/nanoclaw.log`
+  for `/googleapis/*` paths.
+- **The `nanoclaw_owners` tag is polite enforcement, not secure.**
+  Anyone with workspace edit access can rewrite the
+  `customProperties.nanoclaw_owners` value via the Drive API
+  directly. Non-technical students won't; a determined one can
+  bypass. For low-stakes classroom workflows this is acceptable;
+  if the stakes go up, switch to Mode B (per-person OAuth).
 
 ## Phase 1: Pre-flight
 
