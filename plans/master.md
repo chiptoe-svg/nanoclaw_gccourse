@@ -13,8 +13,13 @@ sequencing layer.
 | Class feature foundation (`/add-classroom*` skills) | `origin/classroom` branch |
 | Multi-user playground session store (Phase 1) | `main` (merge `7e5398d`) |
 | Google OAuth + roster + minimal home (Phase 2) | `main` (merge `f7d1fa8`) |
-| Per-student GWS refresh-token persistence (Phase 3 slice A) | `main` (same merge) |
-| `--roster <csv>` flag in `class-skeleton.ts` (slice B partial) | `origin/classroom` (merge `63d87c7`) |
+| Per-student GWS refresh-token persistence — write side (Phase 3 slice A) | `main` (same merge) |
+| `--roster <csv>` flag in `class-skeleton.ts` (slice B CSV import) | `origin/classroom` (merge `63d87c7`) |
+| Playground module split (Tier A audit refactor) | `main` (~auth-store / sse / server / api-routes / adapter / http-helpers / ttl-map split) |
+| `setup-cli` → `ai-coding-cli` rename | `main` (merge `af34009`) |
+| Credential-proxy per-call attribution (Tier 1 keystone) | `main` (merge `4161e55`) |
+| Per-student GWS read in proxy (Phase 3 slice B) | `main` (folded into the keystone merge) |
+| GWS MCP server + relay — Phase 13.2 + 13.3 | `main` (same merge as keystone) |
 
 Latest tracker: `plans/upstream-pr-prep.md` for the per-item PR-readiness state.
 
@@ -22,9 +27,9 @@ Latest tracker: `plans/upstream-pr-prep.md` for the per-item PR-readiness state.
 
 | Plan | Subject | Status |
 |---|---|---|
-| [classroom-web-multiuser.md](classroom-web-multiuser.md) | Phases 4–9 of the class web rebuild | Phases 1–3 (A) shipped; 4–9 pending |
-| [credential-proxy-per-call-attribution.md](credential-proxy-per-call-attribution.md) | Per-call agent-group attribution in the credential proxy | Plan only; **keystone for tier 2** |
-| [gws-mcp.md](gws-mcp.md) | Host-side Google Workspace MCP (Doc/Drive/Sheet tools) | 13.0 done; 13.1–13.4 pending |
+| [classroom-web-multiuser.md](classroom-web-multiuser.md) | Phases 4–9 of the class web rebuild | Phases 1–3 shipped; 4–9 pending |
+| [credential-proxy-per-call-attribution.md](credential-proxy-per-call-attribution.md) | Per-call agent-group attribution in the credential proxy | ✅ shipped (X.1–X.3 + X.6); X.4 (per-provider OAuth resolvers) deferred to Phase 4; X.5 (observability log) deferred |
+| [gws-mcp.md](gws-mcp.md) | Host-side Google Workspace MCP (Doc/Drive/Sheet tools) | 13.0–13.3 done; 13.4 pending |
 | [ai-coding-cli-pick.md](ai-coding-cli-pick.md) | AI-coding-CLI picker | A–F shipped; only Phase G (smoke matrix) left |
 
 ## Sub-plans (archived as historical)
@@ -38,46 +43,52 @@ The dependency graph picks the order — items land when their blockers
 clear. Tier numbers are coarse buckets; within a tier, items can run
 in any sequence (or in parallel via worktrees).
 
-### Tier 1 — keystone infrastructure (do first)
+### Tier 1 — keystone infrastructure (mostly done) ✅
 
-These are pure infrastructure with no upstream blockers. Tier 1 is
-short, but it unlocks three downstream tracks (per-student GWS,
-per-student provider auth, per-agent MCP role checks) that all wait
-on the same architectural decision.
+These are pure infrastructure with no upstream blockers. Tier 1 unlocks
+three downstream tracks (per-student GWS, per-student provider auth,
+per-agent MCP role checks). All but the smoke matrix done.
 
-1. **gws-mcp 13.1 — delete dead OneCLI skills.** ~30 min.
-   `.claude/skills/add-gmail-tool/` and `.claude/skills/add-gcal-tool/`
-   require a OneCLI gateway this install doesn't have. Phase 13's
-   `/add-gws-tool` supersedes them. Trivial cleanup; no blockers.
-2. **credential-proxy per-call attribution.** ~6–10 hr.
-   Full plan in `credential-proxy-per-call-attribution.md`. Recommended
-   mechanism: header injection (Candidate A). Implementation phases
-   X.1–X.6 in that plan.
-3. **ai-coding-cli Phase G — smoke matrix.** ~2 hr.
+1. ✅ **gws-mcp 13.1 — delete dead OneCLI skills.** Done in commit
+   `8f5f040` (skills removed) + `52a8290` (plan checkboxes ticked).
+2. ✅ **credential-proxy per-call attribution.** Shipped on `main` in
+   merge `4161e55`. X-NanoClaw-Agent-Group header (Candidate A);
+   container-side proxy-fetch wrapper; proxy reads + strips +
+   per-student GWS resolver. Phases X.1–X.3 + X.6 of
+   `credential-proxy-per-call-attribution.md`. X.4 (per-provider OAuth
+   resolvers) deferred to Phase 4 work; X.5 (per-request observability
+   log) deferred as a small follow-up.
+3. 🛠 **ai-coding-cli Phase G — smoke matrix.** ~2 hr.
    Per `ai-coding-cli-pick.md` Phase G + the test list in
    `upstream-pr-prep.md` §1. Pure verification work; clears the
    upstream-PR signal for that subsystem.
 
-### Tier 2 — payoffs of Tier 1 (depends on attribution landing)
+### Tier 2 — payoffs of Tier 1 (mostly done) ✅
 
-Each item here was waiting on Tier 1 #2.
+Each item here was waiting on Tier 1 #2; Phase 13.4 is the last bit
+needed to make GWS tools actually callable from agent containers.
 
-4. **classroom Phase 3 slice B — per-student GWS read in proxy.** ~2 hr.
-   Extends the per-credential resolver chain in the proxy to consult
-   `data/student-google-auth/<id>/credentials.json` first, falling
-   back to the instructor's token. Was deferred at Phase 3 ship time
-   because the attribution primitive didn't exist.
-5. **gws-mcp Phase 13.2 — host-side MCP server.** ~6–8 hr.
-   `src/gws-mcp-server.ts` + `src/gws-mcp-tools.ts` exposing
-   `drive_doc_read_as_markdown` + `drive_doc_write_from_markdown`.
-   Reuses `src/gws-auth.ts` for the OAuth refresh.
-6. **gws-mcp Phase 13.3 — per-agent relay with role check.** ~3–4 hr.
-   `src/gws-mcp-relay.ts` does the JSON-RPC pass-through, calling
-   `canAccessAgentGroup` to gate access. Now genuinely possible
-   because Tier 1 #2 added the per-call agent-group identity.
-7. **gws-mcp Phase 13.4 — container stub + skill.** ~3–4 hr.
-   `container/agent-runner/src/mcp-tools/gws-stub.ts` forwards to the
-   host relay; `.claude/skills/add-gws-tool/` packages the install.
+4. ✅ **classroom Phase 3 slice B — per-student GWS read in proxy.**
+   Folded into the Tier 1 #2 keystone merge (`4161e55`). The proxy
+   now consults `data/student-google-auth/<id>/credentials.json`
+   first, falls back to the instructor's token. `gws-token.ts` is
+   the shared resolver used by both proxy + GWS MCP.
+5. ✅ **gws-mcp Phase 13.2 — host-side MCP server.** Shipped in
+   `4161e55`. `src/gws-mcp-tools.ts` + `src/gws-mcp-server.ts`
+   exposing `drive_doc_read_as_markdown` +
+   `drive_doc_write_from_markdown` via `@googleapis/drive` 20.1.0
+   + `@googleapis/docs` 9.2.1.
+6. ✅ **gws-mcp Phase 13.3 — per-agent relay with role check.**
+   Shipped in `4161e55`. `src/gws-mcp-relay.ts` listens on
+   loopback `:3007`, reads X-NanoClaw-Agent-Group, validates the
+   agent group exists, dispatches into the in-process server.
+7. 🛠 **gws-mcp Phase 13.4 — container stub + skill.** ~3–4 hr.
+   `container/agent-runner/src/mcp-tools/gws-stub.ts` — local stub
+   MCP that forwards stdio JSON-RPC to the host relay (via
+   `host.docker.internal:3007`).
+   `.claude/skills/add-gws-tool/` (SKILL.md, REMOVE.md, VERIFY.md)
+   packages the install. **First candidate for the next
+   `/ultrareview` round** when the service is healthy again.
 
 ### Tier 3 — independent small wins (interleave anywhere after Tier 1)
 
@@ -122,7 +133,7 @@ break.
 
 ## Cross-cutting
 
-- **Live in-browser smoke for Phases 1–3 A.** Gated on the Mac Studio
+- **Live in-browser smoke for Phases 1–3.** Gated on the Mac Studio
   having a LAN IP + the GCP redirect URI being registered for that
   IP. See `project_gcp_oauth_pending` memory.
 - **Upstream `qwibitai/nanoclaw` PR candidates.** Tracked per
@@ -132,6 +143,13 @@ break.
 - **Branch hygiene.** Merges to `main` and to `origin/classroom` use
   `--no-ff` so each phase stays revertable as a single merge commit.
   Feature branches deleted (local + remote) once merged.
+- **`/ultrareview` deferred for the credential-proxy + GWS MCP
+  bundle.** Service was 100% broken across 4 attempts (503 / two
+  zlib failures / 502) — backend issue, not branch content. Bundle
+  merged to `main` based on test coverage (510 host + 119 container)
+  + the deliberate self-audit. Next architecturally-novel chunk
+  (Phase 13.4 container stub, or Phase 4 home page expansion) is
+  the next `/ultrareview` candidate when the service is back.
 
 ## How to use this file
 
