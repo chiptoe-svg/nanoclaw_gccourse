@@ -64,11 +64,14 @@ Skip to **Provision** if all of these are already in place:
 - `src/class-config.ts`, `src/class-pair-greeting.ts`,
   `src/class-pair-instructor.ts`, `src/class-pair-ta.ts`,
   `src/class-playground-gate.ts`, `src/class-container-env.ts`,
+  `src/class-codex-auth.ts`,
   `scripts/class-skeleton.ts`, `scripts/class-skeleton-extensions.ts`
   exist
 - `src/index.ts` contains imports for `class-pair-greeting`,
   `class-pair-instructor`, `class-pair-ta`, `class-playground-gate`,
-  and `class-container-env`
+  `class-container-env`, and `class-codex-auth`
+- `.env` contains a `CLASS_OPENAI_API_KEY=` line (value may be empty
+  if you're configuring the key later — see step 6 below)
 
 Otherwise continue. Every step below is safe to re-run.
 
@@ -89,6 +92,8 @@ git show origin/classroom:src/class-pair-ta.ts            > src/class-pair-ta.ts
 git show origin/classroom:src/class-playground-gate.ts    > src/class-playground-gate.ts
 git show origin/classroom:src/class-container-env.ts      > src/class-container-env.ts
 git show origin/classroom:src/class-container-env.test.ts > src/class-container-env.test.ts
+git show origin/classroom:src/class-codex-auth.ts         > src/class-codex-auth.ts
+git show origin/classroom:src/class-codex-auth.test.ts    > src/class-codex-auth.test.ts
 git show origin/classroom:scripts/class-skeleton.ts       > scripts/class-skeleton.ts
 git show origin/classroom:scripts/class-skeleton-extensions.ts > scripts/class-skeleton-extensions.ts
 mkdir -p docs
@@ -110,6 +115,7 @@ import './class-pair-instructor.js';
 import './class-pair-ta.js';
 import './class-playground-gate.js';
 import './class-container-env.js';
+import './class-codex-auth.js';
 ```
 
 ### 4. Edit the skeleton extensions barrel
@@ -123,7 +129,47 @@ If the file you copied has the gws import line, leave it. The
 skill is idempotent and the import only takes effect when the
 referenced file exists (i.e., gws is installed).
 
-### 5. Build
+### 5. Configure the class LLM credential pool (`CLASS_OPENAI_API_KEY`)
+
+Class agent groups (folder prefix `student_` / `ta_` / `instructor_`)
+consume a class-shared OpenAI API key, not the instructor's personal
+ChatGPT subscription. `src/class-codex-auth.ts` reads this value from
+`.env` at host startup and writes `data/class-codex-auth.json` (the
+api-key-mode shape codex CLI expects).
+
+**Check current state:**
+
+```bash
+grep -E '^CLASS_OPENAI_API_KEY=' .env || echo "(not set)"
+```
+
+If unset, **ask the user** for the class key (one OpenAI API key per
+class, instructor-owned, billed to the class budget). If they don't
+have one yet, walk them through:
+
+> Go to https://platform.openai.com/api-keys, create a key for this
+> class (name it something memorable like "<class-name> spring 2026"),
+> and paste it below. Make sure the project has API credits funded —
+> students consume directly from this pool.
+
+Append (or replace) the line in `.env`:
+
+```bash
+CLASS_OPENAI_API_KEY=sk-proj-...
+```
+
+If a value is already present **and the user is re-running for a new
+semester / rotating the key**, ask them whether to update it. Replace
+the existing line on confirm. (Manual sed/edit; the skill doesn't
+silently overwrite — that's a foot-gun.)
+
+**Fallback note:** if the key is left unset, class agent groups fall
+back to the instructor's personal `~/.codex/auth.json` (ChatGPT OAuth)
+via the codex resolver chain. Useful as a temporary backup if the API
+path breaks, but expect the instructor's ChatGPT plan to absorb the
+cost. Set the key for the steady-state class deploy.
+
+### 6. Build
 
 ```bash
 pnpm exec tsc --noEmit
@@ -132,6 +178,29 @@ pnpm test
 
 Both should be green. If `pnpm test` reports failures, diff against
 `origin/classroom` to see what's drifted.
+
+### 7. Restart the service
+
+```bash
+systemctl --user restart nanoclaw   # Linux
+# launchctl kickstart -k gui/$(id -u)/com.nanoclaw   # macOS
+```
+
+Verify `data/class-codex-auth.json` was written (when key was set):
+
+```bash
+ls -l data/class-codex-auth.json
+```
+
+And the log line at startup:
+
+```bash
+grep -i 'class.codex\|CLASS_OPENAI' logs/nanoclaw.log | tail -5
+```
+
+You should see either "CLASS_OPENAI_API_KEY not set — class codex
+resolver will fall through to instructor OAuth" (if you left it unset)
+or "Class Codex auth.json written" (if you set the key).
 
 ## Provision a class
 
