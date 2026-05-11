@@ -26,9 +26,7 @@ afterEach(() => vi.clearAllMocks());
 
 describe('listToolNames', () => {
   it('returns the V1 tool names', () => {
-    expect(new Set(listToolNames())).toEqual(
-      new Set(['drive_doc_read_as_markdown', 'drive_doc_write_from_markdown']),
-    );
+    expect(new Set(listToolNames())).toEqual(new Set(['drive_doc_read_as_markdown', 'drive_doc_write_from_markdown']));
   });
 });
 
@@ -40,7 +38,11 @@ describe('dispatchTool', () => {
   });
 
   it('returns 400 when args are not an object', async () => {
-    const r = await dispatchTool({ ctx: { agentGroupId: 'ag_x' }, toolName: 'drive_doc_read_as_markdown', args: 'oops' });
+    const r = await dispatchTool({
+      ctx: { agentGroupId: 'ag_x' },
+      toolName: 'drive_doc_read_as_markdown',
+      args: 'oops',
+    });
     expect(r.ok).toBe(false);
     expect((r as { status?: number }).status).toBe(400);
   });

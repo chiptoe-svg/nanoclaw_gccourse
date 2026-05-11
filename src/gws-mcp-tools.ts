@@ -88,10 +88,7 @@ export async function driveDocReadAsMarkdown(
   const drive = buildDriveClient(tokenOrError);
 
   try {
-    const res = await drive.files.export(
-      { fileId: args.file_id, mimeType: 'text/markdown' },
-      { responseType: 'text' },
-    );
+    const res = await drive.files.export({ fileId: args.file_id, mimeType: 'text/markdown' }, { responseType: 'text' });
     const markdown = typeof res.data === 'string' ? res.data : String(res.data ?? '');
     return { ok: true, fileId: args.file_id, markdown, bytes: Buffer.byteLength(markdown) };
   } catch (err) {

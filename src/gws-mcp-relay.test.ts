@@ -58,7 +58,12 @@ interface RawResponse {
   body: string;
 }
 
-function request(opts: { method: string; path: string; headers?: Record<string, string>; body?: string }): Promise<RawResponse> {
+function request(opts: {
+  method: string;
+  path: string;
+  headers?: Record<string, string>;
+  body?: string;
+}): Promise<RawResponse> {
   return new Promise((resolve, reject) => {
     const req = http.request(
       { host: '127.0.0.1', port, path: opts.path, method: opts.method, headers: opts.headers || {} },

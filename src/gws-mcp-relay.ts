@@ -82,7 +82,8 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     if (!agentGroupId) {
       return send(res, 401, {
         ok: false,
-        error: 'Missing X-NanoClaw-Agent-Group header. Container-side proxy-fetch wrapper should set this automatically.',
+        error:
+          'Missing X-NanoClaw-Agent-Group header. Container-side proxy-fetch wrapper should set this automatically.',
       });
     }
     const group = getAgentGroup(agentGroupId);
@@ -102,7 +103,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       toolName,
       args,
     });
-    const status = result.ok ? 200 : (('status' in result && typeof result.status === 'number' ? result.status : 500));
+    const status = result.ok ? 200 : 'status' in result && typeof result.status === 'number' ? result.status : 500;
     return send(res, status, result);
   }
 

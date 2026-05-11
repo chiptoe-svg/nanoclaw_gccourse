@@ -96,11 +96,7 @@ export function listToolNames(): ToolName[] {
  * unhandled exception inside the tool becomes a 500. Otherwise returns
  * whatever the tool returned.
  */
-export async function dispatchTool(opts: {
-  ctx: ToolContext;
-  toolName: string;
-  args: unknown;
-}): Promise<ToolResult> {
+export async function dispatchTool(opts: { ctx: ToolContext; toolName: string; args: unknown }): Promise<ToolResult> {
   const entry = TOOL_REGISTRY[opts.toolName as ToolName];
   if (!entry) {
     return { ok: false, error: `Unknown tool: ${opts.toolName}`, status: 404 };
