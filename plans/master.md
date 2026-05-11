@@ -253,14 +253,18 @@ Slot into Phase 2 or a small interleave when convenient.
   `codex login` for chatgpt mode (the latter requires interactive
   browser auth, can't be fully automated from Telegram).
   Lives on `admin` branch alongside the other admin handlers.
-- **agent_groups.agent_provider ↔ container.json `provider` drift
-  detection.** During Phase 1 verification the local install had a
-  mismatch (`agent_provider=claude` in DB; `provider=codex` in
-  container.json) — the runtime reads container.json so codex was
-  what actually ran. A small reconciliation in `host-sweep.ts`
-  could detect + log drift, or `/provider` could write to both
-  on every switch. Investigate which side is currently
-  authoritative and lock down the contract.
+- ~~agent_groups.agent_provider ↔ container.json drift~~ ✅ fixed
+  on `admin` branch (commit `9074e0c`) — `setProvider` now updates
+  `agent_groups.agent_provider` alongside `container.json` and
+  `sessions.agent_provider`. Regression test pinned in
+  `provider-switch.test.ts`. Found during Phase 1 verification
+  when `/model` listed Claude models for a codex group on this
+  install; root cause was setProvider only updating 2 of 3 sources.
+  Existing installs may have drifted rows from before this fix —
+  one-off SQL to reconcile:
+  `UPDATE agent_groups SET agent_provider = (SELECT json_extract(...))`
+  is doable but not worth scripting for the handful of groups
+  affected; manual `ncl groups update --provider <p>` works too.
 - **Container can't reach GWS relay on port 3007** when ufw is
   active without an explicit allow rule for docker0 traffic. Port
   3001 (credential proxy) has an iptables ACCEPT (likely added by
