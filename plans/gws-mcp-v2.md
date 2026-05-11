@@ -277,11 +277,14 @@ mechanism as Docs). Mode B: Google native.
 13.5c / 13.5d / 13.5e each ship independently. The parent is done
 when each sub-phase is either landed or explicitly closed-as-not-needed.
 
-Suggested order: **Phase 13.6 (ownership primitive) is the blocker for
-any of these to land safely in Mode A.** Once 13.6 ships, 13.5a (sheets)
-first — gradebook is the most likely classroom need. 13.5e (slides)
-piggybacks on the same ownership tag mechanism and is small. Defer
-13.5b–d until a concrete request shows up.
+**Mapping to master-plan phases:**
+
+- **Phase 1 (Mode A class MVP):** 13.5a (Sheets) + 13.5b (Calendar) +
+  13.5e (Slides). All three use the 13.6 ownership tag for Mode A
+  friction. 13.6 is the upstream blocker.
+- **Phase 2 (Mode B, per-person GWS):** 13.5c (Drive listing) + 13.5d
+  (Gmail). Both need Google's own permissions as the boundary, which
+  only exists in Mode B. Don't ship until Phase 14 lands.
 
 ## Substeps
 

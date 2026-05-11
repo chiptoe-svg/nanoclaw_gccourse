@@ -140,12 +140,55 @@ header), revisit Candidate B then.
 - Resolver chain: per-student → instructor default. Same shape as
   `class-codex-auth`'s resolver registration.
 
-### Phase X.4 — per-student API key / OAuth resolvers (Phase 4 work)
+### Phase X.4 — instructor provider OAuth (master-plan Phase 1)
 
-- Same shape, different files: `anthropic-per-student.ts`,
-  `openai-per-student.ts`, `custom-openai-per-student.ts`.
-- Reads `data/student-creds/<sanitized_id>/<provider>.json`.
-- Phase 4 of the multi-user plan does the wiring.
+The shared-class deployment shape (Mode A): one instructor authorizes
+the chosen agent provider (Codex / Anthropic / OpenAI / etc.) once at
+setup, and every student agent in the class consumes from that
+credential pool. No per-student auth in this phase.
+
+- Extend `credential-proxy.ts` to read provider OAuth tokens from the
+  *instructor's* well-known location for each provider:
+  - **Codex (OpenAI)**: existing `class-codex-auth` mount pattern is
+    spawn-time; we want proxy-time so the same OAuth refreshes
+    transparently. Either move codex auth into the proxy, or read
+    `~/.codex/auth.json` directly from the proxy.
+  - **Anthropic OAuth**: already reads `~/.claude/.credentials.json`.
+    Verify it still works in the class-deploy flow with the new
+    header-bearing requests.
+  - **OpenAI API key** (non-OAuth fallback): existing `.env`
+    `OPENAI_API_KEY` path; no change needed.
+- Setup-flow wiring: the `/setup` or `/init-first-agent` skills walk
+  the instructor through (a) picking a CLI, (b) picking an agent
+  provider, (c) OAuthing the provider if it's separate from the CLI.
+- No per-student lookup at this phase — the proxy resolves the
+  instructor's credentials for every request.
+- Trigger to start: master-plan Phase 1.
+
+### Phase X.7 — per-student provider OAuth (master-plan Phase 2)
+
+Phase 2 layers per-student OAuth on top of Phase X.4. Same shape as
+X.3 (per-student GWS), applied to LLM providers.
+
+- New resolvers: `anthropic-per-student.ts`, `openai-per-student.ts`,
+  `codex-per-student.ts`. Each reads
+  `data/student-creds/<sanitized_user_id>/<provider>.json`.
+- Resolver chain: per-student → instructor fallback (from X.4).
+- **Temp-password / time-bounded fallback.** Students who haven't
+  completed provider OAuth yet (or whose token expired) can input a
+  one-time code at the homepage that grants them N hours (default 24)
+  of "use instructor's pool." Implementation sketch:
+  - Instructor generates a temp code (e.g., `ncl temp-creds grant
+    --user <user_id> --hours 24` writes to
+    `data/student-creds/<id>/_temp.json`).
+  - Resolver checks `_temp.json.expires_at > now()` before per-student
+    file; if active, returns the instructor's creds.
+  - After expiry the file is deleted (or the resolver ignores it) and
+    student must complete proper OAuth.
+- Magic-link OAuth flow runs on the existing student-auth-server
+  (port 3003). Per-provider routes mirror the Phase 14 GWS routes
+  (`/openai-auth?t=<token>`, `/anthropic-auth?t=<token>`, etc.).
+- Trigger to start: master-plan Phase 2.
 
 ### Phase X.5 — observability
 
@@ -165,9 +208,8 @@ header), revisit Candidate B then.
 
 ## Out of scope
 
-- **OpenAI / Anthropic per-student auth via this mechanism (Phase 4
-  wiring):** specified in the multi-user plan, slot in here when
-  Phase 4 ships.
+- **Container-side enforcement that the header was set.** See
+  recommendation rationale; trade-off accepted.
 - **Apple Container networking changes:** the recommended Candidate A
   is runtime-agnostic, so Apple Container migration doesn't affect
   this plan.
@@ -176,12 +218,14 @@ header), revisit Candidate B then.
 
 ## Status
 
-🛠 **Not started.** Plan only. Owner: TBD.
+- X.1–X.3 + X.6 ✅ shipped in merge `4161e55` on `main`.
+- **X.4 (instructor provider OAuth)** 🛠 — master-plan Phase 1 work.
+- **X.5 (observability)** 🛠 — deferred follow-up.
+- **X.7 (per-student provider OAuth + temp-password fallback)** 🛠 —
+  master-plan Phase 2 work.
 
 Cross-references:
-- Triggered by: `plans/classroom-web-multiuser.md` Phase 3 slice B,
-  Phase 4.
-- Verifies against: `origin/classroom`'s `src/credential-proxy.ts`
-  (no current per-call attribution as of 2026-05-10).
+- Triggered by: `plans/master.md` Phase 1 (X.4) and Phase 2 (X.7).
 - Pattern reference: `src/class-codex-auth.ts` (existing per-student
-  auth resolver, but spawn-time mount, not proxy-time lookup).
+  auth resolver, spawn-time mount). X.4/X.7 generalize this to
+  proxy-time lookup that works for OAuth-bearer providers.

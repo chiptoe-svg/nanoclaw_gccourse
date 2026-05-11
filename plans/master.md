@@ -1,8 +1,10 @@
 # NanoClaw gccourse — master plan
 
-Single entry point for what to do next on this fork. The detailed
-designs live in the sub-plans referenced inline; this file is the
-sequencing layer.
+Two-phase delivery plan for this fork. Phase 1 ships a working Mode A
+classroom MVP on shared workspace + shared LLM credit pool. Phase 2
+adds per-person accounts, RAG-driven labs, exports, and walkaway
+deploy. Detailed designs live in the sub-plans referenced inline;
+this file is the sequencing layer.
 
 ## What's shipped
 
@@ -11,211 +13,206 @@ sequencing layer.
 | AI-coding-CLI picker (Phases A–F) | `main`, commits per `plans/ai-coding-cli-pick.md` |
 | Agent Playground v2 | installed via `/add-agent-playground`, declared SHIPPED in `plans/agent-playground-v2.md` |
 | Class feature foundation (`/add-classroom*` skills) | `origin/classroom` branch |
-| Multi-user playground session store (Phase 1) | `main` (merge `7e5398d`) |
-| Google OAuth + roster + minimal home (Phase 2) | `main` (merge `f7d1fa8`) |
-| Per-student GWS refresh-token persistence — write side (Phase 3 slice A) | `main` (same merge) |
+| Multi-user playground session store (classroom Phase 1) | `main` (merge `7e5398d`) |
+| Google OAuth + roster + minimal home (classroom Phase 2) | `main` (merge `f7d1fa8`) |
+| Per-student GWS refresh-token persistence — write side (classroom Phase 3 slice A) | `main` (same merge) |
 | `--roster <csv>` flag in `class-skeleton.ts` (slice B CSV import) | `origin/classroom` (merge `63d87c7`) |
-| Playground module split (Tier A audit refactor) | `main` (~auth-store / sse / server / api-routes / adapter / http-helpers / ttl-map split) |
+| Playground module split (Tier A audit refactor) | `main` |
 | `setup-cli` → `ai-coding-cli` rename | `main` (merge `af34009`) |
-| Credential-proxy per-call attribution (Tier 1 keystone) | `main` (merge `4161e55`) |
-| Per-student GWS read in proxy (Phase 3 slice B) | `main` (folded into the keystone merge) |
-| GWS MCP server + relay — Phase 13.2 + 13.3 | `main` (same merge as keystone) |
-| GWS MCP container → relay wiring + `/add-gws-tool` skill — Phase 13.4 | `main` (commit `cecfb36`) |
+| Credential-proxy per-call attribution (X.1–X.3 + X.6) | `main` (merge `4161e55`) |
+| Per-student GWS read in proxy (classroom Phase 3 slice B) | `main` (folded into `4161e55`) |
+| GWS MCP server + relay — Phase 13.2 + 13.3 | `main` (merge `4161e55`) |
+| GWS MCP container → relay + `/add-gws-tool` skill — Phase 13.4 | `main` (commit `cecfb36`) |
 | Phase 13.5 V2 surface — mode-aware sub-plan | `main` (commits `e8aede2` + `bb337d9`); no tools landed yet |
+| Phase 13.6 ownership primitive — Mode A friction sub-plan | `main` (commit `0f5df8a`); not built yet |
 
-Latest tracker: `plans/upstream-pr-prep.md` for the per-item PR-readiness state.
+## Active sub-plans (referenced from the delivery phases below)
 
-## Sub-plans (active)
+| Plan | Subject |
+|---|---|
+| [gws-mcp.md](gws-mcp.md) | GWS MCP V1 (Docs) + Phase 13.6 ownership primitive + Phase 14 per-person OAuth |
+| [gws-mcp-v2.md](gws-mcp-v2.md) | GWS V2 tool surface — sheets / calendar / drive-listing / gmail / slides |
+| [credential-proxy-per-call-attribution.md](credential-proxy-per-call-attribution.md) | Header-based attribution + provider OAuth resolvers (X.4 instructor / X.7 per-student) |
+| [classroom-web-multiuser.md](classroom-web-multiuser.md) | The 9-phase classroom web rebuild; phases referenced individually below |
+| [ai-coding-cli-pick.md](ai-coding-cli-pick.md) | AI-coding-CLI picker (A–F shipped; G remains) |
+| [upstream-pr-prep.md](upstream-pr-prep.md) | Per-subsystem PR-readiness tracker for upstream `qwibitai/nanoclaw` |
 
-| Plan | Subject | Status |
-|---|---|---|
-| [classroom-web-multiuser.md](classroom-web-multiuser.md) | Phases 4–9 of the class web rebuild | Phases 1–3 shipped; 4–9 pending |
-| [credential-proxy-per-call-attribution.md](credential-proxy-per-call-attribution.md) | Per-call agent-group attribution in the credential proxy | ✅ shipped (X.1–X.3 + X.6); X.4 (per-provider OAuth resolvers) deferred to Phase 4; X.5 (observability log) deferred |
-| [gws-mcp.md](gws-mcp.md) | Host-side Google Workspace MCP (Doc/Drive/Sheet/Calendar/Gmail tools) | 13.0–13.4 done; 13.5 sub-plan written ([gws-mcp-v2.md](gws-mcp-v2.md)); Phase 14 (per-student OAuth) pending |
-| [gws-mcp-v2.md](gws-mcp-v2.md) | V2 tool surface — sheets / calendar / drive-listing / gmail, mode-aware | Sub-plan only; each sub-phase landed when a real use case appears |
-| [ai-coding-cli-pick.md](ai-coding-cli-pick.md) | AI-coding-CLI picker | A–F shipped; only Phase G (smoke matrix) left |
+Archived: `agent-playground-v2.md` (SHIPPED — kept as design record).
 
-## Sub-plans (archived as historical)
+## Phase 1 — Mode A class MVP
 
-`agent-playground-v2.md` (self-marked SHIPPED). Kept as design-record;
-not on the active worklist.
+**Goal.** A class can deploy with: one Google Workspace OAuth
+(instructor's, shared by everyone), one LLM provider OAuth
+(instructor's, shared as a credit pool), a homepage students log into
+via personal email, an embedded Agent Playground, and working
+Drive/Sheets/Calendar/Slides tools with NanoClaw-side ownership
+friction. No per-student GWS or per-student LLM auth yet.
 
-## Order of work
+**Setup story (the experience we're delivering).** Instructor runs
+`/setup`, picks a CLI and authorizes it, picks an agent provider
+(typically Codex/OpenAI) and authorizes it, runs `/add-classroom` +
+`/add-classroom-gws` to provision the class workspace, then
+`/add-gws-tool` to wire GWS into student agents. Students get
+homepage URL + Telegram link; they log in via personal email; their
+LLM calls run on instructor's pool; their docs live in the class
+workspace with anyone-with-link sharing.
 
-The dependency graph picks the order — items land when their blockers
-clear. Tier numbers are coarse buckets; within a tier, items can run
-in any sequence (or in parallel via worktrees).
+### Build order
 
-### Tier 1 — keystone infrastructure (mostly done) ✅
+The order matters: each item below depends on the one or two above
+it. Items at the same nesting depth can run in parallel.
 
-These are pure infrastructure with no upstream blockers. Tier 1 unlocks
-three downstream tracks (per-student GWS, per-student provider auth,
-per-agent MCP role checks). All but the smoke matrix done.
-
-1. ✅ **gws-mcp 13.1 — delete dead OneCLI skills.** Done in commit
-   `8f5f040` (skills removed) + `52a8290` (plan checkboxes ticked).
-2. ✅ **credential-proxy per-call attribution.** Shipped on `main` in
-   merge `4161e55`. X-NanoClaw-Agent-Group header (Candidate A);
-   container-side proxy-fetch wrapper; proxy reads + strips +
-   per-student GWS resolver. Phases X.1–X.3 + X.6 of
-   `credential-proxy-per-call-attribution.md`. X.4 (per-provider OAuth
-   resolvers) deferred to Phase 4 work; X.5 (per-request observability
-   log) deferred as a small follow-up.
-3. 🛠 **ai-coding-cli Phase G — smoke matrix.** ~2 hr.
-   Per `ai-coding-cli-pick.md` Phase G + the test list in
-   `upstream-pr-prep.md` §1. Pure verification work; clears the
+1. **`wasFallback` infra prerequisite** (~1 hr). Extend
+   `getGoogleAccessTokenForAgentGroup` to return
+   `{ token, principal }` where `principal` is `'self' |
+   'instructor-fallback'`. Lets V2 tools detect Mode A vs Mode B at
+   call time. Used by 13.6 and every 13.5* tool.
+2. **gws-mcp Phase 13.6 — Mode A ownership primitive** (~4–6 hr).
+   `customProperties.nanoclaw_owners` tagging, claim-on-first-touch
+   for untagged docs, hard-block on writes/deletes when caller isn't
+   in the owners list, three grant/revoke/list tools,
+   anyone-with-link sharing on create, display-name in error
+   messages. Amends shipped 13.2 code (the write path).
+   Details: [gws-mcp.md §13.6](gws-mcp.md).
+3. **gws-mcp Phase 13.5a — Sheets read/write.** Gradebook /
+   attendance / structured-data workflows. Details:
+   [gws-mcp-v2.md §13.5a](gws-mcp-v2.md).
+4. **gws-mcp Phase 13.5b — Calendar list/create.** Shared class
+   calendar — instructor posts deadlines, students may add events
+   (hard-block on delete-not-yours per 13.6). Details:
+   [gws-mcp-v2.md §13.5b](gws-mcp-v2.md).
+5. **gws-mcp Phase 13.5e — Slides create/append/replace-text.** Same
+   ownership-tag mechanism as Docs (Slides are Drive files). Cheap
+   to bundle alongside 13.5a/b. Details:
+   [gws-mcp-v2.md §13.5e](gws-mcp-v2.md).
+6. **credential-proxy Phase X.4 — instructor provider OAuth.** Wire
+   instructor's chosen agent provider's OAuth into the credential
+   proxy so all student agents draw from one pool. Codex/OpenAI is
+   the expected provider for this class.
+   Details: [credential-proxy-per-call-attribution.md §X.4](credential-proxy-per-call-attribution.md).
+7. **classroom Phase 4 (Phase-1 slice) — homepage + playground
+   integration.** Student-facing entry: login by personal email,
+   Telegram channel link, basic dashboard, picker for which agent
+   to talk to, embedded Agent Playground access. **No provider
+   settings panel yet** — that's Phase 2 work, gated on per-student
+   provider OAuth. Spec in
+   [classroom-web-multiuser.md §Phase 4](classroom-web-multiuser.md).
+8. **classroom Phase 6 — local-LLM runbook + .env.** Mostly docs +
+   small `credential-proxy.ts` audit for arbitrary upstream-host
+   `OPENAI_BASE_URL` correctness. Bundle into Phase 1 because it's
+   cheap and unlocks cost-economical RAG prep in Phase 2.
+9. **ai-coding-cli Phase G — smoke matrix** (~2 hr). Pure
+   verification work for the CLI-picker subsystem. Clears the
    upstream-PR signal for that subsystem.
+10. **`scripts/gws-authorize.ts`** (~30 min). One-off CLI wrapping
+    `src/gws-auth.ts` helpers so the instructor can mint a fresh
+    refresh token via localhost callback. Recovers from
+    expired-token states; also becomes the manual-test backstop for
+    Phase 14.
 
-### Tier 2 — payoffs of Tier 1 ✅
+### Phase 1 success criteria
 
-4. ✅ **classroom Phase 3 slice B — per-student GWS read in proxy.**
-   Folded into the Tier 1 #2 keystone merge (`4161e55`). The proxy
-   now consults `data/student-google-auth/<id>/credentials.json`
-   first, falls back to the instructor's token. `gws-token.ts` is
-   the shared resolver used by both proxy + GWS MCP.
-5. ✅ **gws-mcp Phase 13.2 — host-side MCP server.** Shipped in
-   `4161e55`. `src/gws-mcp-tools.ts` + `src/gws-mcp-server.ts`
-   exposing `drive_doc_read_as_markdown` +
-   `drive_doc_write_from_markdown` via `@googleapis/drive` 20.1.0
-   + `@googleapis/docs` 9.2.1.
-6. ✅ **gws-mcp Phase 13.3 — per-agent relay with role check.**
-   Shipped in `4161e55`. `src/gws-mcp-relay.ts` listens on
-   loopback `:3007`, reads X-NanoClaw-Agent-Group, validates the
-   agent group exists, dispatches into the in-process server.
-7. ✅ **gws-mcp Phase 13.4 — container → relay + install skill.**
-   Shipped in commit `cecfb36`. `container/agent-runner/src/mcp-tools/gws.ts`
-   rewritten to POST `${GWS_MCP_RELAY_URL}/tools/<name>` with explicit
-   `X-NanoClaw-Agent-Group` header (no separate stub file — global
-   tool registration kept, single-file refactor). `GWS_BASE_URL`
-   removed from container env (was only used by `gws.ts`).
-   `.claude/skills/add-gws-tool/SKILL.md` packages the install.
-   First `/ultrareview` candidate once the service is healthy
-   (memory: 4 prior attempts failed on backend issues, not branch).
+- Instructor runs `/setup` end-to-end without manual file edits and
+  ends up with a class workspace + provider OAuth + working agent
+  group + working homepage.
+- A test student can log into the homepage with their personal
+  email, access the embedded playground, and trigger an LLM call
+  that hits the instructor's provider pool.
+- A test student can ask their agent to create a Google Doc; the
+  doc lands in the class workspace with `nanoclaw_owners` set and
+  anyone-with-link sharing. The student can open the doc URL from
+  their personal email login.
+- A second student cannot delete the first student's doc through
+  their agent — relay returns the hard-block error with the
+  creator's display name.
+- Sheet read/write, calendar create/list, slides create work for
+  whichever student created them; hard-block on others' content.
 
-### Tier 2b — GWS follow-ons (active worklist)
+## Phase 2 — Full classroom capability (per-person accounts + labs)
 
-**Suggested order:** 8 (ownership primitive) is the blocker for safe
-Mode A classroom deploys. Land it first. Then 9 (`wasFallback` infra)
-is a 1-hour prerequisite for the V2 tools to detect Mode A vs Mode B.
-Then any of 10–13 in any order driven by classroom needs.
+**Goal.** Layer per-person Google Workspace OAuth (Mode B) and
+per-person provider OAuth on top of Phase 1, add agent export,
+RAG-driven labs with evaluation framework, and walkaway cloud deploy.
 
-8. 🛠 **gws-mcp Phase 13.6 — Mode A ownership primitive.** ~4–6 hr.
-   Adds `customProperties.nanoclaw_owners` tagging to all
-   NanoClaw-created Drive/Calendar files. Claim-on-first-touch for
-   untagged docs. Hard-block writes/deletes when caller isn't in
-   owners list. Three new tools: `drive_doc_grant_ownership` /
-   `_revoke_ownership` / `_list_owners`. Amends shipped 13.2 code
-   (`drive_doc_write_from_markdown` needs to stamp the tag + apply
-   anyone-with-link sharing on create). Detailed substeps in
-   [gws-mcp.md](gws-mcp.md) §13.6. **Unblocks Mode A for class
-   deploy.**
-9. 🛠 **`wasFallback` infra prerequisite.** ~1 hr. Extend
-   `getGoogleAccessTokenForAgentGroup` to return `{ token, principal }`
-   where `principal` is `'self' | 'instructor-fallback'`. Lets every
-   V2 tool detect Mode A vs Mode B at call time and skip the
-   ownership-tag check in Mode B (Google enforces). Independent of
-   Phase 14 — landable today.
-10. 🛠 **gws-mcp Phase 13.5a — Sheets read/write.** Sub-plan in
-    [gws-mcp-v2.md](gws-mcp-v2.md). First V2 tool to land; gradebook
-    is the most likely classroom use case. Inherits the 13.6
-    ownership primitive for Mode A writes.
-11. 🛠 **gws-mcp Phase 13.5e — Slides create/append/replace-text.**
-    Sub-plan in [gws-mcp-v2.md](gws-mcp-v2.md). Small follow-on to
-    13.5a using the same ownership-tag mechanism (Slides are Drive
-    files). Lands alongside 13.5a when slides workflows surface.
-12. 🛠 **gws-mcp Phase 13.5b/c/d.** Calendar, Drive listing, Gmail.
-    Each lands when a real use case shows up. Stances per
-    [gws-mcp-v2.md](gws-mcp-v2.md).
-13. 🛠 **Phase 14 — per-person GWS OAuth (Mode B).** Designed in
-    [gws-mcp.md](gws-mcp.md) §Phase 14. Magic-link flow on the
-    student-auth-server (port 3003), per-user credentials at
-    `data/student-google-auth/<id>/`, `/gauth` Telegram command.
-    **Partly blocked on GCP redirect URI** registration — see
-    `project_gcp_oauth_pending` memory; deferred until Mac Studio
-    LAN IP is assigned. Code can land now (gated behind a feature
-    flag) and verification waits for the URI. Mode A is the
-    fallback that runs while this matures.
-14. 🛠 **`scripts/gws-authorize.ts`** — referenced in plans as
-    "foundation already in place" but doesn't actually exist on
-    disk. ~30 min. One-off CLI wrapping `src/gws-auth.ts` helpers
-    so the operator can mint a fresh refresh token via localhost
-    callback. Useful today (recovers from expired-token states);
-    becomes the manual-test backstop for Phase 14.
+### Build order
 
-### Tier 3 — independent small wins (interleave anywhere after Tier 1)
+1. **Phase 14 — per-person GWS OAuth (Mode B).** Magic-link flow on
+   the student-auth-server, per-user credentials at
+   `data/student-google-auth/<id>/`, `/gauth` Telegram command.
+   Partly blocked on GCP redirect URI registration — see
+   `project_gcp_oauth_pending` memory. Details:
+   [gws-mcp.md §Phase 14](gws-mcp.md).
+2. **credential-proxy Phase X.7 — per-student provider OAuth +
+   temp-password fallback.** Students authorize their own provider
+   account via magic-link; resolver falls back to instructor pool if
+   no per-student token. Instructor can issue a time-bounded temp
+   code (`ncl temp-creds grant --user X --hours 24`) that grants
+   instructor-pool access during student onboarding. Details:
+   [credential-proxy-per-call-attribution.md §X.7](credential-proxy-per-call-attribution.md).
+3. **gws-mcp Phase 13.5c — Drive listing.** Safe to expose once
+   Mode B lands — Google's own auth scopes the result. Details:
+   [gws-mcp-v2.md §13.5c](gws-mcp-v2.md).
+4. **gws-mcp Phase 13.5d — Gmail search/send.** Same reasoning.
+   Details: [gws-mcp-v2.md §13.5d](gws-mcp-v2.md).
+5. **classroom Phase 4 (Phase-2 slice) — provider settings panel.**
+   Adds the homepage UI for students to manage their own provider
+   OAuth + GWS OAuth + temp-code redemption.
+6. **classroom Phase 5 — agent export tooling.**
+   `nanoclaw / claude-code / codex / json` formats; `GET
+   /api/draft/<folder>/export?format=…`. Spec in
+   [classroom-web-multiuser.md §Phase 5](classroom-web-multiuser.md).
+7. **classroom Phase 7 — expert system builder + RAG strategies.**
+   Pipeline framework + named strategies + UI. Cost-economical only
+   after Phase 1 #8 (local-LLM runbook) lands. Spec in
+   [classroom-web-multiuser.md §Phase 7](classroom-web-multiuser.md).
+8. **classroom Phase 8 — evaluation framework.** Side-by-side
+   comparison + LLM-as-judge mode. Depends on Phase 7 (nothing to
+   evaluate without strategies). Spec in
+   [classroom-web-multiuser.md §Phase 8](classroom-web-multiuser.md).
+9. **classroom Phase 9 — walk-away cloud deploy.** Bundle +
+   bootstrap script. Depends on Phase 5 (export) for the bundle
+   format. Spec in
+   [classroom-web-multiuser.md §Phase 9](classroom-web-multiuser.md).
 
-These don't block anything and don't depend on anything new. Slot
-them in between the heavier Tier 2 items if you want a smaller-win
-break.
+### Phase 2 success criteria
 
-15. **classroom Phase 6 — local-LLM runbook + .env.** ~2–3 hr.
-    Mostly docs + a small audit of `credential-proxy.ts` for
-    `OPENAI_BASE_URL` correctness with arbitrary upstream hosts.
-    Exact phase content in `classroom-web-multiuser.md` §Phase 6.
-16. **classroom Phase 5 — agent export tooling.** ~4–5 hr.
-    `nanoclaw / claude-code / codex / json` formats; `GET
-    /api/draft/<folder>/export?format=…`. Spec in
-    `classroom-web-multiuser.md` §Phase 5.
-
-### Tier 4 — UI surface for everything above
-
-17. **classroom Phase 4 — home page expansion.** ~9–12 hr.
-    Provider settings panel (depends on Tier 1 #2 + per-student
-    Anthropic/OpenAI auth — see Decision 10 in the multi-user plan),
-    dashboard, picker filter, Telegram link. Spec in
-    `classroom-web-multiuser.md` §Phase 4.
-
-### Tier 5 — lab content (the bulk of in-class work)
-
-18. **classroom Phase 7 — expert system builder + RAG strategies.** ~12–30 hr.
-    Pipeline framework + named strategies + UI. Scope decisions still
-    open (lab sequence, capstone-stage support). Spec in
-    `classroom-web-multiuser.md` §Phase 7. Cost-economical only after
-    Tier 3 #15 lands (local LLM).
-19. **classroom Phase 8 — evaluation framework.** ~8–10 hr.
-    Side-by-side comparison view + LLM-as-judge mode. Depends on
-    Phase 7 (no strategies = nothing to evaluate). Spec in
-    `classroom-web-multiuser.md` §Phase 8.
-
-### Tier 6 — semester capstone
-
-20. **classroom Phase 9 — walk-away cloud deploy.** ~6–8 hr.
-    Bundle + bootstrap script. Depends on Tier 3 #16 (export) for the
-    bundle format. Spec in `classroom-web-multiuser.md` §Phase 9.
+- A student can complete their own Google OAuth and have their
+  agent operate as them against their own Drive (Google's own
+  boundary, not NanoClaw's).
+- A student can opt into per-person provider OAuth; if they don't
+  before the temp code expires, their LLM access stops gracefully.
+- An instructor can export an agent in any of four formats and
+  re-import it cleanly.
+- A RAG strategy lab runs end-to-end with side-by-side evaluation.
+- A class can be bundled and walked away with — one bootstrap
+  script on a fresh VPS reproduces the working state.
 
 ## Cross-cutting
 
-- **Live in-browser smoke for Phases 1–3.** Gated on the Mac Studio
-  having a LAN IP + the GCP redirect URI being registered for that
-  IP. See `project_gcp_oauth_pending` memory.
+- **Live in-browser smoke for classroom Phases 1–3.** Gated on the
+  Mac Studio having a LAN IP + the GCP redirect URI being registered
+  for that IP. See `project_gcp_oauth_pending` memory.
 - **Upstream `qwibitai/nanoclaw` PR candidates.** Tracked per
-  subsystem in `upstream-pr-prep.md`. Phase 1 (multi-user playground
-  fix) is the cleanest standalone candidate; held until live
-  verification.
+  subsystem in [upstream-pr-prep.md](upstream-pr-prep.md). Phase 1
+  (multi-user playground fix) is the cleanest standalone candidate;
+  held until live verification.
 - **Branch hygiene.** Merges to `main` and to `origin/classroom` use
   `--no-ff` so each phase stays revertable as a single merge commit.
   Feature branches deleted (local + remote) once merged.
-- **`/ultrareview` deferred for the credential-proxy + GWS MCP
-  bundle + Phase 13.4.** Service was 100% broken across 4 attempts
-  (503 / two zlib failures / 502) — backend issue, not branch
-  content. Bundle merged to `main` based on test coverage (510 host
-  + 124 container) + the deliberate self-audit. Phase 13.4 landed on
-  top with its own test pass (510 host + 124 container). Next
-  `/ultrareview` candidate when the service is back is the whole
-  GWS MCP arc (13.2 → 13.3 → 13.4) reviewed against `main`, or the
-  next architecturally-novel chunk (`wasFallback` infra, Phase 14
-  scaffold, or Phase 4 home page expansion).
-- **Memory note.** `feedback_ultrareview_before_merge.md` says to
-  run `/ultrareview` *before* merging feature work — going forward,
-  feature-branch new work and ultrareview on the branch tip before
-  merging to main, not after.
+- **`/ultrareview` policy.** Per the `feedback_ultrareview_before_merge`
+  memory: run `/ultrareview` *before* merging feature work, not
+  after. Going forward, build phase items on feature branches and
+  review-then-merge.
 
 ## How to use this file
 
-- When starting a session, read this file's "Order of work" to pick
-  the next item.
+- When starting a session, read the current phase's build order and
+  pick the first unblocked item.
 - When an item ships, record its merge commit in the "What's shipped"
   table at the top.
-- When a sub-plan adds new phases, list them under the relevant tier
-  here so the order is maintained.
-- When a tier's work is fully done, mark it with ✅ in the heading.
+- When a sub-plan adds new phases or new design decisions, update
+  the relevant Phase 1 or Phase 2 section here so the delivery
+  ordering stays accurate.
+- When all Phase 1 items are shipped, declare Phase 1 complete and
+  shift focus to Phase 2. Don't start Phase 2 items early — keep
+  the delivery boundary clean.
