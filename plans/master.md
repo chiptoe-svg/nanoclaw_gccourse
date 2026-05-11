@@ -93,13 +93,18 @@ it. Items at the same nesting depth can run in parallel.
    proxy so all student agents draw from one pool. Codex/OpenAI is
    the expected provider for this class.
    Details: [credential-proxy-per-call-attribution.md §X.4](credential-proxy-per-call-attribution.md).
-6. **classroom Phase 4 (Phase-1 slice) — homepage + playground
-   integration.** Student-facing entry: login by personal email,
-   Telegram channel link, basic dashboard, picker for which agent
-   to talk to, embedded Agent Playground access. **No provider
-   settings panel yet** — that's Phase 2 work, gated on per-student
-   provider OAuth. Spec in
-   [classroom-web-multiuser.md §Phase 4](classroom-web-multiuser.md).
+6. ✅ **classroom Phase 4 (Phase-1 slice) — class login tokens
+   (the URL-as-identity flow).** Shipped: trunk hook
+   `registerClassTokenRedeemer` on `main` (commit `a730aa8`);
+   classroom-side `class-login-tokens.ts` + migration + CLI resource
+   on `classroom` branch (commit `c7298b0`); `/add-classroom` SKILL.md
+   updated. Instructor mints `ncl class-tokens issue --email <e>` per
+   roster row, distributes the URLs via their channel of choice. Lost-
+   URL recovery via `ncl class-tokens rotate --email <e>`. Full Phase 4
+   (dashboard, Telegram link, provider settings) deferred until OAuth
+   unblocks browser smoke + Mac Studio LAN IP is assigned. Web
+   self-serve "Lost your link?" form + Resend integration tracked as
+   a Phase 1 #6 follow-up (~1.5 hr) — not blocking #7 onward.
 7. **classroom Phase 6 — local-LLM runbook + .env.** Mostly docs +
    small `credential-proxy.ts` audit for arbitrary upstream-host
    `OPENAI_BASE_URL` correctness. Bundle into Phase 1 because it's

@@ -64,14 +64,22 @@ Skip to **Provision** if all of these are already in place:
 - `src/class-config.ts`, `src/class-pair-greeting.ts`,
   `src/class-pair-instructor.ts`, `src/class-pair-ta.ts`,
   `src/class-playground-gate.ts`, `src/class-container-env.ts`,
-  `src/class-codex-auth.ts`,
+  `src/class-codex-auth.ts`, `src/class-login-tokens.ts`,
+  `src/db/migrations/module-class-login-tokens.ts`,
+  `src/cli/resources/class-tokens.ts`,
   `scripts/class-skeleton.ts`, `scripts/class-skeleton-extensions.ts`
   exist
 - `src/index.ts` contains imports for `class-pair-greeting`,
   `class-pair-instructor`, `class-pair-ta`, `class-playground-gate`,
-  `class-container-env`, and `class-codex-auth`
+  `class-container-env`, `class-codex-auth`, and `class-login-tokens`
+- `src/db/migrations/index.ts` contains `moduleClassLoginTokens` in
+  its migrations array
+- `src/cli/resources/index.ts` contains `import './class-tokens.js';`
 - `.env` contains a `CLASS_OPENAI_API_KEY=` line (value may be empty
-  if you're configuring the key later — see step 6 below)
+  if you're configuring the key later — see step 5 below)
+- `.env` contains a `PUBLIC_PLAYGROUND_URL=` line set to the externally
+  reachable playground URL (e.g. `http://192.168.1.50:3002`) so
+  `ncl class-tokens` prints student URLs that actually work
 
 Otherwise continue. Every step below is safe to re-run.
 
@@ -94,6 +102,10 @@ git show origin/classroom:src/class-container-env.ts      > src/class-container-
 git show origin/classroom:src/class-container-env.test.ts > src/class-container-env.test.ts
 git show origin/classroom:src/class-codex-auth.ts         > src/class-codex-auth.ts
 git show origin/classroom:src/class-codex-auth.test.ts    > src/class-codex-auth.test.ts
+git show origin/classroom:src/class-login-tokens.ts                       > src/class-login-tokens.ts
+git show origin/classroom:src/class-login-tokens.test.ts                  > src/class-login-tokens.test.ts
+git show origin/classroom:src/db/migrations/module-class-login-tokens.ts  > src/db/migrations/module-class-login-tokens.ts
+git show origin/classroom:src/cli/resources/class-tokens.ts               > src/cli/resources/class-tokens.ts
 git show origin/classroom:scripts/class-skeleton.ts       > scripts/class-skeleton.ts
 git show origin/classroom:scripts/class-skeleton-extensions.ts > scripts/class-skeleton-extensions.ts
 mkdir -p docs
@@ -116,6 +128,27 @@ import './class-pair-ta.js';
 import './class-playground-gate.js';
 import './class-container-env.js';
 import './class-codex-auth.js';
+import './class-login-tokens.js';
+```
+
+Append to `src/db/migrations/index.ts` (skip if present). The import goes
+in the import block at the top; the array entry goes at the **end** of
+the `migrations` array (preserves ordering — the trunk migrations stay
+first, classroom additions tack on):
+
+```typescript
+import { moduleClassLoginTokens } from './module-class-login-tokens.js';
+// ...
+const migrations: Migration[] = [
+  // ... existing trunk migrations ...
+  moduleClassLoginTokens,
+];
+```
+
+Append to `src/cli/resources/index.ts` (skip if present):
+
+```typescript
+import './class-tokens.js';
 ```
 
 ### 4. Edit the skeleton extensions barrel
@@ -168,6 +201,26 @@ back to the instructor's personal `~/.codex/auth.json` (ChatGPT OAuth)
 via the codex resolver chain. Useful as a temporary backup if the API
 path breaks, but expect the instructor's ChatGPT plan to absorb the
 cost. Set the key for the steady-state class deploy.
+
+### 5b. Configure the public playground URL (`PUBLIC_PLAYGROUND_URL`)
+
+Class login tokens get distributed as URLs like
+`http://<host>:3002/?token=<random>`. The host part needs to be the
+URL students will actually reach — for a Mac Studio on the LAN, that's
+the LAN IP (e.g. `http://192.168.1.50:3002`); for a public deploy,
+the domain.
+
+**Ask the user** for the externally-reachable playground URL. Append
+to `.env` (skip if already present):
+
+```bash
+PUBLIC_PLAYGROUND_URL=http://<host>:3002
+```
+
+The default if unset is `http://localhost:3002` — useless for students,
+but a harmless placeholder so the CLI doesn't crash printing URLs.
+Rotation: edit `.env`, restart the host; future `ncl class-tokens`
+output picks up the new base.
 
 ### 6. Build
 
@@ -233,6 +286,50 @@ KB and wiki paths must be in
 to spawn containers.
 
 See `docs/class-setup.md` for the full instructor README.
+
+## Distribute student login URLs
+
+Each roster row gets a durable URL that logs the student into the
+playground home page. The instructor mints + distributes; the student
+bookmarks. No Google OAuth required for Mode A — token = identity.
+
+**Mint one URL at a time:**
+
+```bash
+ncl class-tokens issue --email alice@example.com
+# → { ok: true, email: ..., user_id: ..., url: "http://<host>:3002/?token=..." }
+```
+
+**Mint URLs for everyone after class-skeleton ran:**
+
+```bash
+# Loop over roster emails (extracted via ncl users list or the CSV file).
+for email in $(cut -d, -f1 /srv/class-roster.csv | tail -n +2); do
+  ncl class-tokens issue --email "$email"
+done
+```
+
+Paste the resulting URLs into your existing distribution channel —
+class Drive doc, Canvas roster, individual emails. Anyone with the URL
+can log in **as that student**, so treat it like a password.
+
+**A student lost their URL:**
+
+```bash
+ncl class-tokens rotate --email alice@example.com
+```
+
+Revokes any prior tokens for Alice and mints a fresh one. Print the new
+URL and send it via your usual channel. Alice's old URL stops working
+immediately.
+
+**Next semester:**
+
+Just re-run the `for ... rotate` loop with the new roster. Old students'
+tokens become inactive; new students get fresh ones. Or wipe the table
+with `pnpm exec tsx scripts/q.ts data/v2.db "UPDATE class_login_tokens
+SET revoked_at = datetime('now') WHERE revoked_at IS NULL"` and start
+clean.
 
 ## What members experience after pairing
 
