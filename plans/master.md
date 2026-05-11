@@ -26,8 +26,10 @@ this file is the sequencing layer.
 | Phase 13.5 V2 surface — mode-aware sub-plan | `main` (commits `e8aede2` + `bb337d9`); no tools landed yet |
 | Phase 13.6 ownership primitive — Mode A friction sub-plan | `main` (commit `0f5df8a`); built on `feat/gws-skill-refactor` (commits `28e2c45`, `670de8d`, `06d7493`) — installed by `/add-classroom-gws` |
 | `wasFallback` infra — `{ token, principal }` from `getGoogleAccessTokenForAgentGroup` (Phase 1 #1) | `main` (commit `90caf28`) — `gws-token.ts` kept in trunk |
-| GWS small-trunk-with-skills refactor (rule 5) — base GWS → `origin/gws-mcp`, ownership ext → `origin/classroom`, skills rewritten to install | `feat/gws-skill-refactor` (commits `dc7f429`, `1d0bbac`) — **pending merge after user verification + /ultrareview** |
-| credential-proxy Phase X.4 — instructor provider OAuth (verification slice) | regression test added to `src/credential-proxy.test.ts` (uncommitted); static wiring verified |
+| GWS small-trunk-with-skills refactor (rule 5) — base GWS → `origin/gws-mcp`, ownership ext → `origin/classroom`, skills rewritten to install | `main` (merge `88db845`) — branch `feat/gws-skill-refactor` deleted |
+| credential-proxy Phase X.4 — instructor provider OAuth (verification slice) | `main` (commit `52b1837`) |
+
+**Phase 1 status: complete.** All 9 build-order items shipped; refactor merged; nothing else blocking. Phase 2 unblocked.
 
 ## Active sub-plans (referenced from the delivery phases below)
 
