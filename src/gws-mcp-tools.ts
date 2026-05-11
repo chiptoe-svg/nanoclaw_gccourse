@@ -28,6 +28,7 @@ import { Readable } from 'stream';
 
 import { drive as driveApi, auth as gAuth } from '@googleapis/drive';
 
+import { claimOrCheckDriveOwnership, stampNewDriveFile } from './gws-ownership.js';
 import { getGoogleAccessTokenForAgentGroup, type GwsPrincipal } from './gws-token.js';
 import { log } from './log.js';
 
@@ -130,6 +131,18 @@ export async function driveDocWriteFromMarkdown(
   if (!('principal' in tokenOrError)) return tokenOrError;
   const drive = buildDriveClient(tokenOrError.token);
 
+  // Mode A friction: only enforce when running on the shared workspace
+  // bearer AND the caller has an agent_group_id to attribute against.
+  // Mode B (per-person OAuth) skips this — Google's own auth is the
+  // boundary. Mode 1 (single-user install) hits this path too but the
+  // check is a no-op (one agent group, always own own files).
+  const enforceOwnership = tokenOrError.principal === 'instructor-fallback' && ctx.agentGroupId !== null;
+
+  if (enforceOwnership) {
+    const check = await claimOrCheckDriveOwnership(drive, args.file_id, ctx.agentGroupId!);
+    if (!check.ok) return check;
+  }
+
   try {
     const res = await drive.files.update({
       fileId: args.file_id,
@@ -160,9 +173,13 @@ export async function driveDocWriteFromMarkdown(
             body: Readable.from([args.markdown]),
           },
         });
+        const newId = create.data.id ?? '';
+        if (enforceOwnership && newId) {
+          await stampNewDriveFile(drive, newId, ctx.agentGroupId!);
+        }
         return {
           ok: true,
-          fileId: create.data.id ?? '',
+          fileId: newId,
           bytes: Buffer.byteLength(args.markdown),
           created: true,
         };
