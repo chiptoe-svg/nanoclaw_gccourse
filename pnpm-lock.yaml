@@ -23,6 +23,9 @@ importers:
       '@googleapis/drive':
         specifier: 20.1.0
         version: 20.1.0
+      '@googleapis/sheets':
+        specifier: ^13.0.1
+        version: 13.0.1
       better-sqlite3:
         specifier: 11.10.0
         version: 11.10.0
@@ -299,6 +302,10 @@ packages:
 
   '@googleapis/drive@20.1.0':
     resolution: {integrity: sha512-8/gapeLuZ3igooEGLE1AL3Zp5fjqigZQNmyjehb4QF7JVJh6FXF+72AcQGGsFypwJb2S68HIuQFomHBw4RJSOg==}
+    engines: {node: '>=12.0.0'}
+
+  '@googleapis/sheets@13.0.1':
+    resolution: {integrity: sha512-XTYObncN5Rqexc0uITZIN9OWTEyE/ZR2S6c7wAniqHe2oGXW9gcHR9f9hQwPMHFUTHjH7Jkj8SLdt0O0u37y2A==}
     engines: {node: '>=12.0.0'}
 
   '@humanfs/core@0.19.1':
@@ -1990,6 +1997,12 @@ snapshots:
       - supports-color
 
   '@googleapis/drive@20.1.0':
+    dependencies:
+      googleapis-common: 8.0.1
+    transitivePeerDependencies:
+      - supports-color
+
+  '@googleapis/sheets@13.0.1':
     dependencies:
       googleapis-common: 8.0.1
     transitivePeerDependencies:

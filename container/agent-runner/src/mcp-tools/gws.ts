@@ -135,4 +135,71 @@ export const driveDocWriteFromMarkdown: McpToolDefinition = {
   },
 };
 
-registerTools([driveDocReadAsMarkdown, driveDocWriteFromMarkdown]);
+export const sheetReadRange: McpToolDefinition = {
+  tool: {
+    name: 'sheet_read_range',
+    description:
+      'Read a range from a Google Sheet. Pass the spreadsheet_id (the part after /spreadsheets/d/ in the URL) and the range in A1 notation (e.g. "Sheet1!A1:C10" or "A1:C10" to use the first sheet). Returns values as a 2D string array.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        spreadsheet_id: { type: 'string', description: 'Drive file ID of the Google Sheet.' },
+        range: {
+          type: 'string',
+          description: 'A1-notation range. Prepend "<SheetName>!" to target a specific tab.',
+        },
+      },
+      required: ['spreadsheet_id', 'range'],
+    },
+  },
+  async handler(args) {
+    const spreadsheetId = args.spreadsheet_id as string;
+    const range = args.range as string;
+    if (!spreadsheetId) return err('spreadsheet_id is required');
+    if (!range) return err('range is required');
+    const r = await callRelay('sheet_read_range', { spreadsheet_id: spreadsheetId, range });
+    if (!r.ok) return err(r.error);
+    return ok(JSON.stringify(r.body, null, 2));
+  },
+};
+
+export const sheetWriteRange: McpToolDefinition = {
+  tool: {
+    name: 'sheet_write_range',
+    description:
+      'Write a 2D string array into a Google Sheet range using A1 notation. Defaults to `value_input_option: "USER_ENTERED"` so formulas starting with `=` evaluate; pass `"RAW"` to store as literal text. In Mode A (shared class workspace) writes are gated by the nanoclaw_owners tag — first writer claims the spreadsheet; subsequent writers must be in the owners list.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        spreadsheet_id: { type: 'string', description: 'Drive file ID of the Google Sheet to write to.' },
+        range: { type: 'string', description: 'A1-notation range, e.g. "Sheet1!A1:C3".' },
+        values: {
+          type: 'array',
+          description: '2D array of cell values: rows of columns. Stringify numbers/dates yourself.',
+          items: { type: 'array', items: { type: 'string' } },
+        },
+        value_input_option: {
+          type: 'string',
+          enum: ['RAW', 'USER_ENTERED'],
+          description: 'How input is interpreted. USER_ENTERED (default) evaluates formulas; RAW stores literally.',
+        },
+      },
+      required: ['spreadsheet_id', 'range', 'values'],
+    },
+  },
+  async handler(args) {
+    const spreadsheetId = args.spreadsheet_id as string;
+    const range = args.range as string;
+    const values = args.values as unknown;
+    if (!spreadsheetId) return err('spreadsheet_id is required');
+    if (!range) return err('range is required');
+    if (!Array.isArray(values)) return err('values must be a 2D array');
+    const payload: Record<string, unknown> = { spreadsheet_id: spreadsheetId, range, values };
+    if (typeof args.value_input_option === 'string') payload.value_input_option = args.value_input_option;
+    const r = await callRelay('sheet_write_range', payload);
+    if (!r.ok) return err(r.error);
+    return ok(JSON.stringify(r.body, null, 2));
+  },
+};
+
+registerTools([driveDocReadAsMarkdown, driveDocWriteFromMarkdown, sheetReadRange, sheetWriteRange]);

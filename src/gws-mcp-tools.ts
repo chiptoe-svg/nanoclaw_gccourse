@@ -27,6 +27,7 @@
 import { Readable } from 'stream';
 
 import { drive as driveApi, auth as gAuth } from '@googleapis/drive';
+import { sheets as sheetsApi } from '@googleapis/sheets';
 
 import { getGoogleAccessTokenForAgentGroup, type GwsPrincipal } from './gws-token.js';
 import { log } from './log.js';
@@ -254,6 +255,122 @@ export async function driveDocWriteFromMarkdown(
     return {
       ok: false,
       error: `Drive update failed for ${args.file_id}: ${(err as Error).message}`,
+      status: typeof status === 'number' ? status : 500,
+    };
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Sheets (Phase 13.5a — V2 surface)
+//
+// Spreadsheets are Drive files, so writes reuse the existing
+// pre-mutation hook chain (claimOrCheckDriveOwnership runs against the
+// spreadsheet_id). No new ownership infrastructure needed.
+// ────────────────────────────────────────────────────────────────────
+
+export interface SheetReadResult {
+  ok: true;
+  spreadsheetId: string;
+  range: string;
+  values: string[][];
+  cells: number;
+}
+
+export interface SheetWriteResult {
+  ok: true;
+  spreadsheetId: string;
+  range: string;
+  updatedCells: number;
+}
+
+function buildSheetsClient(accessToken: string): ReturnType<typeof sheetsApi> {
+  const oauth = new gAuth.OAuth2();
+  oauth.setCredentials({ access_token: accessToken });
+  return sheetsApi({ version: 'v4', auth: oauth });
+}
+
+/**
+ * Read a range from a Google Sheet via `spreadsheets.values.get`.
+ * No ownership check — reads are open in Mode A (workspace shared) and
+ * scoped by Google in Mode B.
+ */
+export async function sheetReadRange(
+  ctx: ToolContext,
+  args: { spreadsheet_id: string; range: string },
+): Promise<SheetReadResult | ToolError> {
+  const tokenOrError = await resolveTokenOrError(ctx);
+  if (!('principal' in tokenOrError)) return tokenOrError;
+  const sheets = buildSheetsClient(tokenOrError.token);
+  try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: args.spreadsheet_id,
+      range: args.range,
+    });
+    const rawValues = (res.data.values ?? []) as unknown[][];
+    const values: string[][] = rawValues.map((row) => row.map((cell) => (cell === null || cell === undefined ? '' : String(cell))));
+    const cells = values.reduce((sum, row) => sum + row.length, 0);
+    return { ok: true, spreadsheetId: args.spreadsheet_id, range: args.range, values, cells };
+  } catch (err) {
+    const status = (err as { code?: number; status?: number }).code ?? (err as { status?: number }).status;
+    log.warn('sheet_read_range failed', { spreadsheetId: args.spreadsheet_id, range: args.range, err: String(err) });
+    return {
+      ok: false,
+      error: `Sheets read failed for ${args.spreadsheet_id}!${args.range}: ${(err as Error).message}`,
+      status: typeof status === 'number' ? status : 500,
+    };
+  }
+}
+
+/**
+ * Write a 2D `values` array into the given A1-notation range using
+ * `spreadsheets.values.update`. Runs all registered pre-mutation hooks
+ * first (Mode A ownership check against the spreadsheet_id, etc.).
+ *
+ * `value_input_option` defaults to `'USER_ENTERED'` so formulas
+ * starting with `=` evaluate; switch to `'RAW'` to store them as
+ * literal strings.
+ */
+export async function sheetWriteRange(
+  ctx: ToolContext,
+  args: {
+    spreadsheet_id: string;
+    range: string;
+    values: string[][];
+    value_input_option?: 'RAW' | 'USER_ENTERED';
+  },
+): Promise<SheetWriteResult | ToolError> {
+  const tokenOrError = await resolveTokenOrError(ctx);
+  if (!('principal' in tokenOrError)) return tokenOrError;
+  const drive = buildDriveClient(tokenOrError.token);
+
+  // Pre-mutation hooks (Mode A ownership). Same chain as Doc writes —
+  // spreadsheet_id is a Drive file id, so the existing Drive ownership
+  // primitive applies unchanged.
+  for (const hook of preMutationHooks) {
+    const result = await hook({ drive, fileId: args.spreadsheet_id, ctx, resolved: tokenOrError });
+    if (!result.ok) return result;
+  }
+
+  const sheets = buildSheetsClient(tokenOrError.token);
+  try {
+    const res = await sheets.spreadsheets.values.update({
+      spreadsheetId: args.spreadsheet_id,
+      range: args.range,
+      valueInputOption: args.value_input_option ?? 'USER_ENTERED',
+      requestBody: { values: args.values },
+    });
+    return {
+      ok: true,
+      spreadsheetId: args.spreadsheet_id,
+      range: args.range,
+      updatedCells: res.data.updatedCells ?? 0,
+    };
+  } catch (err) {
+    const status = (err as { code?: number; status?: number }).code ?? (err as { status?: number }).status;
+    log.warn('sheet_write_range failed', { spreadsheetId: args.spreadsheet_id, range: args.range, err: String(err) });
+    return {
+      ok: false,
+      error: `Sheets write failed for ${args.spreadsheet_id}!${args.range}: ${(err as Error).message}`,
       status: typeof status === 'number' ? status : 500,
     };
   }

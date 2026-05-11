@@ -8,7 +8,7 @@
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
-import { driveDocReadAsMarkdown, driveDocWriteFromMarkdown } from './gws.js';
+import { driveDocReadAsMarkdown, driveDocWriteFromMarkdown, sheetReadRange, sheetWriteRange } from './gws.js';
 
 const RELAY_URL = 'http://host.docker.internal:3007';
 
@@ -157,6 +157,93 @@ describe('gws.ts → relay HTTP shape', () => {
     const text = (result.content[0] as { text: string }).text;
     expect(text).toContain('Sam');
     expect(text).toContain('drive_doc_grant_ownership');
+  });
+
+  test('sheet_read_range forwards spreadsheet_id + range', async () => {
+    const cap = captureFetch({
+      status: 200,
+      body: {
+        ok: true,
+        spreadsheetId: 'sht_abc',
+        range: 'Sheet1!A1:B2',
+        values: [
+          ['a', 'b'],
+          ['c', 'd'],
+        ],
+        cells: 4,
+      },
+    });
+    restore = cap.restore;
+
+    const result = await sheetReadRange.handler({ spreadsheet_id: 'sht_abc', range: 'Sheet1!A1:B2' });
+
+    expect(cap.calls[0]!.url).toBe(`${RELAY_URL}/tools/sheet_read_range`);
+    expect(JSON.parse(cap.calls[0]!.init?.body as string)).toEqual({
+      spreadsheet_id: 'sht_abc',
+      range: 'Sheet1!A1:B2',
+    });
+    expect(result.isError).toBeUndefined();
+  });
+
+  test('sheet_write_range forwards values + optional value_input_option', async () => {
+    const cap = captureFetch({
+      status: 200,
+      body: { ok: true, spreadsheetId: 'sht_abc', range: 'A1:B2', updatedCells: 4 },
+    });
+    restore = cap.restore;
+
+    const result = await sheetWriteRange.handler({
+      spreadsheet_id: 'sht_abc',
+      range: 'A1:B2',
+      values: [
+        ['x', 'y'],
+        ['z', 'w'],
+      ],
+      value_input_option: 'RAW',
+    });
+
+    const body = JSON.parse(cap.calls[0]!.init?.body as string);
+    expect(body).toEqual({
+      spreadsheet_id: 'sht_abc',
+      range: 'A1:B2',
+      values: [
+        ['x', 'y'],
+        ['z', 'w'],
+      ],
+      value_input_option: 'RAW',
+    });
+    expect(result.isError).toBeUndefined();
+  });
+
+  test('sheet_write_range surfaces Mode A hard-block from relay', async () => {
+    const cap = captureFetch({
+      status: 403,
+      body: { ok: false, error: 'Blocked: this file is owned by Sam.', status: 403 },
+    });
+    restore = cap.restore;
+
+    const result = await sheetWriteRange.handler({
+      spreadsheet_id: 'sht_abc',
+      range: 'A1:B2',
+      values: [['x']],
+    });
+
+    expect(result.isError).toBe(true);
+    expect((result.content[0] as { text: string }).text).toContain('Sam');
+  });
+
+  test('sheet_write_range requires a 2D values array', async () => {
+    const cap = captureFetch({ status: 200, body: { ok: true } });
+    restore = cap.restore;
+
+    const result = await sheetWriteRange.handler({
+      spreadsheet_id: 'sht_abc',
+      range: 'A1',
+      values: 'not-an-array' as unknown as string[][],
+    });
+
+    expect(cap.calls).toHaveLength(0);
+    expect(result.isError).toBe(true);
   });
 
 });

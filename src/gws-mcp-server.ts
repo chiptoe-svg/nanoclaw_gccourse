@@ -17,6 +17,8 @@
 import {
   driveDocReadAsMarkdown,
   driveDocWriteFromMarkdown,
+  sheetReadRange,
+  sheetWriteRange,
   type ToolContext,
   type ToolError,
   type DocReadResult,
@@ -28,7 +30,11 @@ import {
  * tool names dynamically via `registerGwsTool`; the type system can't
  * enumerate those — callers treat dispatched tool names as `string`.
  */
-export type ToolName = 'drive_doc_read_as_markdown' | 'drive_doc_write_from_markdown';
+export type ToolName =
+  | 'drive_doc_read_as_markdown'
+  | 'drive_doc_write_from_markdown'
+  | 'sheet_read_range'
+  | 'sheet_write_range';
 
 /**
  * Result shape returned by `dispatchTool`. The dispatcher forwards
@@ -81,6 +87,42 @@ function validateWrite(
   };
 }
 
+function validateSheetRead(raw: unknown): { spreadsheet_id: string; range: string } | string {
+  const o = asObject(raw);
+  if (!o) return 'arguments must be an object';
+  const id = asString(o, 'spreadsheet_id');
+  if (!id) return '`spreadsheet_id` (string) is required';
+  const range = asString(o, 'range');
+  if (!range) return '`range` (string, A1 notation) is required';
+  return { spreadsheet_id: id, range };
+}
+
+function validateSheetWrite(
+  raw: unknown,
+):
+  | { spreadsheet_id: string; range: string; values: string[][]; value_input_option?: 'RAW' | 'USER_ENTERED' }
+  | string {
+  const o = asObject(raw);
+  if (!o) return 'arguments must be an object';
+  const id = asString(o, 'spreadsheet_id');
+  if (!id) return '`spreadsheet_id` (string) is required';
+  const range = asString(o, 'range');
+  if (!range) return '`range` (string, A1 notation) is required';
+  const values = o.values;
+  if (!Array.isArray(values)) return '`values` (string[][]) is required';
+  if (!values.every((row) => Array.isArray(row))) return '`values` must be a 2D array (string[][])';
+  const opt = o.value_input_option;
+  if (opt !== undefined && opt !== 'RAW' && opt !== 'USER_ENTERED') {
+    return '`value_input_option`, when provided, must be "RAW" or "USER_ENTERED"';
+  }
+  return {
+    spreadsheet_id: id,
+    range,
+    values: values as string[][],
+    value_input_option: opt as 'RAW' | 'USER_ENTERED' | undefined,
+  };
+}
+
 // Mutable registry — populated below by built-in registerGwsTool calls,
 // and extensible at module-load time by extensions
 // (e.g., classroom-gws's ownership module in Phase R.2+).
@@ -109,6 +151,14 @@ registerGwsTool('drive_doc_read_as_markdown', {
 registerGwsTool('drive_doc_write_from_markdown', {
   handler: driveDocWriteFromMarkdown,
   validate: validateWrite as (raw: unknown) => unknown | string,
+});
+registerGwsTool('sheet_read_range', {
+  handler: sheetReadRange,
+  validate: validateSheetRead as (raw: unknown) => unknown | string,
+});
+registerGwsTool('sheet_write_range', {
+  handler: sheetWriteRange,
+  validate: validateSheetWrite as (raw: unknown) => unknown | string,
 });
 
 /** Names of every registered tool — used by the relay's introspection

@@ -18,6 +18,19 @@ vi.mock('./gws-mcp-tools.js', () => ({
     bytes: 0,
     created: false,
   })),
+  sheetReadRange: vi.fn(async (_ctx, args: { spreadsheet_id: string; range: string }) => ({
+    ok: true,
+    spreadsheetId: args.spreadsheet_id,
+    range: args.range,
+    values: [['a', 'b']],
+    cells: 2,
+  })),
+  sheetWriteRange: vi.fn(async (_ctx, args: { spreadsheet_id: string; range: string }) => ({
+    ok: true,
+    spreadsheetId: args.spreadsheet_id,
+    range: args.range,
+    updatedCells: 4,
+  })),
 }));
 
 import { dispatchTool, listToolNames } from './gws-mcp-server.js';
@@ -25,8 +38,10 @@ import { dispatchTool, listToolNames } from './gws-mcp-server.js';
 afterEach(() => vi.clearAllMocks());
 
 describe('listToolNames', () => {
-  it('returns the V1 tool names (extensions register additional names elsewhere)', () => {
-    expect(new Set(listToolNames())).toEqual(new Set(['drive_doc_read_as_markdown', 'drive_doc_write_from_markdown']));
+  it('returns the V1 + V2 base tool names (ext-installed names register elsewhere)', () => {
+    expect(new Set(listToolNames())).toEqual(
+      new Set(['drive_doc_read_as_markdown', 'drive_doc_write_from_markdown', 'sheet_read_range', 'sheet_write_range']),
+    );
   });
 });
 
@@ -95,5 +110,57 @@ describe('dispatchTool', () => {
     expect(r.ok).toBe(false);
     expect((r as unknown as { status?: number }).status).toBe(500);
     expect((r as unknown as { error: string }).error).toContain('boom');
+  });
+
+  it('returns 400 when sheet_read_range is missing range', async () => {
+    const r = await dispatchTool({
+      ctx: { agentGroupId: 'ag_x' },
+      toolName: 'sheet_read_range',
+      args: { spreadsheet_id: 'sht_abc' },
+    });
+    expect(r.ok).toBe(false);
+    expect((r as unknown as { status?: number }).status).toBe(400);
+    expect((r as unknown as { error: string }).error).toContain('range');
+  });
+
+  it('returns 400 when sheet_write_range values is not a 2D array', async () => {
+    const r = await dispatchTool({
+      ctx: { agentGroupId: 'ag_x' },
+      toolName: 'sheet_write_range',
+      args: { spreadsheet_id: 'sht_abc', range: 'A1', values: ['a', 'b'] },
+    });
+    expect(r.ok).toBe(false);
+    expect((r as unknown as { status?: number }).status).toBe(400);
+    expect((r as unknown as { error: string }).error).toContain('2D');
+  });
+
+  it('returns 400 when sheet_write_range has an invalid value_input_option', async () => {
+    const r = await dispatchTool({
+      ctx: { agentGroupId: 'ag_x' },
+      toolName: 'sheet_write_range',
+      args: { spreadsheet_id: 'sht_abc', range: 'A1', values: [['a']], value_input_option: 'BOGUS' },
+    });
+    expect(r.ok).toBe(false);
+    expect((r as unknown as { status?: number }).status).toBe(400);
+  });
+
+  it('dispatches to sheet_read_range with validated args', async () => {
+    const r = await dispatchTool({
+      ctx: { agentGroupId: 'ag_x' },
+      toolName: 'sheet_read_range',
+      args: { spreadsheet_id: 'sht_abc', range: 'Sheet1!A1:B2' },
+    });
+    expect(r.ok).toBe(true);
+    expect((r as unknown as { spreadsheetId: string }).spreadsheetId).toBe('sht_abc');
+  });
+
+  it('dispatches to sheet_write_range with validated args', async () => {
+    const r = await dispatchTool({
+      ctx: { agentGroupId: 'ag_x' },
+      toolName: 'sheet_write_range',
+      args: { spreadsheet_id: 'sht_abc', range: 'A1:B2', values: [['x', 'y'], ['z', 'w']] },
+    });
+    expect(r.ok).toBe(true);
+    expect((r as unknown as { updatedCells: number }).updatedCells).toBe(4);
   });
 });
