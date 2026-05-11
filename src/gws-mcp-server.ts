@@ -35,13 +35,9 @@ export type ToolName =
   | 'drive_doc_revoke_ownership'
   | 'drive_doc_list_owners';
 
-export type ToolResult = (
-  | DocReadResult
-  | DocWriteResult
-  | OwnershipChangeResult
-  | ListOwnersResult
-  | ToolError
-) & { ok: boolean };
+export type ToolResult = (DocReadResult | DocWriteResult | OwnershipChangeResult | ListOwnersResult | ToolError) & {
+  ok: boolean;
+};
 
 interface ToolEntry<A> {
   name: ToolName;
@@ -105,33 +101,44 @@ function validateListOwners(raw: unknown): { file_id: string } | string {
   return { file_id: fileId };
 }
 
-const TOOL_REGISTRY: Record<ToolName, ToolEntry<unknown>> = {
-  drive_doc_read_as_markdown: {
-    name: 'drive_doc_read_as_markdown',
-    handler: driveDocReadAsMarkdown,
-    validate: validateRead as (raw: unknown) => unknown | string,
-  },
-  drive_doc_write_from_markdown: {
-    name: 'drive_doc_write_from_markdown',
-    handler: driveDocWriteFromMarkdown,
-    validate: validateWrite as (raw: unknown) => unknown | string,
-  },
-  drive_doc_grant_ownership: {
-    name: 'drive_doc_grant_ownership',
-    handler: driveGrantOwnership,
-    validate: validateOwnershipChange as (raw: unknown) => unknown | string,
-  },
-  drive_doc_revoke_ownership: {
-    name: 'drive_doc_revoke_ownership',
-    handler: driveRevokeOwnership,
-    validate: validateOwnershipChange as (raw: unknown) => unknown | string,
-  },
-  drive_doc_list_owners: {
-    name: 'drive_doc_list_owners',
-    handler: driveListOwners,
-    validate: validateListOwners as (raw: unknown) => unknown | string,
-  },
-};
+// Mutable registry — populated below by built-in registerGwsTool calls,
+// and extensible at module-load time by extensions
+// (e.g., classroom-gws's ownership module in Phase R.2+).
+const TOOL_REGISTRY: Partial<Record<string, ToolEntry<unknown>>> = {};
+
+/**
+ * Register a GWS tool into the in-process registry. Called at module
+ * load — built-in V1 tools register themselves below; extensions
+ * (installed by skills like /add-classroom-gws) self-register via
+ * the same call.
+ *
+ * Last-registration-wins for a given name; this lets an extension
+ * override a base tool's behavior if needed (rare).
+ */
+export function registerGwsTool(name: string, entry: { handler: ToolEntry<unknown>['handler']; validate: ToolEntry<unknown>['validate'] }): void {
+  TOOL_REGISTRY[name] = { name: name as ToolName, handler: entry.handler, validate: entry.validate };
+}
+
+registerGwsTool('drive_doc_read_as_markdown', {
+  handler: driveDocReadAsMarkdown,
+  validate: validateRead as (raw: unknown) => unknown | string,
+});
+registerGwsTool('drive_doc_write_from_markdown', {
+  handler: driveDocWriteFromMarkdown,
+  validate: validateWrite as (raw: unknown) => unknown | string,
+});
+registerGwsTool('drive_doc_grant_ownership', {
+  handler: driveGrantOwnership,
+  validate: validateOwnershipChange as (raw: unknown) => unknown | string,
+});
+registerGwsTool('drive_doc_revoke_ownership', {
+  handler: driveRevokeOwnership,
+  validate: validateOwnershipChange as (raw: unknown) => unknown | string,
+});
+registerGwsTool('drive_doc_list_owners', {
+  handler: driveListOwners,
+  validate: validateListOwners as (raw: unknown) => unknown | string,
+});
 
 /** Names of every registered tool — used by the relay's introspection
  * endpoint and by tests. */
@@ -146,7 +153,7 @@ export function listToolNames(): ToolName[] {
  * whatever the tool returned.
  */
 export async function dispatchTool(opts: { ctx: ToolContext; toolName: string; args: unknown }): Promise<ToolResult> {
-  const entry = TOOL_REGISTRY[opts.toolName as ToolName];
+  const entry = TOOL_REGISTRY[opts.toolName];
   if (!entry) {
     return { ok: false, error: `Unknown tool: ${opts.toolName}`, status: 404 };
   }

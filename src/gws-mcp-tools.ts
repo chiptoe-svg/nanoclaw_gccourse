@@ -92,6 +92,54 @@ interface ResolvedToken {
   principal: GwsPrincipal;
 }
 
+type DriveClient = ReturnType<typeof driveApi>;
+
+/**
+ * Extension hook context: passed to pre-mutation / post-create hooks so
+ * extensions (e.g., classroom Mode A ownership) can decide whether to
+ * fire based on principal / agentGroupId without re-resolving anything.
+ */
+export interface HookContext {
+  drive: DriveClient;
+  fileId: string;
+  ctx: ToolContext;
+  resolved: ResolvedToken;
+}
+
+/**
+ * Pre-mutation hook: runs before a Drive write/update. Return
+ * `{ ok: true }` to allow, `ToolError` to block (returned to caller
+ * verbatim — status preserved). Extra ok fields are tolerated.
+ */
+export type PreMutationHook = (h: HookContext) => Promise<{ ok: true } | ToolError>;
+
+/**
+ * Post-create hook: runs after a successful `files.create` (e.g., on
+ * the create-if-missing fallback). Best-effort — exceptions are
+ * swallowed so they don't fail the user-visible "file was created"
+ * result. Extensions: ownership tag stamping, anyone-with-link share.
+ */
+export type PostCreateHook = (h: HookContext) => Promise<void>;
+
+const preMutationHooks: PreMutationHook[] = [];
+const postCreateHooks: PostCreateHook[] = [];
+
+/** Register a hook that runs before any Drive write/update. */
+export function registerPreMutationHook(hook: PreMutationHook): void {
+  preMutationHooks.push(hook);
+}
+
+/** Register a hook that runs after a successful Drive create. */
+export function registerPostCreateHook(hook: PostCreateHook): void {
+  postCreateHooks.push(hook);
+}
+
+/** Test hook — drop all registered hooks. Used by extension tests. */
+export function _resetHooksForTest(): void {
+  preMutationHooks.length = 0;
+  postCreateHooks.length = 0;
+}
+
 async function resolveTokenOrError(ctx: ToolContext): Promise<ResolvedToken | ToolError> {
   const resolved = await getGoogleAccessTokenForAgentGroup(ctx.agentGroupId);
   if (!resolved) {
@@ -156,16 +204,12 @@ export async function driveDocWriteFromMarkdown(
   if (!('principal' in tokenOrError)) return tokenOrError;
   const drive = buildDriveClient(tokenOrError.token);
 
-  // Mode A friction: only enforce when running on the shared workspace
-  // bearer AND the caller has an agent_group_id to attribute against.
-  // Mode B (per-person OAuth) skips this — Google's own auth is the
-  // boundary. Mode 1 (single-user install) hits this path too but the
-  // check is a no-op (one agent group, always own own files).
-  const enforceOwnership = tokenOrError.principal === 'instructor-fallback' && ctx.agentGroupId !== null;
-
-  if (enforceOwnership) {
-    const check = await claimOrCheckDriveOwnership(drive, args.file_id, ctx.agentGroupId!);
-    if (!check.ok) return check;
+  // Pre-mutation hooks (registered by extensions, e.g., classroom Mode A
+  // ownership). Each hook decides internally whether to fire based on
+  // resolved.principal / ctx.agentGroupId. First blocking hook wins.
+  for (const hook of preMutationHooks) {
+    const result = await hook({ drive, fileId: args.file_id, ctx, resolved: tokenOrError });
+    if (!result.ok) return result;
   }
 
   try {
@@ -199,8 +243,17 @@ export async function driveDocWriteFromMarkdown(
           },
         });
         const newId = create.data.id ?? '';
-        if (enforceOwnership && newId) {
-          await stampNewDriveFile(drive, newId, ctx.agentGroupId!);
+        if (newId) {
+          for (const hook of postCreateHooks) {
+            try {
+              await hook({ drive, fileId: newId, ctx, resolved: tokenOrError });
+            } catch (hookErr) {
+              log.warn('drive_doc_write_from_markdown: post-create hook threw', {
+                fileId: newId,
+                err: String(hookErr),
+              });
+            }
+          }
         }
         return {
           ok: true,
@@ -382,3 +435,28 @@ export async function driveListOwners(
     })),
   };
 }
+
+// ────────────────────────────────────────────────────────────────────
+// Built-in hook registrations.
+//
+// These wire the Phase 13.6 Mode A ownership primitive into the base
+// GWS tools. Each hook decides internally whether to fire based on
+// `resolved.principal` and `ctx.agentGroupId` — Mode B callers and
+// unattributed callers are no-ops.
+//
+// In Phase R.2 of the trunk → branch refactor these registrations
+// move to a separate self-registering module (`gws-ownership-ext.ts`)
+// so the classroom skill can install them independently of the base
+// GWS tool surface.
+// ────────────────────────────────────────────────────────────────────
+registerPreMutationHook(async ({ drive, fileId, ctx, resolved }) => {
+  if (resolved.principal !== 'instructor-fallback') return { ok: true };
+  if (!ctx.agentGroupId) return { ok: true };
+  return claimOrCheckDriveOwnership(drive, fileId, ctx.agentGroupId);
+});
+
+registerPostCreateHook(async ({ drive, fileId, ctx, resolved }) => {
+  if (resolved.principal !== 'instructor-fallback') return;
+  if (!ctx.agentGroupId) return;
+  await stampNewDriveFile(drive, fileId, ctx.agentGroupId);
+});
