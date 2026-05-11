@@ -14,6 +14,10 @@ import { runMigrations } from './db/migrations/index.js';
 import { ensureContainerRuntimeRunning, cleanupOrphans, PROXY_BIND_HOST } from './container-runtime.js';
 import { startCredentialProxy } from './credential-proxy.js';
 import { startGwsMcpRelay, stopGwsMcpRelay } from './gws-mcp-relay.js';
+// GWS ownership extension (Mode A friction primitive). Self-registers
+// hooks + tools at import time. Will be removed from trunk in Phase R.4
+// and re-added by the /add-classroom-gws skill's install step.
+import './gws-ownership-ext.js';
 import { startActiveDeliveryPoll, startSweepDeliveryPoll, setDeliveryAdapter, stopDeliveryPolls } from './delivery.js';
 import { startHostSweep, stopHostSweep } from './host-sweep.js';
 import { routeInbound } from './router.js';

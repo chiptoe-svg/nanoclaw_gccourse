@@ -28,14 +28,6 @@ import { Readable } from 'stream';
 
 import { drive as driveApi, auth as gAuth } from '@googleapis/drive';
 
-import { getAgentGroup } from './db/agent-groups.js';
-import {
-  claimOrCheckDriveOwnership,
-  formatHardBlockMessage,
-  readDriveOwners,
-  stampNewDriveFile,
-  writeDriveOwners,
-} from './gws-ownership.js';
 import { getGoogleAccessTokenForAgentGroup, type GwsPrincipal } from './gws-token.js';
 import { log } from './log.js';
 
@@ -63,31 +55,15 @@ export interface DocWriteResult {
   created: boolean;
 }
 
-export interface OwnershipChangeResult {
-  ok: true;
-  fileId: string;
-  owners: string[];
-  changed: boolean;
-}
-
-export interface OwnerInfo {
-  agent_group_id: string;
-  display_name: string | null;
-}
-
-export interface ListOwnersResult {
-  ok: true;
-  fileId: string;
-  owners: OwnerInfo[];
-}
-
-function buildDriveClient(accessToken: string): ReturnType<typeof driveApi> {
+// Exported so extension modules (e.g., src/gws-ownership-ext.ts) can
+// reuse the same client construction without re-importing @googleapis/drive.
+export function buildDriveClient(accessToken: string): ReturnType<typeof driveApi> {
   const oauth = new gAuth.OAuth2();
   oauth.setCredentials({ access_token: accessToken });
   return driveApi({ version: 'v3', auth: oauth });
 }
 
-interface ResolvedToken {
+export interface ResolvedToken {
   token: string;
   principal: GwsPrincipal;
 }
@@ -140,7 +116,8 @@ export function _resetHooksForTest(): void {
   postCreateHooks.length = 0;
 }
 
-async function resolveTokenOrError(ctx: ToolContext): Promise<ResolvedToken | ToolError> {
+// Exported for extension modules — same reasoning as buildDriveClient.
+export async function resolveTokenOrError(ctx: ToolContext): Promise<ResolvedToken | ToolError> {
   const resolved = await getGoogleAccessTokenForAgentGroup(ctx.agentGroupId);
   if (!resolved) {
     return {
@@ -281,182 +258,3 @@ export async function driveDocWriteFromMarkdown(
     };
   }
 }
-
-/**
- * Add an agent group to a Drive file's NanoClaw owners list. Caller
- * must already be an owner (or be claiming an untagged file via
- * first-touch — same semantics as `driveDocWriteFromMarkdown`'s
- * pre-flight). No-op when target is already in the list.
- *
- * Mode B note: this tool still runs the caller-must-be-owner check
- * because the tag's semantics shouldn't shift between modes. In
- * practice Mode B users rarely call it (Google's sharing UI is the
- * native path); when they do, claim-on-first-touch still works.
- */
-export async function driveGrantOwnership(
-  ctx: ToolContext,
-  args: { file_id: string; agent_group_id: string },
-): Promise<OwnershipChangeResult | ToolError> {
-  const tokenOrError = await resolveTokenOrError(ctx);
-  if (!('principal' in tokenOrError)) return tokenOrError;
-  const drive = buildDriveClient(tokenOrError.token);
-
-  if (!ctx.agentGroupId) {
-    return {
-      ok: false,
-      error: 'drive_doc_grant_ownership requires an attributed caller (X-NanoClaw-Agent-Group header).',
-      status: 400,
-    };
-  }
-
-  const check = await claimOrCheckDriveOwnership(drive, args.file_id, ctx.agentGroupId);
-  if (!check.ok) return check;
-
-  if (check.owners.includes(args.agent_group_id)) {
-    return { ok: true, fileId: args.file_id, owners: check.owners, changed: false };
-  }
-  const newOwners = [...check.owners, args.agent_group_id];
-  try {
-    await writeDriveOwners(drive, args.file_id, newOwners);
-  } catch (err) {
-    log.warn('drive_doc_grant_ownership: writeDriveOwners failed', { fileId: args.file_id, err: String(err) });
-    return {
-      ok: false,
-      error: `Failed to update owners on ${args.file_id}: ${(err as Error).message}`,
-      status: 500,
-    };
-  }
-  return { ok: true, fileId: args.file_id, owners: newOwners, changed: true };
-}
-
-/**
- * Remove an agent group from a Drive file's owners list. Caller must
- * be an owner. Refuses if the removal would leave the file with no
- * owners (an unowned file becomes claim-able by the next writer).
- *
- * Idempotent: removing an agent group that isn't currently an owner
- * returns `changed: false` without error.
- */
-export async function driveRevokeOwnership(
-  ctx: ToolContext,
-  args: { file_id: string; agent_group_id: string },
-): Promise<OwnershipChangeResult | ToolError> {
-  const tokenOrError = await resolveTokenOrError(ctx);
-  if (!('principal' in tokenOrError)) return tokenOrError;
-  const drive = buildDriveClient(tokenOrError.token);
-
-  if (!ctx.agentGroupId) {
-    return {
-      ok: false,
-      error: 'drive_doc_revoke_ownership requires an attributed caller (X-NanoClaw-Agent-Group header).',
-      status: 400,
-    };
-  }
-
-  let owners: string[];
-  try {
-    owners = await readDriveOwners(drive, args.file_id);
-  } catch (err) {
-    return {
-      ok: false,
-      error: `Failed to read owners on ${args.file_id}: ${(err as Error).message}`,
-      status: 500,
-    };
-  }
-
-  if (owners.length === 0) {
-    return {
-      ok: false,
-      error: `File ${args.file_id} has no NanoClaw owner tag — nothing to revoke.`,
-      status: 404,
-    };
-  }
-  if (!owners.includes(ctx.agentGroupId)) {
-    return {
-      ok: false,
-      error: formatHardBlockMessage(args.file_id, owners),
-      status: 403,
-    };
-  }
-  if (!owners.includes(args.agent_group_id)) {
-    return { ok: true, fileId: args.file_id, owners, changed: false };
-  }
-  const newOwners = owners.filter((o) => o !== args.agent_group_id);
-  if (newOwners.length === 0) {
-    return {
-      ok: false,
-      error: `Refusing to revoke last owner of ${args.file_id} — grant ownership to another agent first.`,
-      status: 409,
-    };
-  }
-  try {
-    await writeDriveOwners(drive, args.file_id, newOwners);
-  } catch (err) {
-    log.warn('drive_doc_revoke_ownership: writeDriveOwners failed', { fileId: args.file_id, err: String(err) });
-    return {
-      ok: false,
-      error: `Failed to update owners on ${args.file_id}: ${(err as Error).message}`,
-      status: 500,
-    };
-  }
-  return { ok: true, fileId: args.file_id, owners: newOwners, changed: true };
-}
-
-/**
- * Read the owners list of a Drive file with display names resolved.
- * No permission check — ownership lookup is informational. In Mode A
- * everyone with workspace access can see anything anyway; in Mode B
- * the file wouldn't be readable at all if not permitted.
- */
-export async function driveListOwners(
-  ctx: ToolContext,
-  args: { file_id: string },
-): Promise<ListOwnersResult | ToolError> {
-  const tokenOrError = await resolveTokenOrError(ctx);
-  if (!('principal' in tokenOrError)) return tokenOrError;
-  const drive = buildDriveClient(tokenOrError.token);
-
-  let owners: string[];
-  try {
-    owners = await readDriveOwners(drive, args.file_id);
-  } catch (err) {
-    return {
-      ok: false,
-      error: `Failed to read owners on ${args.file_id}: ${(err as Error).message}`,
-      status: 500,
-    };
-  }
-  return {
-    ok: true,
-    fileId: args.file_id,
-    owners: owners.map((agId) => ({
-      agent_group_id: agId,
-      display_name: getAgentGroup(agId)?.name ?? null,
-    })),
-  };
-}
-
-// ────────────────────────────────────────────────────────────────────
-// Built-in hook registrations.
-//
-// These wire the Phase 13.6 Mode A ownership primitive into the base
-// GWS tools. Each hook decides internally whether to fire based on
-// `resolved.principal` and `ctx.agentGroupId` — Mode B callers and
-// unattributed callers are no-ops.
-//
-// In Phase R.2 of the trunk → branch refactor these registrations
-// move to a separate self-registering module (`gws-ownership-ext.ts`)
-// so the classroom skill can install them independently of the base
-// GWS tool surface.
-// ────────────────────────────────────────────────────────────────────
-registerPreMutationHook(async ({ drive, fileId, ctx, resolved }) => {
-  if (resolved.principal !== 'instructor-fallback') return { ok: true };
-  if (!ctx.agentGroupId) return { ok: true };
-  return claimOrCheckDriveOwnership(drive, fileId, ctx.agentGroupId);
-});
-
-registerPostCreateHook(async ({ drive, fileId, ctx, resolved }) => {
-  if (resolved.principal !== 'instructor-fallback') return;
-  if (!ctx.agentGroupId) return;
-  await stampNewDriveFile(drive, fileId, ctx.agentGroupId);
-});

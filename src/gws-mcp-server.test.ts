@@ -18,23 +18,6 @@ vi.mock('./gws-mcp-tools.js', () => ({
     bytes: 0,
     created: false,
   })),
-  driveGrantOwnership: vi.fn(async (_ctx, args: { file_id: string; agent_group_id: string }) => ({
-    ok: true,
-    fileId: args.file_id,
-    owners: ['ag_x', args.agent_group_id],
-    changed: true,
-  })),
-  driveRevokeOwnership: vi.fn(async (_ctx, args: { file_id: string }) => ({
-    ok: true,
-    fileId: args.file_id,
-    owners: ['ag_x'],
-    changed: true,
-  })),
-  driveListOwners: vi.fn(async (_ctx, args: { file_id: string }) => ({
-    ok: true,
-    fileId: args.file_id,
-    owners: [{ agent_group_id: 'ag_x', display_name: 'X' }],
-  })),
 }));
 
 import { dispatchTool, listToolNames } from './gws-mcp-server.js';
@@ -42,16 +25,8 @@ import { dispatchTool, listToolNames } from './gws-mcp-server.js';
 afterEach(() => vi.clearAllMocks());
 
 describe('listToolNames', () => {
-  it('returns the V1 + ownership tool names', () => {
-    expect(new Set(listToolNames())).toEqual(
-      new Set([
-        'drive_doc_read_as_markdown',
-        'drive_doc_write_from_markdown',
-        'drive_doc_grant_ownership',
-        'drive_doc_revoke_ownership',
-        'drive_doc_list_owners',
-      ]),
-    );
+  it('returns the V1 tool names (extensions register additional names elsewhere)', () => {
+    expect(new Set(listToolNames())).toEqual(new Set(['drive_doc_read_as_markdown', 'drive_doc_write_from_markdown']));
   });
 });
 
@@ -59,7 +34,7 @@ describe('dispatchTool', () => {
   it('returns 404 for unknown tool', async () => {
     const r = await dispatchTool({ ctx: { agentGroupId: 'ag_x' }, toolName: 'bogus', args: {} });
     expect(r.ok).toBe(false);
-    expect((r as { status?: number }).status).toBe(404);
+    expect((r as unknown as { status?: number }).status).toBe(404);
   });
 
   it('returns 400 when args are not an object', async () => {
@@ -69,14 +44,14 @@ describe('dispatchTool', () => {
       args: 'oops',
     });
     expect(r.ok).toBe(false);
-    expect((r as { status?: number }).status).toBe(400);
+    expect((r as unknown as { status?: number }).status).toBe(400);
   });
 
   it('returns 400 when read is missing file_id', async () => {
     const r = await dispatchTool({ ctx: { agentGroupId: 'ag_x' }, toolName: 'drive_doc_read_as_markdown', args: {} });
     expect(r.ok).toBe(false);
-    expect((r as { status?: number }).status).toBe(400);
-    expect((r as { error: string }).error).toContain('file_id');
+    expect((r as unknown as { status?: number }).status).toBe(400);
+    expect((r as unknown as { error: string }).error).toContain('file_id');
   });
 
   it('returns 400 when write is missing markdown', async () => {
@@ -86,8 +61,8 @@ describe('dispatchTool', () => {
       args: { file_id: 'abc' },
     });
     expect(r.ok).toBe(false);
-    expect((r as { status?: number }).status).toBe(400);
-    expect((r as { error: string }).error).toContain('markdown');
+    expect((r as unknown as { status?: number }).status).toBe(400);
+    expect((r as unknown as { error: string }).error).toContain('markdown');
   });
 
   it('dispatches to the read handler with validated args', async () => {
@@ -97,7 +72,7 @@ describe('dispatchTool', () => {
       args: { file_id: 'doc_abc' },
     });
     expect(r.ok).toBe(true);
-    expect((r as { fileId: string }).fileId).toBe('doc_abc');
+    expect((r as unknown as { fileId: string }).fileId).toBe('doc_abc');
   });
 
   it('dispatches to the write handler with validated args', async () => {
@@ -109,37 +84,6 @@ describe('dispatchTool', () => {
     expect(r.ok).toBe(true);
   });
 
-  it('returns 400 when grant is missing agent_group_id', async () => {
-    const r = await dispatchTool({
-      ctx: { agentGroupId: 'ag_x' },
-      toolName: 'drive_doc_grant_ownership',
-      args: { file_id: 'doc_abc' },
-    });
-    expect(r.ok).toBe(false);
-    expect((r as { status?: number }).status).toBe(400);
-    expect((r as { error: string }).error).toContain('agent_group_id');
-  });
-
-  it('dispatches to grant_ownership with validated args', async () => {
-    const r = await dispatchTool({
-      ctx: { agentGroupId: 'ag_x' },
-      toolName: 'drive_doc_grant_ownership',
-      args: { file_id: 'doc_abc', agent_group_id: 'ag_other' },
-    });
-    expect(r.ok).toBe(true);
-    expect((r as { owners: string[] }).owners).toContain('ag_other');
-  });
-
-  it('dispatches to list_owners with validated args', async () => {
-    const r = await dispatchTool({
-      ctx: { agentGroupId: 'ag_x' },
-      toolName: 'drive_doc_list_owners',
-      args: { file_id: 'doc_abc' },
-    });
-    expect(r.ok).toBe(true);
-    expect((r as { owners: unknown[] }).owners).toHaveLength(1);
-  });
-
   it('catches handler exceptions and returns 500', async () => {
     const tools = await import('./gws-mcp-tools.js');
     (tools.driveDocReadAsMarkdown as unknown as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('boom'));
@@ -149,7 +93,7 @@ describe('dispatchTool', () => {
       args: { file_id: 'doc_abc' },
     });
     expect(r.ok).toBe(false);
-    expect((r as { status?: number }).status).toBe(500);
-    expect((r as { error: string }).error).toContain('boom');
+    expect((r as unknown as { status?: number }).status).toBe(500);
+    expect((r as unknown as { error: string }).error).toContain('boom');
   });
 });

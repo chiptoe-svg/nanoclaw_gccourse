@@ -17,32 +17,30 @@
 import {
   driveDocReadAsMarkdown,
   driveDocWriteFromMarkdown,
-  driveGrantOwnership,
-  driveListOwners,
-  driveRevokeOwnership,
   type ToolContext,
   type ToolError,
   type DocReadResult,
   type DocWriteResult,
-  type ListOwnersResult,
-  type OwnershipChangeResult,
 } from './gws-mcp-tools.js';
 
-export type ToolName =
-  | 'drive_doc_read_as_markdown'
-  | 'drive_doc_write_from_markdown'
-  | 'drive_doc_grant_ownership'
-  | 'drive_doc_revoke_ownership'
-  | 'drive_doc_list_owners';
+/**
+ * Names of the built-in V1 tools. Extensions can register additional
+ * tool names dynamically via `registerGwsTool`; the type system can't
+ * enumerate those — callers treat dispatched tool names as `string`.
+ */
+export type ToolName = 'drive_doc_read_as_markdown' | 'drive_doc_write_from_markdown';
 
-export type ToolResult = (DocReadResult | DocWriteResult | OwnershipChangeResult | ListOwnersResult | ToolError) & {
-  ok: boolean;
-};
+/**
+ * Result shape returned by `dispatchTool`. The dispatcher forwards
+ * whatever the handler returns and only inspects `.ok` for error
+ * paths; we don't try to enumerate every extension's result shape.
+ */
+export type ToolResult = { ok: boolean } & Record<string, unknown>;
 
 interface ToolEntry<A> {
-  name: ToolName;
+  name: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  handler: (ctx: ToolContext, args: any) => Promise<ToolResult>;
+  handler: (ctx: ToolContext, args: any) => Promise<unknown>;
   validate: (raw: unknown) => A | string;
 }
 
@@ -83,24 +81,6 @@ function validateWrite(
   };
 }
 
-function validateOwnershipChange(raw: unknown): { file_id: string; agent_group_id: string } | string {
-  const o = asObject(raw);
-  if (!o) return 'arguments must be an object';
-  const fileId = asString(o, 'file_id');
-  if (!fileId) return '`file_id` (string) is required';
-  const agentGroupId = asString(o, 'agent_group_id');
-  if (!agentGroupId) return '`agent_group_id` (string) is required';
-  return { file_id: fileId, agent_group_id: agentGroupId };
-}
-
-function validateListOwners(raw: unknown): { file_id: string } | string {
-  const o = asObject(raw);
-  if (!o) return 'arguments must be an object';
-  const fileId = asString(o, 'file_id');
-  if (!fileId) return '`file_id` (string) is required';
-  return { file_id: fileId };
-}
-
 // Mutable registry — populated below by built-in registerGwsTool calls,
 // and extensible at module-load time by extensions
 // (e.g., classroom-gws's ownership module in Phase R.2+).
@@ -115,8 +95,11 @@ const TOOL_REGISTRY: Partial<Record<string, ToolEntry<unknown>>> = {};
  * Last-registration-wins for a given name; this lets an extension
  * override a base tool's behavior if needed (rare).
  */
-export function registerGwsTool(name: string, entry: { handler: ToolEntry<unknown>['handler']; validate: ToolEntry<unknown>['validate'] }): void {
-  TOOL_REGISTRY[name] = { name: name as ToolName, handler: entry.handler, validate: entry.validate };
+export function registerGwsTool(
+  name: string,
+  entry: { handler: ToolEntry<unknown>['handler']; validate: ToolEntry<unknown>['validate'] },
+): void {
+  TOOL_REGISTRY[name] = { name, handler: entry.handler, validate: entry.validate };
 }
 
 registerGwsTool('drive_doc_read_as_markdown', {
@@ -127,23 +110,11 @@ registerGwsTool('drive_doc_write_from_markdown', {
   handler: driveDocWriteFromMarkdown,
   validate: validateWrite as (raw: unknown) => unknown | string,
 });
-registerGwsTool('drive_doc_grant_ownership', {
-  handler: driveGrantOwnership,
-  validate: validateOwnershipChange as (raw: unknown) => unknown | string,
-});
-registerGwsTool('drive_doc_revoke_ownership', {
-  handler: driveRevokeOwnership,
-  validate: validateOwnershipChange as (raw: unknown) => unknown | string,
-});
-registerGwsTool('drive_doc_list_owners', {
-  handler: driveListOwners,
-  validate: validateListOwners as (raw: unknown) => unknown | string,
-});
 
 /** Names of every registered tool — used by the relay's introspection
  * endpoint and by tests. */
-export function listToolNames(): ToolName[] {
-  return Object.keys(TOOL_REGISTRY) as ToolName[];
+export function listToolNames(): string[] {
+  return Object.keys(TOOL_REGISTRY);
 }
 
 /**
@@ -162,7 +133,8 @@ export async function dispatchTool(opts: { ctx: ToolContext; toolName: string; a
     return { ok: false, error: `Invalid arguments: ${validatedOrError}`, status: 400 };
   }
   try {
-    return await entry.handler(opts.ctx, validatedOrError);
+    const result = (await entry.handler(opts.ctx, validatedOrError)) as ToolResult;
+    return result;
   } catch (err) {
     return { ok: false, error: `Tool ${opts.toolName} threw: ${(err as Error).message}`, status: 500 };
   }
