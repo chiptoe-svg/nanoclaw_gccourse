@@ -193,6 +193,35 @@ describe('credential-proxy', () => {
     expect(lastUpstreamHeaders['x-api-key']).toBe('sk-ant-real-key');
   });
 
+  it('OAuth mode + attribution header: real token still injected, header stripped', async () => {
+    // X.4 regression check (master-plan Phase 1 #5). X.1–X.3 added the
+    // x-nanoclaw-agent-group header to enable per-student resolvers; this
+    // test pins that the Anthropic OAuth substitution path (the existing
+    // getOAuthToken / envToken flow) still fires when the header is
+    // present. A buggy implementation that gated token injection on the
+    // header being absent (or vice versa) would silently break the
+    // instructor OAuth fallback documented in master-plan Phase 1
+    // success criterion #2.
+    proxyPort = await startProxy({ CLAUDE_CODE_OAUTH_TOKEN: 'real-oauth-token' });
+
+    await makeRequest(
+      proxyPort,
+      {
+        method: 'POST',
+        path: '/api/oauth/claude_cli/create_api_key',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer placeholder',
+          'x-nanoclaw-agent-group': 'ag_class_student_test',
+        },
+      },
+      '{}',
+    );
+
+    expect(lastUpstreamHeaders['authorization']).toBe('Bearer real-oauth-token');
+    expect(lastUpstreamHeaders['x-nanoclaw-agent-group']).toBeUndefined();
+  });
+
   it('a request without the attribution header still works (graceful fallback)', async () => {
     proxyPort = await startProxy({ ANTHROPIC_API_KEY: 'sk-ant-real-key' });
 

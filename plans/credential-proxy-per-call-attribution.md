@@ -147,23 +147,46 @@ the chosen agent provider (Codex / Anthropic / OpenAI / etc.) once at
 setup, and every student agent in the class consumes from that
 credential pool. No per-student auth in this phase.
 
-- Extend `credential-proxy.ts` to read provider OAuth tokens from the
-  *instructor's* well-known location for each provider:
-  - **Codex (OpenAI)**: existing `class-codex-auth` mount pattern is
-    spawn-time; we want proxy-time so the same OAuth refreshes
-    transparently. Either move codex auth into the proxy, or read
-    `~/.codex/auth.json` directly from the proxy.
-  - **Anthropic OAuth**: already reads `~/.claude/.credentials.json`.
-    Verify it still works in the class-deploy flow with the new
-    header-bearing requests.
-  - **OpenAI API key** (non-OAuth fallback): existing `.env`
-    `OPENAI_API_KEY` path; no change needed.
-- Setup-flow wiring: the `/setup` or `/init-first-agent` skills walk
-  the instructor through (a) picking a CLI, (b) picking an agent
-  provider, (c) OAuthing the provider if it's separate from the CLI.
+**Scope decision (2026-05-11).** When this phase was first written it
+called for "moving codex auth into the proxy" so OAuth refreshes
+transparently. Live-install audit showed that on the actually-used
+paths the proxy is *already* the refresh point:
+
+| Provider auth shape | Proxy already handles refresh? |
+|---|---|
+| Codex `auth_mode: "apikey"` (host instructor + class via `CLASS_OPENAI_API_KEY`) | ✅ Container sends Bearer; `/openai/v1/*` route swaps in `.env`'s `OPENAI_API_KEY`. Auth.json is just a placeholder to make codex initialize. |
+| Anthropic OAuth (`~/.claude/.credentials.json`) | ✅ `getOAuthToken()` reads the file, refreshes proactively, persists back. |
+| Anthropic API key | ✅ Direct injection. |
+| OpenAI API key (non-Codex direct use) | ✅ Direct injection. |
+| Codex `auth_mode: "chatgpt"` (instructor ChatGPT subscription OAuth) | ❌ Codex bypasses `OPENAI_BASE_URL` for chatgpt-backend calls — proxy never sees the requests. Bind-mounted auth.json on disk is the credential. |
+
+The only path that needs new code to honor the master-plan intent is
+the Codex chatgpt mode — and it requires a host-side refresh daemon
+(not proxy-time interception) because Codex's chatgpt-backend
+endpoint isn't reroutable via `OPENAI_BASE_URL`. That work is
+deferred to a Phase 1 follow-up (see `plans/master.md` "Phase 1
+follow-ups (deferred)", paired with the `/codex-auth` admin command
+which is the natural trigger for flipping a host into chatgpt mode
+in the first place).
+
+**X.4 reduced scope:**
+
+- **X.4-verify-apikey.** End-to-end smoke for the class apikey path:
+  set `CLASS_OPENAI_API_KEY`, create a temporary `student_test` agent
+  group with `agent_provider=codex`, restart host, send a message,
+  confirm (a) `data/class-codex-auth.json` was written, (b)
+  `classCodexAuthResolver` shadows `instructorHostResolver` in the
+  spawn log, (c) the proxy log shows the request hit OpenAI through
+  `/openai/v1` with key substitution. Tear down the temp group.
+- **X.4-anthropic-regression.** One integration test in
+  `credential-proxy.test.ts` covering the `x-nanoclaw-agent-group`
+  header path with Anthropic OAuth (the existing `getOAuthToken()`
+  refresh path) — confirms X.1–X.3 didn't break it.
+- **Setup-flow audit.** Quick read of `/setup` + `/add-classroom-auth`
+  SKILL.md to confirm they walk instructor through CLI + provider +
+  OAuth. Tighten prompts if a gap is found. No new wiring expected.
 - No per-student lookup at this phase — the proxy resolves the
   instructor's credentials for every request.
-- Trigger to start: master-plan Phase 1.
 
 ### Phase X.7 — per-student provider OAuth (master-plan Phase 2)
 
@@ -219,7 +242,14 @@ X.3 (per-student GWS), applied to LLM providers.
 ## Status
 
 - X.1–X.3 + X.6 ✅ shipped in merge `4161e55` on `main`.
-- **X.4 (instructor provider OAuth)** 🛠 — master-plan Phase 1 work.
+- **X.4 (instructor provider OAuth)** ✅ — verification slice shipped
+  (2026-05-11): static wiring audit confirmed `class-codex-auth`
+  hooks into host startup, container-runner routes OpenAI through
+  proxy, proxy substitutes `.env` key on `/openai/*`. Regression
+  test added in `src/credential-proxy.test.ts` ("OAuth mode +
+  attribution header"). Skill prompts audited — no gap. Codex
+  chatgpt-mode refresh daemon deferred to Phase 1 follow-up,
+  bundled with `/codex-auth` admin command.
 - **X.5 (observability)** 🛠 — deferred follow-up.
 - **X.7 (per-student provider OAuth + temp-password fallback)** 🛠 —
   master-plan Phase 2 work.

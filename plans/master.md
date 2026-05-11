@@ -27,6 +27,7 @@ this file is the sequencing layer.
 | Phase 13.6 ownership primitive — Mode A friction sub-plan | `main` (commit `0f5df8a`); built on `feat/gws-skill-refactor` (commits `28e2c45`, `670de8d`, `06d7493`) — installed by `/add-classroom-gws` |
 | `wasFallback` infra — `{ token, principal }` from `getGoogleAccessTokenForAgentGroup` (Phase 1 #1) | `main` (commit `90caf28`) — `gws-token.ts` kept in trunk |
 | GWS small-trunk-with-skills refactor (rule 5) — base GWS → `origin/gws-mcp`, ownership ext → `origin/classroom`, skills rewritten to install | `feat/gws-skill-refactor` (commits `dc7f429`, `1d0bbac`) — **pending merge after user verification + /ultrareview** |
+| credential-proxy Phase X.4 — instructor provider OAuth (verification slice) | regression test added to `src/credential-proxy.test.ts` (uncommitted); static wiring verified |
 
 ## Active sub-plans (referenced from the delivery phases below)
 
@@ -88,11 +89,25 @@ it. Items at the same nesting depth can run in parallel.
    [gws-mcp-v2.md §13.5e](gws-mcp-v2.md).
    *(13.5b Calendar pushed to Phase 2 — see "GWS Phase 1 closes here"
    note below.)*
-5. **credential-proxy Phase X.4 — instructor provider OAuth.** Wire
-   instructor's chosen agent provider's OAuth into the credential
-   proxy so all student agents draw from one pool. Codex/OpenAI is
-   the expected provider for this class.
-   Details: [credential-proxy-per-call-attribution.md §X.4](credential-proxy-per-call-attribution.md).
+5. ✅ **credential-proxy Phase X.4 — instructor provider OAuth
+   (verification slice).** Live-install audit (2026-05-11) found
+   that the proxy already handles every provider auth shape this
+   install actually uses (Codex apikey, Anthropic OAuth, raw API
+   keys). The only path needing new code is Codex `auth_mode:
+   "chatgpt"`, which bypasses `OPENAI_BASE_URL` entirely and needs a
+   host-side OAuth refresh daemon — deferred to a Phase 1 follow-up,
+   paired with the `/codex-auth` admin command. X.4 reduced to:
+   (a) static verification of the class apikey wiring chain
+   (`src/index.ts:20` imports `class-codex-auth`, container-runner
+   sets `OPENAI_BASE_URL` to proxy, proxy swaps in `.env`'s
+   `OPENAI_API_KEY` on `/openai/*`), (b) regression test in
+   `credential-proxy.test.ts` for the `x-nanoclaw-agent-group`
+   header on the Anthropic OAuth path (8 tests pass, was 7),
+   (c) audit `/setup` + `/add-classroom` SKILL.md prompts — no
+   gap, CLI pick covered by `nanoclaw.sh`, provider+OAuth covered
+   by `/add-classroom` step 5. Live end-to-end smoke deferred to
+   first real class deploy. Details:
+   [credential-proxy-per-call-attribution.md §X.4](credential-proxy-per-call-attribution.md).
 6. ✅ **classroom Phase 4 (Phase-1 slice) — class login tokens
    (the URL-as-identity flow).** Shipped: trunk hook
    `registerClassTokenRedeemer` on `main` (commit `a730aa8`);
@@ -234,15 +249,32 @@ Slot into Phase 2 or a small interleave when convenient.
   token URL via email rather than asking the instructor to run
   `ncl class-tokens rotate`. Gates on `/add-resend` being
   installed; degrades to "contact instructor" UI when not.
-- **`/codex-auth` Telegram admin command** alongside `/auth`,
-  `/model`, `/provider`. ~1 hr. Flips `~/.codex/auth.json` between
-  ChatGPT subscription OAuth (`auth_mode: "chatgpt"`) and OpenAI
-  API key mode (`auth_mode: "apikey"` — note **no underscore** in
-  codex's format) without hand-editing the file. Surfaced during
-  Phase 1 verification when the user's ChatGPT subscription hit
-  its daily quota and we had to fall back to API. Companion to
-  `/auth` (which only switches Anthropic mode); make this the
-  codex-aware equivalent.
+- **Codex ChatGPT-subscription OAuth refresh daemon** + **`/codex-auth`
+  Telegram admin command.** Bundle: the admin command flips
+  `~/.codex/auth.json` into chatgpt mode, and the daemon keeps it
+  refreshed thereafter. ~3 hr total (~1 hr command + ~2 hr daemon).
+  Surfaced when scoping X.4 (2026-05-11) — current install runs
+  apikey mode exclusively (verified: `~/.codex/auth.json` has
+  `auth_mode: "apikey"`, no `tokens`, no `last_refresh`), and the
+  proxy already swaps in `.env`'s `OPENAI_API_KEY` for that path. The
+  chatgpt path is master-plan Phase 1 success criterion #2's
+  "instructor ChatGPT OAuth as fallback" and is reachable but
+  unexercised on this install; build when someone needs it.
+  **Daemon shape:** mirror the Anthropic OAuth refresh primitive
+  already in `credential-proxy.ts` (`getOAuthToken()` +
+  `refreshAnthropicOAuthToken()` + single-flight guard +
+  persist-back). New module `src/codex-oauth-refresher.ts`, timer
+  refreshes ~5 min before `tokens.expires_at`, writes back via the
+  codex CLI's own writer (not hand-rolled JSON — see auth.json
+  format note below). Lives on trunk because it's auth infra, not
+  classroom-specific.
+  **Admin command (`/codex-auth`)** alongside `/auth`, `/model`,
+  `/provider`. Flips `~/.codex/auth.json` between ChatGPT
+  subscription OAuth (`auth_mode: "chatgpt"`) and OpenAI API key
+  mode (`auth_mode: "apikey"` — note **no underscore** in codex's
+  format) without hand-editing the file. Companion to `/auth`
+  (which only switches Anthropic mode); make this the codex-aware
+  equivalent.
   **Implementation note:** the codex auth.json format is poorly
   documented and trivially easy to get wrong — when I first tried
   to hand-roll `auth_mode: "api_key"` (underscored, mirror of
