@@ -28,7 +28,7 @@ import { Readable } from 'stream';
 
 import { drive as driveApi, auth as gAuth } from '@googleapis/drive';
 
-import { getGoogleAccessTokenForAgentGroup } from './gws-token.js';
+import { getGoogleAccessTokenForAgentGroup, type GwsPrincipal } from './gws-token.js';
 import { log } from './log.js';
 
 export interface ToolContext {
@@ -61,9 +61,14 @@ function buildDriveClient(accessToken: string): ReturnType<typeof driveApi> {
   return driveApi({ version: 'v3', auth: oauth });
 }
 
-async function resolveTokenOrError(ctx: ToolContext): Promise<string | ToolError> {
-  const token = await getGoogleAccessTokenForAgentGroup(ctx.agentGroupId);
-  if (!token) {
+interface ResolvedToken {
+  token: string;
+  principal: GwsPrincipal;
+}
+
+async function resolveTokenOrError(ctx: ToolContext): Promise<ResolvedToken | ToolError> {
+  const resolved = await getGoogleAccessTokenForAgentGroup(ctx.agentGroupId);
+  if (!resolved) {
     return {
       ok: false,
       error:
@@ -71,7 +76,7 @@ async function resolveTokenOrError(ctx: ToolContext): Promise<string | ToolError
       status: 502,
     };
   }
-  return token;
+  return resolved;
 }
 
 /**
@@ -84,8 +89,8 @@ export async function driveDocReadAsMarkdown(
   args: { file_id: string },
 ): Promise<DocReadResult | ToolError> {
   const tokenOrError = await resolveTokenOrError(ctx);
-  if (typeof tokenOrError !== 'string') return tokenOrError;
-  const drive = buildDriveClient(tokenOrError);
+  if (!('principal' in tokenOrError)) return tokenOrError;
+  const drive = buildDriveClient(tokenOrError.token);
 
   try {
     const res = await drive.files.export({ fileId: args.file_id, mimeType: 'text/markdown' }, { responseType: 'text' });
@@ -122,8 +127,8 @@ export async function driveDocWriteFromMarkdown(
   },
 ): Promise<DocWriteResult | ToolError> {
   const tokenOrError = await resolveTokenOrError(ctx);
-  if (typeof tokenOrError !== 'string') return tokenOrError;
-  const drive = buildDriveClient(tokenOrError);
+  if (!('principal' in tokenOrError)) return tokenOrError;
+  const drive = buildDriveClient(tokenOrError.token);
 
   try {
     const res = await drive.files.update({

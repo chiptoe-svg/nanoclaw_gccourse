@@ -350,8 +350,8 @@ export function startCredentialProxy(port: number, host = '127.0.0.1'): Promise<
           // Returns 502 with an actionable message if no creds configured.
           // Per-student token preferred when the agent group has one;
           // instructor / class-default token otherwise.
-          const token = await getGoogleAccessTokenForAgentGroup(agentGroupId);
-          if (!token) {
+          const resolved = await getGoogleAccessTokenForAgentGroup(agentGroupId);
+          if (!resolved) {
             res.writeHead(502, { 'content-type': 'application/json' });
             res.end(
               JSON.stringify({
@@ -366,7 +366,7 @@ export function startCredentialProxy(port: number, host = '127.0.0.1'): Promise<
           }
           delete headers['authorization'];
           delete headers['x-goog-api-key'];
-          headers['authorization'] = `Bearer ${token}`;
+          headers['authorization'] = `Bearer ${resolved.token}`;
         } else if (isOpenAI) {
           // OpenAI mode: replace any placeholder Authorization with the
           // real key. If OPENAI_API_KEY isn't set on the host, 502 with

@@ -174,6 +174,21 @@ export async function getStudentGoogleAccessTokenForAgentGroup(agentGroupId: str
 }
 
 /**
+ * Caller principal — distinguishes per-student token resolution from
+ * instructor-fallback. Mode A / Mode 1 callers always see
+ * `instructor-fallback`; Mode B callers with a wired per-student
+ * credentials file see `self`. Tools use this to decide whether to
+ * run NanoClaw-side ownership checks (Mode A) or trust Google's own
+ * boundaries (Mode B).
+ */
+export type GwsPrincipal = 'self' | 'instructor-fallback';
+
+export interface GwsTokenResolution {
+  token: string;
+  principal: GwsPrincipal;
+}
+
+/**
  * Pick the right Google OAuth token for a caller: per-student first if
  * the agent-group attribution resolves to a per-student credentials
  * file; instructor / class-default otherwise.
@@ -183,12 +198,16 @@ export async function getStudentGoogleAccessTokenForAgentGroup(agentGroupId: str
  * student isolation only kicks in once a class deployment has wired
  * the student through the playground OAuth flow.
  */
-export async function getGoogleAccessTokenForAgentGroup(agentGroupId: string | null): Promise<string | null> {
+export async function getGoogleAccessTokenForAgentGroup(
+  agentGroupId: string | null,
+): Promise<GwsTokenResolution | null> {
   if (agentGroupId) {
     const studentToken = await getStudentGoogleAccessTokenForAgentGroup(agentGroupId);
-    if (studentToken) return studentToken;
+    if (studentToken) return { token: studentToken, principal: 'self' };
   }
-  return getInstructorGoogleAccessToken();
+  const instructorToken = await getInstructorGoogleAccessToken();
+  if (instructorToken) return { token: instructorToken, principal: 'instructor-fallback' };
+  return null;
 }
 
 /** Test hook — drop the in-memory token cache. */
