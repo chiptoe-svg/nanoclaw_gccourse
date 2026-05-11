@@ -13,6 +13,7 @@ import { initDb } from './db/connection.js';
 import { runMigrations } from './db/migrations/index.js';
 import { ensureContainerRuntimeRunning, cleanupOrphans, PROXY_BIND_HOST } from './container-runtime.js';
 import { startCredentialProxy } from './credential-proxy.js';
+import { startGwsMcpRelay, stopGwsMcpRelay } from './gws-mcp-relay.js';
 import { startActiveDeliveryPoll, startSweepDeliveryPoll, setDeliveryAdapter, stopDeliveryPolls } from './delivery.js';
 import { startHostSweep, stopHostSweep } from './host-sweep.js';
 import { routeInbound } from './router.js';
@@ -94,6 +95,12 @@ async function main(): Promise<void> {
   // never see real secrets. Binds to loopback only; containers reach it via
   // the host-gateway address injected by buildContainerArgs.
   proxyServer = await startCredentialProxy(CREDENTIAL_PROXY_PORT, PROXY_BIND_HOST);
+
+  // 2c. GWS MCP relay — host-side Google Workspace tools (drive_doc_read /
+  // drive_doc_write). Containers reach via the same host-gateway pattern as
+  // the credential proxy; per-call attribution header authenticates the
+  // calling agent group. Stays loopback. Phase 13 of plans/gws-mcp.md.
+  await startGwsMcpRelay(PROXY_BIND_HOST);
 
   // 3. Channel adapters
   await initChannelAdapters((adapter: ChannelAdapter): ChannelSetup => {
@@ -202,6 +209,7 @@ async function shutdown(signal: string): Promise<void> {
   stopDeliveryPolls();
   stopHostSweep();
   proxyServer?.close();
+  await stopGwsMcpRelay();
   await stopCliServer();
   try {
     await teardownChannelAdapters();

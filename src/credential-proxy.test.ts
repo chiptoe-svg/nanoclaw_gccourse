@@ -2,7 +2,13 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import http from 'http';
 import type { AddressInfo } from 'net';
 
-const mockEnv: Record<string, string> = {};
+// `vi.hoisted` ensures mockEnv exists when the vi.mock factory below
+// runs — important now that credential-proxy.ts pulls in
+// student-creds-paths → config → env at import time, which fires the
+// readEnvFile mock factory before any non-hoisted file-scope const is
+// initialized.
+const { mockEnv } = vi.hoisted(() => ({ mockEnv: {} as Record<string, string> }));
+
 vi.mock('./env.js', () => ({
   readEnvFile: vi.fn(() => ({ ...mockEnv })),
 }));
@@ -159,6 +165,51 @@ describe('credential-proxy', () => {
     // custom keep-alive and transfer-encoding must not be forwarded.
     expect(lastUpstreamHeaders['keep-alive']).toBeUndefined();
     expect(lastUpstreamHeaders['transfer-encoding']).toBeUndefined();
+  });
+
+  it('strips the X-NanoClaw-Agent-Group attribution header before forwarding upstream', async () => {
+    // Per-call attribution: the container-side proxy-fetch wrapper adds
+    // this header so the proxy's per-student resolvers can route. It is
+    // a NanoClaw-internal hint and must not leak to api.anthropic.com /
+    // api.openai.com / www.googleapis.com.
+    proxyPort = await startProxy({ ANTHROPIC_API_KEY: 'sk-ant-real-key' });
+
+    await makeRequest(
+      proxyPort,
+      {
+        method: 'POST',
+        path: '/v1/messages',
+        headers: {
+          'content-type': 'application/json',
+          'x-api-key': 'placeholder',
+          'x-nanoclaw-agent-group': 'ag_some_group_id',
+        },
+      },
+      '{}',
+    );
+
+    expect(lastUpstreamHeaders['x-nanoclaw-agent-group']).toBeUndefined();
+    // The real-key substitution path still works alongside the strip.
+    expect(lastUpstreamHeaders['x-api-key']).toBe('sk-ant-real-key');
+  });
+
+  it('a request without the attribution header still works (graceful fallback)', async () => {
+    proxyPort = await startProxy({ ANTHROPIC_API_KEY: 'sk-ant-real-key' });
+
+    const res = await makeRequest(
+      proxyPort,
+      {
+        method: 'POST',
+        path: '/v1/messages',
+        headers: { 'content-type': 'application/json', 'x-api-key': 'placeholder' },
+      },
+      '{}',
+    );
+
+    // No header → no per-student lookup → instructor / class-default
+    // credential. Same behavior as pre-attribution era.
+    expect(res.statusCode).toBe(200);
+    expect(lastUpstreamHeaders['x-api-key']).toBe('sk-ant-real-key');
   });
 
   it('returns 502 when upstream is unreachable', async () => {

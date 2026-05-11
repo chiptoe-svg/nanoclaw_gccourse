@@ -479,6 +479,15 @@ async function buildContainerArgs(
   // sees only this URL; no Google secrets ever cross the boundary.
   args.push('-e', `GWS_BASE_URL=http://${CONTAINER_HOST_GATEWAY}:${CREDENTIAL_PROXY_PORT}/googleapis`);
 
+  // Per-call attribution for the credential proxy. The container's
+  // proxy-fetch wrapper injects this as `X-NanoClaw-Agent-Group` on
+  // every outbound request to the proxy. Keystone primitive used by
+  // per-student credential resolvers (per-student GWS today; per-
+  // student Anthropic / OpenAI auth in Phase 4). Missing-header
+  // requests gracefully fall back to instructor / class-default
+  // credentials at the proxy.
+  args.push('-e', `X_NANOCLAW_AGENT_GROUP=${agentGroup.id}`);
+
   const authMode = detectAuthMode();
   if (authMode === 'api-key') {
     args.push('-e', 'ANTHROPIC_API_KEY=placeholder');

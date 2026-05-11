@@ -22,13 +22,17 @@ import fs from 'fs';
 import http from 'http';
 import path from 'path';
 
-import { DATA_DIR, PLAYGROUND_BIND_HOST, PLAYGROUND_PORT } from '../../config.js';
+import { PLAYGROUND_BIND_HOST, PLAYGROUND_PORT } from '../../config.js';
 import { lookupRosterByEmail } from '../../db/classroom-roster.js';
 import { buildAuthorizationUrl, DEFAULT_GWS_SCOPES, exchangeCodeForTokens, loadOAuthClient } from '../../gws-auth.js';
 import { log } from '../../log.js';
+import { studentGwsCredentialsPath } from '../../student-creds-paths.js';
 import { formatSessionCookie, mintSessionForUser, type PlaygroundSession } from './auth-store.js';
 import { escapeHtml, send, sendHtml } from './http-helpers.js';
 import { TtlMap } from './ttl-map.js';
+
+// Re-export so existing test + smoke script imports keep working.
+export { studentGwsCredentialsPath };
 
 const STATE_TTL_MS = 5 * 60 * 1000;
 
@@ -91,17 +95,6 @@ export function decodeGoogleIdToken(idToken: string): GoogleIdTokenPayload | nul
   } catch {
     return null;
   }
-}
-
-function sanitizeUserIdForPath(userId: string): string {
-  // userId looks like `class:student_03` → `class_student_03`. Anything
-  // outside [A-Za-z0-9_-] becomes `_` so it's safe as a directory name
-  // on every filesystem we run on.
-  return userId.replace(/[^A-Za-z0-9_-]/g, '_');
-}
-
-export function studentGwsCredentialsPath(userId: string): string {
-  return path.join(DATA_DIR, 'student-google-auth', sanitizeUserIdForPath(userId), 'credentials.json');
 }
 
 /**

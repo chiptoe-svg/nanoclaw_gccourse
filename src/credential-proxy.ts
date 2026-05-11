@@ -43,7 +43,11 @@ import { request as httpsRequest } from 'https';
 import { request as httpRequest, RequestOptions } from 'http';
 
 import { readEnvFile } from './env.js';
+import { getGoogleAccessTokenForAgentGroup } from './gws-token.js';
 import { log } from './log.js';
+
+/** Header containers send to identify which agent group is calling. */
+const AGENT_GROUP_HEADER = 'x-nanoclaw-agent-group';
 
 /**
  * OAuth client id used by Claude Code CLI for the refresh-token grant.
@@ -66,118 +70,12 @@ interface ClaudeCredentials {
 }
 
 const CLAUDE_CREDENTIALS_PATH = path.join(process.env.HOME || '/home/node', '.claude', '.credentials.json');
-const GWS_CREDENTIALS_PATH = path.join(process.env.HOME || '/home/node', '.config', 'gws', 'credentials.json');
 
 // Buffer: refresh 5 minutes before expiry
 const REFRESH_BUFFER_MS = 5 * 60 * 1000;
 
 let cachedOAuthToken: string | null = null;
 let cachedExpiresAt = 0;
-
-/** Google OAuth — cached access token + expiry. Refreshed on demand. */
-let cachedGoogleAccessToken: string | null = null;
-let cachedGoogleExpiresAt = 0;
-
-interface GwsCredentials {
-  type: string;
-  client_id: string;
-  client_secret: string;
-  refresh_token: string;
-  access_token?: string;
-  expiry_date?: number;
-}
-
-function readGwsCredentials(): GwsCredentials | null {
-  try {
-    if (!fs.existsSync(GWS_CREDENTIALS_PATH)) return null;
-    const raw = fs.readFileSync(GWS_CREDENTIALS_PATH, 'utf-8');
-    const parsed = JSON.parse(raw) as Partial<GwsCredentials>;
-    if (!parsed.client_id || !parsed.client_secret || !parsed.refresh_token) return null;
-    return parsed as GwsCredentials;
-  } catch (err) {
-    log.warn('Failed to read GWS credentials', { err: String(err) });
-    return null;
-  }
-}
-
-/**
- * Get a fresh Google OAuth access token. Returns null if no credentials
- * are configured. Caches the token until 5 minutes before its expiry.
- *
- * Refresh flow: POST to oauth2.googleapis.com/token with grant_type=
- * refresh_token. Standard Google OAuth — no library needed.
- */
-async function getGoogleAccessToken(): Promise<string | null> {
-  if (cachedGoogleAccessToken && Date.now() < cachedGoogleExpiresAt - REFRESH_BUFFER_MS) {
-    return cachedGoogleAccessToken;
-  }
-
-  const creds = readGwsCredentials();
-  if (!creds) return null;
-
-  // First-time path: if credentials.json has a fresh access_token + expiry, use it.
-  if (creds.access_token && creds.expiry_date && creds.expiry_date > Date.now() + REFRESH_BUFFER_MS) {
-    cachedGoogleAccessToken = creds.access_token;
-    cachedGoogleExpiresAt = creds.expiry_date;
-    return cachedGoogleAccessToken;
-  }
-
-  // Refresh: exchange refresh_token for a new access_token.
-  const body = new URLSearchParams({
-    client_id: creds.client_id,
-    client_secret: creds.client_secret,
-    refresh_token: creds.refresh_token,
-    grant_type: 'refresh_token',
-  }).toString();
-
-  return new Promise((resolve) => {
-    const req = httpsRequest(
-      {
-        hostname: 'oauth2.googleapis.com',
-        port: 443,
-        path: '/token',
-        method: 'POST',
-        headers: {
-          'content-type': 'application/x-www-form-urlencoded',
-          'content-length': Buffer.byteLength(body),
-        },
-      },
-      (res) => {
-        const chunks: Buffer[] = [];
-        res.on('data', (c) => chunks.push(c as Buffer));
-        res.on('end', () => {
-          if (res.statusCode !== 200) {
-            log.error('GWS OAuth refresh failed', {
-              status: res.statusCode,
-              body: Buffer.concat(chunks).toString('utf-8').slice(0, 500),
-            });
-            resolve(null);
-            return;
-          }
-          try {
-            const json = JSON.parse(Buffer.concat(chunks).toString('utf-8')) as {
-              access_token: string;
-              expires_in: number;
-            };
-            cachedGoogleAccessToken = json.access_token;
-            cachedGoogleExpiresAt = Date.now() + json.expires_in * 1000;
-            log.debug('GWS OAuth refresh OK', { expiresInMin: Math.round(json.expires_in / 60) });
-            resolve(cachedGoogleAccessToken);
-          } catch (err) {
-            log.error('GWS OAuth refresh parse failed', { err: String(err) });
-            resolve(null);
-          }
-        });
-      },
-    );
-    req.on('error', (err) => {
-      log.error('GWS OAuth refresh request error', { err: String(err) });
-      resolve(null);
-    });
-    req.write(body);
-    req.end();
-  });
-}
 
 /**
  * Read the full OAuth credential object (accessToken + refreshToken +
@@ -417,6 +315,14 @@ export function startCredentialProxy(port: number, host = '127.0.0.1'): Promise<
         const isOpenAI = rawUrl.startsWith('/openai/') || rawUrl === '/openai';
         const isGoogle = rawUrl.startsWith('/googleapis/') || rawUrl === '/googleapis';
 
+        // Per-call attribution: which agent group is calling? Used by the
+        // per-student GWS resolver below; per-student Anthropic / OpenAI
+        // resolvers (Phase 4) will consult the same primitive. Missing
+        // header is fine — every resolver gracefully falls back to the
+        // class-default credential.
+        const rawAgentGroup = req.headers[AGENT_GROUP_HEADER];
+        const agentGroupId = typeof rawAgentGroup === 'string' && rawAgentGroup.length > 0 ? rawAgentGroup : null;
+
         const upstreamUrl = isGoogle ? googleUpstream : isOpenAI ? openaiUpstream : anthropicUpstream;
         const upstreamPath = isGoogle
           ? rawUrl.replace(/^\/googleapis/, '') || '/'
@@ -436,11 +342,15 @@ export function startCredentialProxy(port: number, host = '127.0.0.1'): Promise<
         delete headers['connection'];
         delete headers['keep-alive'];
         delete headers['transfer-encoding'];
+        // Don't leak the attribution header upstream — it's a NanoClaw-internal hint.
+        delete headers[AGENT_GROUP_HEADER];
 
         if (isGoogle) {
           // Google APIs: refresh access token if needed, inject as Bearer.
           // Returns 502 with an actionable message if no creds configured.
-          const token = await getGoogleAccessToken();
+          // Per-student token preferred when the agent group has one;
+          // instructor / class-default token otherwise.
+          const token = await getGoogleAccessTokenForAgentGroup(agentGroupId);
           if (!token) {
             res.writeHead(502, { 'content-type': 'application/json' });
             res.end(
