@@ -7,12 +7,14 @@ description: Install the host-side Google Workspace MCP from the gws-mcp branch 
 
 Installs the host-side Google Workspace MCP infrastructure into trunk by copying from the `gws-mcp` branch on origin. Lightweight by design: uses per-API `@googleapis/*` packages (~2 MB each) rather than the monolithic `googleapis` package (~200 MB, has crashed hosts on install).
 
-After install, agents get two tools:
+After install, agents get four tools:
 
 - `drive_doc_read_as_markdown(file_id)` — export a Google Doc to markdown.
 - `drive_doc_write_from_markdown(file_id, markdown, ...)` — overwrite (or create-if-missing) a Doc from markdown.
+- `sheet_read_range(spreadsheet_id, range)` — read a Google Sheet range (A1 notation) as a 2D string array.
+- `sheet_write_range(spreadsheet_id, range, values, value_input_option?)` — write a 2D array into a Sheet range. Defaults to `USER_ENTERED` (formulas evaluate); pass `RAW` to store literally.
 
-For Mode A classroom friction (`nanoclaw_owners` ownership tagging + grant/revoke/list tools), layer `/add-classroom-gws` on top.
+For Mode A classroom friction (`nanoclaw_owners` ownership tagging + grant/revoke/list tools), layer `/add-classroom-gws` on top. The Mode A check applies to Doc *and* Sheet writes since both are Drive files.
 
 ## Prerequisites
 
@@ -29,7 +31,7 @@ Skip to **Configure** if all of these are in place:
 - `src/gws-mcp-server.ts` exists
 - `src/gws-mcp-tools.ts` exists
 - `container/agent-runner/src/mcp-tools/gws.ts` exists
-- `@googleapis/drive` is in `package.json` dependencies
+- `@googleapis/drive`, `@googleapis/docs`, and `@googleapis/sheets` are in `package.json` dependencies
 - `src/index.ts` contains `startGwsMcpRelay`
 - `src/config.ts` contains `GWS_MCP_RELAY_PORT`
 
@@ -117,7 +119,7 @@ import './gws.js';
 ### 7. Install the per-API @googleapis/* deps
 
 ```bash
-pnpm add @googleapis/drive@20.1.0 @googleapis/docs@9.2.1
+pnpm add @googleapis/drive@20.1.0 @googleapis/docs@9.2.1 @googleapis/sheets@13.0.1
 ```
 
 ### 8. Build + container typecheck + rebuild container image
@@ -148,7 +150,7 @@ curl -s http://127.0.0.1:3007/tools
 Expected response:
 
 ```json
-{"tools":["drive_doc_read_as_markdown","drive_doc_write_from_markdown"]}
+{"tools":["drive_doc_read_as_markdown","drive_doc_write_from_markdown","sheet_read_range","sheet_write_range"]}
 ```
 
 If the relay isn't reachable: the host service isn't running (check `logs/nanoclaw.log`).
