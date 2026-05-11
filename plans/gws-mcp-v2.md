@@ -30,8 +30,18 @@ Three things tend to drift across multiple-tool feature work:
 The infra carries forward unchanged: host `gws-mcp-tools.ts` →
 `gws-mcp-server.ts` dispatch → `gws-mcp-relay.ts` HTTP →
 `X_NANOCLAW_AGENT_GROUP` attribution → `getGoogleAccessTokenForAgentGroup`
-→ per-student or instructor token. No new wiring; each sub-phase only
-adds tool functions + their registry entries.
+→ per-student or instructor token. Each sub-phase only adds tool
+functions + their registry entries.
+
+**One infra prerequisite** lands before the first V2 tool: extend
+`getGoogleAccessTokenForAgentGroup` to return `{ token, principal }`
+where `principal` is `'self' | 'instructor-fallback'`. The current
+function returns just the token, so callers can't tell whether the
+caller's own credentials were used or the instructor's. Every V2 tool
+needs that distinction to enforce the mode-2 refusals below — and
+even mode-3 callers can use it for clearer error messages ("you
+haven't completed /gauth yet"). Implementation: trivial; the function
+already branches internally on per-student token presence.
 
 ## OAuth scopes
 
@@ -49,14 +59,54 @@ No re-consent needed when V2 lands — instructor and per-student tokens
 both already carry these scopes. Cuts the rollout cost to "ship code,
 nothing else."
 
-## Role matrix
+## Three deployment modes
+
+V2 is **designed for mode 3** (per-person OAuth). Modes 1 and 2 are
+documented degradation paths that the same code path handles, not
+parallel implementations.
+
+**Mode 1 — single instructor / non-class install.** One GWS account,
+no roles, no Phase 14. Every call resolves the host's single OAuth
+bearer; the relay's role matrix collapses to "all" everywhere. This
+is what the install does today and what most non-classroom users
+will run forever. Mode 3 code in this mode is just "resolve the
+sole bearer and call Google" — no extra cost.
+
+**Mode 2 — class install, pre-Phase-14.** Roles exist in the DB
+(`student_NN`, `ta_*`, `instructor_*`) but per-student OAuth isn't
+wired yet. Every call still resolves the instructor's bearer. The
+*only* enforcement of "student → own data" is URL/ID parsing inside
+the relay or tool handler. This is brittle by design — the parent
+plan calls it a "real boundary problem" — and **mode 2 must not be
+exposed to students** for any tool that touches data outside their
+own scope. Each V2 sub-phase below states its mode-2 stance (most
+will refuse to dispatch for student/ta callers in mode 2).
+
+**Mode 3 — class install, post-Phase-14.** Each student/TA/instructor
+has their own refresh token at
+`data/student-google-auth/<sanitized_user_id>/credentials.json`.
+`getGoogleAccessTokenForAgentGroup` picks the right token based on
+the calling agent group's `student_user_id` metadata. Boundaries are
+enforced by Google itself: a student token literally can't see the
+instructor's Drive. This is the safe-for-classroom mode and the one
+the role matrix below assumes.
+
+**Mode detection.** The relay doesn't need an explicit mode flag — it
+asks `getGoogleAccessTokenForAgentGroup(agentGroupId)` for a token
+and falls back to the instructor token if no per-student token
+exists. Mode 2 is the state where the fallback fires for a student
+caller. Each V2 tool handler can check `wasFallback` (returned
+alongside the token) and refuse to run if the caller's role + the
+tool's scope demand mode 3.
+
+## Role matrix (assumes mode 3)
 
 Each tool is gated by `canAccessAgentGroup` (already enforced in
 `gws-mcp-relay.ts`). The matrix below specifies what each role can do
-*through the relay's resolved OAuth bearer*. "Student" rows assume
-Phase 14 per-student auth has landed; pre-14, every call uses the
-instructor bearer and "student → own data" is enforced only by URL/ID
-checks (brittle — same caveat as the V1 plan).
+*through the relay's resolved OAuth bearer*, **assuming mode 3**. In
+mode 1 every cell collapses to "all" (one principal). In mode 2,
+student/TA cells must read "refuse" for any tool that's not safe
+against the instructor bearer — see per-tool stance below.
 
 | Tool                          | Student     | TA          | Instructor | Non-class agent |
 |-------------------------------|-------------|-------------|------------|-----------------|
@@ -80,6 +130,11 @@ explicitly if a real instructor-approved workflow emerges.
 structured-data collection workflow that students or TAs must update
 programmatically.
 
+**Mode stance.** Mode 1: works (instructor's own sheets). Mode 2:
+**refuse for student/TA callers** — the sole bearer is the
+instructor's, so any sheet ID a student supplies would resolve
+against the instructor's Drive. Mode 3: full row from the matrix.
+
 - New dep: `@googleapis/sheets` (per-API package; check release age
   policy on the host).
 - `src/gws-mcp-tools.ts` — add `sheetReadRange`, `sheetWriteRange`.
@@ -99,6 +154,13 @@ programmatically.
 **Trigger to start:** office hours, deadlines, or class-schedule
 workflows.
 
+**Mode stance.** Mode 1: works on instructor's primary calendar.
+Mode 2: read-only for students/TAs against the *instructor's*
+calendar (low-risk — student sees instructor's office hours), but
+**refuse `calendar_create_event`** for student/TA callers in mode 2
+(would create events on instructor's calendar, impersonation risk).
+Mode 3: full matrix.
+
 - New dep: `@googleapis/calendar`.
 - Tools:
   - `calendar_list_events({ calendar_id?, time_min?, time_max?, q?, max_results? })`
@@ -117,6 +179,13 @@ workflows.
 scope (rclone view stale or filter-heavy queries don't translate
 cleanly to a filesystem walk).
 
+**Mode stance.** Mode 1: lists everything the instructor sees. Mode 2:
+**refuse for student/TA callers** — listing the instructor's whole
+Drive is the worst possible leak. (The q-mutation to constrain by
+class folder is a Google-side filter and trivially bypassable
+client-side; can't be the boundary.) Mode 3: q-mutation constrains
+to the role's folder and Google enforces the rest.
+
 - No new dep (already on `@googleapis/drive`).
 - Tool: `drive_list_files({ q?, page_size?, page_token?, fields? })`
   → `{ ok: true, files: Array<{ id, name, mimeType, modifiedTime, parents? }>, nextPageToken? }`.
@@ -132,6 +201,11 @@ cleanly to a filesystem walk).
 **Trigger to start:** instructor needs the agent to draft+send emails
 on their behalf (e.g., "email the parents of students with overdue
 assignments").
+
+**Mode stance.** Same in all three modes: `gmail_send` is blocked for
+student/TA callers regardless of mode (impersonation risk outweighs
+utility). `gmail_search` is also refused for student/TA in mode 2
+(instructor inbox leak); allowed against own inbox in mode 3.
 
 - New dep: `@googleapis/gmail`.
 - Tools:
