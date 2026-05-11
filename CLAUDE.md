@@ -39,6 +39,10 @@ Stay inside the scope the user asked for. Don't refactor adjacent code, don't re
 
 Before starting, state what "done" looks like in concrete, checkable terms (tests passing, build clean, specific behavior reproduced). After finishing, run those checks. If they fail, fix and re-run — don't declare done on the strength of "it looks right."
 
+### 5. Respect the small-trunk-with-skills philosophy.
+
+Before adding any new module, dependency, or capability to trunk: ask whether it belongs on a long-lived branch installed by a skill (the pattern used for channel adapters in the `channels` branch and non-default providers in the `providers` branch). Anything channel-specific, provider-specific, integration-specific, or category-specific (Google Workspace, classroom features, third-party services) defaults to a branch + install skill, not trunk. Trunk should be infrastructure that EVERY install needs, not features any subset uses. When in doubt, surface the choice up front before committing — discovering after-the-fact that trunk has accumulated GWS / classroom / integration code triggers expensive refactors.
+
 ## Quick Context
 
 The host is a single Node process that orchestrates per-session agent containers. Platform messages land via channel adapters, route through an entity model (users → messaging groups → agent groups → sessions), get written into the session's inbound DB, and wake a container. The agent-runner inside the container polls the DB, calls Claude, and writes back to the outbound DB. The host polls the outbound DB and delivers through the same adapter.
