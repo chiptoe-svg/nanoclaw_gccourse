@@ -224,6 +224,43 @@ RAG-driven labs with evaluation framework, and walkaway cloud deploy.
 - A class can be bundled and walked away with — one bootstrap
   script on a fresh VPS reproduces the working state.
 
+## Phase 1 follow-ups (deferred)
+
+Items surfaced during Phase 1 work but not blocking the close-out.
+Slot into Phase 2 or a small interleave when convenient.
+
+- **Web "Lost your link?" form on `/login`** + Resend integration
+  (Phase 1 #6 follow-on). ~1.5 hr. Students self-serve a fresh
+  token URL via email rather than asking the instructor to run
+  `ncl class-tokens rotate`. Gates on `/add-resend` being
+  installed; degrades to "contact instructor" UI when not.
+- **`/codex-auth` Telegram admin command** alongside `/auth`,
+  `/model`, `/provider`. ~1 hr. Flips `~/.codex/auth.json` between
+  `auth_mode: chatgpt` (ChatGPT subscription OAuth) and
+  `auth_mode: api_key` (uses `OPENAI_API_KEY` from `.env`) without
+  hand-editing the file. Surfaced during Phase 1 verification when
+  the user's ChatGPT subscription hit its daily quota and we had
+  to manually rewrite auth.json to fall back to API. Companion to
+  `/auth` (which only switches Anthropic mode); make this the
+  codex-aware equivalent. Lives on `admin` branch alongside the
+  other admin handlers.
+- **agent_groups.agent_provider ↔ container.json `provider` drift
+  detection.** During Phase 1 verification the local install had a
+  mismatch (`agent_provider=claude` in DB; `provider=codex` in
+  container.json) — the runtime reads container.json so codex was
+  what actually ran. A small reconciliation in `host-sweep.ts`
+  could detect + log drift, or `/provider` could write to both
+  on every switch. Investigate which side is currently
+  authoritative and lock down the contract.
+- **Container can't reach GWS relay on port 3007** when ufw is
+  active without an explicit allow rule for docker0 traffic. Port
+  3001 (credential proxy) has an iptables ACCEPT (likely added by
+  some prior setup step); 3007 doesn't. Document the ufw allow
+  rule (`sudo ufw allow in on docker0 to any port 3007 proto tcp`)
+  in `/add-gws-tool` SKILL.md and/or have `/setup` add it. Not
+  blocking for Mode A class deploy (codex doesn't use the relay)
+  but blocks any GWS MCP tool calls from inside containers.
+
 ## Cross-cutting
 
 - **Live in-browser smoke for classroom Phases 1–3.** Gated on the
