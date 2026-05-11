@@ -7,12 +7,7 @@
 import http from 'http';
 
 /** Write a status + body. JSON-encodes non-string bodies. */
-export function send(
-  res: http.ServerResponse,
-  status: number,
-  body: unknown,
-  contentType = 'application/json',
-): void {
+export function send(res: http.ServerResponse, status: number, body: unknown, contentType = 'application/json'): void {
   res.writeHead(status, { 'content-type': contentType });
   res.end(typeof body === 'string' ? body : JSON.stringify(body));
 }
