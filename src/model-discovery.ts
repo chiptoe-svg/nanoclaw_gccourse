@@ -20,6 +20,7 @@
  * regardless of what auth is configured. Used by unit tests so they don't
  * hit the network.
  */
+import { request as httpRequest } from 'http';
 import { request as httpsRequest } from 'https';
 
 import { readEnvFile } from './env.js';
@@ -51,11 +52,16 @@ interface FetchOpts {
   port: number;
   path: string;
   headers: Record<string, string>;
+  protocol: 'http:' | 'https:';
 }
 
-function httpsGetJson(opts: FetchOpts): Promise<string[] | null> {
+function httpGetJson(opts: FetchOpts): Promise<string[] | null> {
+  // Local LLM servers (mlx-omni-server, Ollama, LM Studio) run as plain
+  // http on the host's loopback. The cloud providers run https. Pick the
+  // right transport per resolved upstream.
+  const request = opts.protocol === 'http:' ? httpRequest : httpsRequest;
   return new Promise((resolve) => {
-    const req = httpsRequest(
+    const req = request(
       {
         hostname: opts.hostname,
         port: opts.port,
@@ -105,16 +111,24 @@ function httpsGetJson(opts: FetchOpts): Promise<string[] | null> {
  * upstream host directly, not through the local proxy. Discovery runs on
  * the host where credentials are accessible directly.
  */
-function resolveEndpoint(envBaseUrlVar: string, defaultHost: string): { hostname: string; port: number } {
+function resolveEndpoint(
+  envBaseUrlVar: string,
+  defaultHost: string,
+): { hostname: string; port: number; protocol: 'http:' | 'https:' } {
   const env = readEnvFile([envBaseUrlVar]);
   const raw = env[envBaseUrlVar];
-  if (!raw) return { hostname: defaultHost, port: 443 };
+  if (!raw) return { hostname: defaultHost, port: 443, protocol: 'https:' };
   try {
     const u = new URL(raw);
-    return { hostname: u.hostname, port: u.port ? parseInt(u.port, 10) : u.protocol === 'http:' ? 80 : 443 };
+    const protocol = u.protocol === 'http:' ? 'http:' : 'https:';
+    return {
+      hostname: u.hostname,
+      port: u.port ? parseInt(u.port, 10) : protocol === 'http:' ? 80 : 443,
+      protocol,
+    };
   } catch {
     log.warn('Invalid base URL env, using default', { envVar: envBaseUrlVar, value: raw });
-    return { hostname: defaultHost, port: 443 };
+    return { hostname: defaultHost, port: 443, protocol: 'https:' };
   }
 }
 
@@ -126,9 +140,10 @@ async function fetchProviderModels(provider: string): Promise<ModelHint[] | null
   if (!auth) return null;
 
   const endpoint = resolveEndpoint(adapter.envBaseUrlVar, adapter.defaultHost);
-  const ids = await httpsGetJson({
+  const ids = await httpGetJson({
     hostname: endpoint.hostname,
     port: endpoint.port,
+    protocol: endpoint.protocol,
     path: adapter.modelsPath,
     headers: { ...(adapter.extraHeaders ?? {}), [auth.name]: auth.value },
   });
