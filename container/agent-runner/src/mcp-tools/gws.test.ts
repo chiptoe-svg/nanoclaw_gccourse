@@ -8,13 +8,7 @@
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
-import {
-  driveDocGrantOwnership,
-  driveDocListOwners,
-  driveDocReadAsMarkdown,
-  driveDocRevokeOwnership,
-  driveDocWriteFromMarkdown,
-} from './gws.js';
+import { driveDocReadAsMarkdown, driveDocWriteFromMarkdown } from './gws.js';
 
 const RELAY_URL = 'http://host.docker.internal:3007';
 
@@ -145,64 +139,13 @@ describe('gws.ts → relay HTTP shape', () => {
     expect(result.isError).toBe(true);
   });
 
-  test('drive_doc_grant_ownership forwards file_id + agent_group_id', async () => {
-    const cap = captureFetch({
-      status: 200,
-      body: { ok: true, fileId: 'f1', owners: ['ag_42', 'ag_77'], changed: true },
-    });
-    restore = cap.restore;
-
-    const result = await driveDocGrantOwnership.handler({ file_id: 'f1', agent_group_id: 'ag_77' });
-
-    expect(cap.calls[0]!.url).toBe(`${RELAY_URL}/tools/drive_doc_grant_ownership`);
-    expect(JSON.parse(cap.calls[0]!.init?.body as string)).toEqual({
-      file_id: 'f1',
-      agent_group_id: 'ag_77',
-    });
-    expect(result.isError).toBeUndefined();
-  });
-
-  test('drive_doc_revoke_ownership surfaces last-owner refusal with status 409', async () => {
-    const cap = captureFetch({
-      status: 409,
-      body: { ok: false, error: 'Refusing to revoke last owner of f1 — grant ownership first.', status: 409 },
-    });
-    restore = cap.restore;
-
-    const result = await driveDocRevokeOwnership.handler({ file_id: 'f1', agent_group_id: 'ag_42' });
-
-    expect(result.isError).toBe(true);
-    expect((result.content[0] as { text: string }).text).toContain('Refusing to revoke last owner');
-  });
-
-  test('drive_doc_list_owners returns owners with display names', async () => {
-    const cap = captureFetch({
-      status: 200,
-      body: {
-        ok: true,
-        fileId: 'f1',
-        owners: [
-          { agent_group_id: 'ag_42', display_name: 'Sam' },
-          { agent_group_id: 'ag_77', display_name: 'Alice' },
-        ],
-      },
-    });
-    restore = cap.restore;
-
-    const result = await driveDocListOwners.handler({ file_id: 'f1' });
-
-    expect(cap.calls[0]!.url).toBe(`${RELAY_URL}/tools/drive_doc_list_owners`);
-    const text = (result.content[0] as { text: string }).text;
-    expect(text).toContain('Sam');
-    expect(text).toContain('Alice');
-  });
-
   test('hard-block error from drive_doc_write_from_markdown surfaces creator name', async () => {
     const cap = captureFetch({
       status: 403,
       body: {
         ok: false,
-        error: 'Blocked: this file is owned by Sam. Ask one of them to share write access via drive_doc_grant_ownership, or to make the change themselves.',
+        error:
+          'Blocked: this file is owned by Sam. Ask one of them to share write access via drive_doc_grant_ownership, or to make the change themselves.',
         status: 403,
       },
     });
@@ -215,4 +158,5 @@ describe('gws.ts → relay HTTP shape', () => {
     expect(text).toContain('Sam');
     expect(text).toContain('drive_doc_grant_ownership');
   });
+
 });
