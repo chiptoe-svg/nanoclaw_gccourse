@@ -1,16 +1,21 @@
 /**
  * Per-agent-group provider switching.
  *
- * Provider selection lives in three places that must stay in sync:
+ * Provider selection lives in four places that must stay in sync:
  *
  *   1. `groups/<folder>/container.json` `.provider` — read at next container
- *      spawn to pick which provider's host-side mounts/env apply.
+ *      spawn to pick which provider's host-side mounts/env apply. Also what
+ *      `/provider` reports as the "current" provider.
  *   2. `sessions.agent_provider` — read by `session-manager` to pick the
  *      provider class inside the container.
- *   3. The running container — has the OLD provider baked into its env.
+ *   3. `agent_groups.agent_provider` — read by `/model` (admin tool) and
+ *      anywhere else that takes the group as the unit of work rather than
+ *      a session. Drift here was the source of a "model picker showed
+ *      Claude models for a codex group" bug — caught + fixed 2026-05-11.
+ *   4. The running container — has the OLD provider baked into its env.
  *      Must be stopped so the next inbound message respawns fresh.
  *
- * `setProvider` does all three atomically. Both `scripts/switch-provider.ts`
+ * `setProvider` does all four atomically. Both `scripts/switch-provider.ts`
  * (CLI) and the Telegram `/provider` command call into this so there is one
  * implementation to maintain.
  */
@@ -93,13 +98,19 @@ export function setProvider(folder: string, provider: string): SetProviderResult
   containerJson.provider = provider;
   writeContainerJson(folder, containerJson);
 
-  // 2. sessions.agent_provider
+  // 2. sessions.agent_provider — for in-flight sessions.
   const updated = getDb()
     .prepare('UPDATE sessions SET agent_provider = ? WHERE agent_group_id = ?')
     .run(provider, group.id);
   const sessionsUpdated = updated.changes;
 
-  // 3. Stop running containers — best-effort. Errors here are not fatal:
+  // 3. agent_groups.agent_provider — for /model and any other code that
+  //    looks up the group's provider rather than a specific session's.
+  //    Forgetting this caused the /model picker to list Claude models
+  //    for a codex group (caught 2026-05-11).
+  getDb().prepare('UPDATE agent_groups SET agent_provider = ? WHERE id = ?').run(provider, group.id);
+
+  // 4. Stop running containers — best-effort. Errors here are not fatal:
   //    a stale container will be reaped by the next sweep tick or replaced
   //    on next inbound. The DB is already truth.
   let containersStopped = 0;

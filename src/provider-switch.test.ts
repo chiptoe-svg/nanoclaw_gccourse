@@ -96,7 +96,7 @@ describe('setProvider', () => {
     expect(r.reason).toBe('group-not-found');
   });
 
-  it('updates container.json and sessions.agent_provider on success', async () => {
+  it('updates container.json, sessions.agent_provider, AND agent_groups.agent_provider on success', async () => {
     makeGroupFolder('alpha', { provider: 'claude', groupName: 'alpha' });
     const ts = new Date().toISOString();
     createAgentGroup({
@@ -132,6 +132,12 @@ describe('setProvider', () => {
     // Re-import to verify session row update via getCurrentProvider path
     const { getCurrentProvider } = await import('./provider-switch.js');
     expect(getCurrentProvider('alpha')?.provider).toBe('codex');
+
+    // Regression guard for the /model picker drift bug (fixed 2026-05-11):
+    // agent_groups.agent_provider must also be updated, since /model reads
+    // from there rather than from container.json.
+    const { getAgentGroup } = await import('./db/agent-groups.js');
+    expect(getAgentGroup('ag_alpha')?.agent_provider).toBe('codex');
   });
 
   it('preserves other container.json fields on switch', async () => {
