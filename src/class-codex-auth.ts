@@ -1,38 +1,91 @@
 /**
- * Class feature — per-student Codex auth resolver.
+ * Class-shared Codex auth resolver — Mode A LLM credential pool.
  *
- * Registers a CodexAuthResolver that pulls the per-student auth.json
- * stored by the magic-link flow (`src/student-auth.ts`). Registered
- * BEFORE the default instructor resolver in `src/index.ts`'s class
- * import block, so a student with a stored auth.json always shadows
- * the instructor's host auth.
+ * In Mode A (shared class workspace), every class agent group should
+ * consume a class-funded OpenAI API key, not the instructor's personal
+ * ChatGPT subscription. This module:
  *
- * If `agent_groups.metadata.student_user_id` is unset (e.g. the agent
- * group isn't class-wired) or the student hasn't uploaded yet, this
- * resolver returns null and the chain falls through to the default
- * instructor resolver. That's the "graceful migration" path —
- * unauthed class students still work on the instructor's tab until
- * they upload their own auth.
+ *   1. At host startup, reads `CLASS_OPENAI_API_KEY` from `.env`.
+ *   2. If set, writes `data/class-codex-auth.json` with the api_key-mode
+ *      shape so the codex CLI inside each class container uses it as
+ *      its OpenAI Bearer.
+ *   3. Registers a Codex auth resolver (higher priority than the
+ *      default `instructorHostResolver`) that returns the class
+ *      auth.json path for class agent groups (folder prefix
+ *      `student_` / `ta_` / `instructor_`).
+ *
+ * Fallback: if `CLASS_OPENAI_API_KEY` is unset, OR the calling agent
+ * group isn't a class group, OR writing the class auth.json failed,
+ * this resolver returns null and the chain falls through to
+ * `instructorHostResolver` (instructor's personal ChatGPT OAuth). So
+ * an instructor running NanoClaw before configuring the class key
+ * still has their own agents working — and class agents have a
+ * working backup auth if the API key path breaks.
+ *
+ * Rotation: edit `.env`, restart the host. The auth.json is
+ * regenerated at startup from the current env value.
+ *
+ * File is installed by `/add-classroom` from the `classroom` branch.
+ * Not in trunk — per rule 5 (small-trunk-with-skills).
  */
-import { getAgentGroupMetadata } from './db/agent-groups.js';
-import { type CodexAuthResolver, registerCodexAuthResolver } from './providers/codex.js';
-import { getStudentAuthPath } from './student-auth.js';
+import fs from 'fs';
+import path from 'path';
 
-/**
- * Returns the per-student auth.json path when the agent group is
- * class-wired AND the student has uploaded their auth.json via the
- * magic-link flow. Returns null otherwise so the chain falls through
- * to the next resolver (typically the instructor host fallback).
- *
- * Exported so tests can register it against a freshly reset chain.
- */
-export const studentCodexAuthResolver: CodexAuthResolver = (ctx) => {
-  const meta = getAgentGroupMetadata(ctx.agentGroupId);
-  const studentUserId = typeof meta.student_user_id === 'string' ? meta.student_user_id : null;
-  if (!studentUserId) return null;
-  const studentPath = getStudentAuthPath(studentUserId);
-  if (!studentPath) return null;
-  return { name: 'student', path: studentPath };
+import { DATA_DIR } from './config.js';
+import { getAgentGroup } from './db/agent-groups.js';
+import { readEnvFile } from './env.js';
+import { log } from './log.js';
+import { registerCodexAuthResolver, type CodexAuthResolver } from './providers/codex.js';
+
+const CLASS_AUTH_JSON_PATH = path.join(DATA_DIR, 'class-codex-auth.json');
+
+function isClassFolder(folder: string): boolean {
+  return folder.startsWith('student_') || folder.startsWith('ta_') || folder.startsWith('instructor_');
+}
+
+function writeClassAuthJson(apiKey: string): void {
+  const auth = {
+    auth_mode: 'api_key',
+    OPENAI_API_KEY: apiKey,
+    tokens: null,
+    last_refresh: null,
+  };
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.writeFileSync(CLASS_AUTH_JSON_PATH, JSON.stringify(auth, null, 2), { mode: 0o600 });
+  log.info('Class Codex auth.json written', { path: CLASS_AUTH_JSON_PATH });
+}
+
+export const classCodexAuthResolver: CodexAuthResolver = (ctx) => {
+  const ag = getAgentGroup(ctx.agentGroupId);
+  if (!ag) return null;
+  if (!isClassFolder(ag.folder)) return null;
+  // Defensive: if the file vanished or was never written (key unset
+  // at startup), fall through to the next resolver.
+  if (!fs.existsSync(CLASS_AUTH_JSON_PATH)) return null;
+  return { name: 'class-pool', path: CLASS_AUTH_JSON_PATH };
 };
 
-registerCodexAuthResolver(studentCodexAuthResolver);
+/**
+ * Read `CLASS_OPENAI_API_KEY` from `.env` and write the derived
+ * class auth.json. Best-effort — failures are logged but don't crash
+ * startup; the resolver will return null and chain falls through.
+ *
+ * Exported for tests; the side-effect call happens at module import
+ * time below.
+ */
+export function initializeClassAuth(): void {
+  const env = readEnvFile(['CLASS_OPENAI_API_KEY']);
+  const apiKey = env.CLASS_OPENAI_API_KEY;
+  if (!apiKey) {
+    log.info('CLASS_OPENAI_API_KEY not set — class codex resolver will fall through to instructor OAuth');
+    return;
+  }
+  try {
+    writeClassAuthJson(apiKey);
+  } catch (err) {
+    log.warn('Failed to write class codex auth.json — falling back to instructor OAuth', { err: String(err) });
+  }
+}
+
+initializeClassAuth();
+registerCodexAuthResolver(classCodexAuthResolver);
