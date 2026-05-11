@@ -17,15 +17,31 @@
 import {
   driveDocReadAsMarkdown,
   driveDocWriteFromMarkdown,
+  driveGrantOwnership,
+  driveListOwners,
+  driveRevokeOwnership,
   type ToolContext,
   type ToolError,
   type DocReadResult,
   type DocWriteResult,
+  type ListOwnersResult,
+  type OwnershipChangeResult,
 } from './gws-mcp-tools.js';
 
-export type ToolName = 'drive_doc_read_as_markdown' | 'drive_doc_write_from_markdown';
+export type ToolName =
+  | 'drive_doc_read_as_markdown'
+  | 'drive_doc_write_from_markdown'
+  | 'drive_doc_grant_ownership'
+  | 'drive_doc_revoke_ownership'
+  | 'drive_doc_list_owners';
 
-export type ToolResult = (DocReadResult | DocWriteResult | ToolError) & { ok: boolean };
+export type ToolResult = (
+  | DocReadResult
+  | DocWriteResult
+  | OwnershipChangeResult
+  | ListOwnersResult
+  | ToolError
+) & { ok: boolean };
 
 interface ToolEntry<A> {
   name: ToolName;
@@ -71,6 +87,24 @@ function validateWrite(
   };
 }
 
+function validateOwnershipChange(raw: unknown): { file_id: string; agent_group_id: string } | string {
+  const o = asObject(raw);
+  if (!o) return 'arguments must be an object';
+  const fileId = asString(o, 'file_id');
+  if (!fileId) return '`file_id` (string) is required';
+  const agentGroupId = asString(o, 'agent_group_id');
+  if (!agentGroupId) return '`agent_group_id` (string) is required';
+  return { file_id: fileId, agent_group_id: agentGroupId };
+}
+
+function validateListOwners(raw: unknown): { file_id: string } | string {
+  const o = asObject(raw);
+  if (!o) return 'arguments must be an object';
+  const fileId = asString(o, 'file_id');
+  if (!fileId) return '`file_id` (string) is required';
+  return { file_id: fileId };
+}
+
 const TOOL_REGISTRY: Record<ToolName, ToolEntry<unknown>> = {
   drive_doc_read_as_markdown: {
     name: 'drive_doc_read_as_markdown',
@@ -81,6 +115,21 @@ const TOOL_REGISTRY: Record<ToolName, ToolEntry<unknown>> = {
     name: 'drive_doc_write_from_markdown',
     handler: driveDocWriteFromMarkdown,
     validate: validateWrite as (raw: unknown) => unknown | string,
+  },
+  drive_doc_grant_ownership: {
+    name: 'drive_doc_grant_ownership',
+    handler: driveGrantOwnership,
+    validate: validateOwnershipChange as (raw: unknown) => unknown | string,
+  },
+  drive_doc_revoke_ownership: {
+    name: 'drive_doc_revoke_ownership',
+    handler: driveRevokeOwnership,
+    validate: validateOwnershipChange as (raw: unknown) => unknown | string,
+  },
+  drive_doc_list_owners: {
+    name: 'drive_doc_list_owners',
+    handler: driveListOwners,
+    validate: validateListOwners as (raw: unknown) => unknown | string,
   },
 };
 
