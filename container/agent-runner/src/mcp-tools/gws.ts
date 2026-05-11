@@ -202,4 +202,96 @@ export const sheetWriteRange: McpToolDefinition = {
   },
 };
 
-registerTools([driveDocReadAsMarkdown, driveDocWriteFromMarkdown, sheetReadRange, sheetWriteRange]);
+export const slidesCreateDeck: McpToolDefinition = {
+  tool: {
+    name: 'slides_create_deck',
+    description:
+      'Create a new Google Slides presentation. Optional `title` (defaults to "Untitled") and `parent_folder_id` (drops the deck into a specific Drive folder, otherwise lands in the user\'s root). In Mode A the new deck is auto-stamped with the caller as owner + shared anyone-with-link.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        title: { type: 'string', description: 'Display title for the new deck.' },
+        parent_folder_id: { type: 'string', description: 'Drive folder ID to place the new deck in.' },
+      },
+    },
+  },
+  async handler(args) {
+    const payload: Record<string, unknown> = {};
+    if (typeof args.title === 'string') payload.title = args.title;
+    if (typeof args.parent_folder_id === 'string') payload.parent_folder_id = args.parent_folder_id;
+    const r = await callRelay('slides_create_deck', payload);
+    if (!r.ok) return err(r.error);
+    return ok(JSON.stringify(r.body, null, 2));
+  },
+};
+
+export const slidesAppendSlide: McpToolDefinition = {
+  tool: {
+    name: 'slides_append_slide',
+    description:
+      'Append a new slide at the end of an existing Google Slides deck. Optional `layout` (e.g. BLANK, TITLE, TITLE_AND_BODY, SECTION_HEADER) — defaults to BLANK. Returns the new slide\'s object ID.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        presentation_id: { type: 'string', description: 'Drive file ID of the target Slides deck.' },
+        layout: {
+          type: 'string',
+          description:
+            'Slides predefined layout name. Common values: BLANK, TITLE, TITLE_AND_BODY, SECTION_HEADER, ONE_COLUMN_TEXT, MAIN_POINT, BIG_NUMBER, TITLE_AND_TWO_COLUMNS.',
+        },
+      },
+      required: ['presentation_id'],
+    },
+  },
+  async handler(args) {
+    const presentationId = args.presentation_id as string;
+    if (!presentationId) return err('presentation_id is required');
+    const payload: Record<string, unknown> = { presentation_id: presentationId };
+    if (typeof args.layout === 'string') payload.layout = args.layout;
+    const r = await callRelay('slides_append_slide', payload);
+    if (!r.ok) return err(r.error);
+    return ok(JSON.stringify(r.body, null, 2));
+  },
+};
+
+export const slidesReplaceText: McpToolDefinition = {
+  tool: {
+    name: 'slides_replace_text',
+    description:
+      'Find-and-replace text across every slide in a Google Slides deck. Case-sensitive. Returns the count of occurrences changed (0 is success, not an error). Useful for templating decks (e.g. replace `{{name}}` with `Sam`).',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        presentation_id: { type: 'string', description: 'Drive file ID of the target Slides deck.' },
+        find: { type: 'string', description: 'Exact text to search for (case-sensitive).' },
+        replace_with: { type: 'string', description: 'Text to insert in place of every match.' },
+      },
+      required: ['presentation_id', 'find', 'replace_with'],
+    },
+  },
+  async handler(args) {
+    const presentationId = args.presentation_id as string;
+    const find = args.find as string;
+    const replaceWith = args.replace_with as string;
+    if (!presentationId) return err('presentation_id is required');
+    if (!find) return err('find is required');
+    if (typeof replaceWith !== 'string') return err('replace_with is required');
+    const r = await callRelay('slides_replace_text', {
+      presentation_id: presentationId,
+      find,
+      replace_with: replaceWith,
+    });
+    if (!r.ok) return err(r.error);
+    return ok(JSON.stringify(r.body, null, 2));
+  },
+};
+
+registerTools([
+  driveDocReadAsMarkdown,
+  driveDocWriteFromMarkdown,
+  sheetReadRange,
+  sheetWriteRange,
+  slidesCreateDeck,
+  slidesAppendSlide,
+  slidesReplaceText,
+]);

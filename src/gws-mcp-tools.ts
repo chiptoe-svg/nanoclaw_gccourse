@@ -28,6 +28,7 @@ import { Readable } from 'stream';
 
 import { drive as driveApi, auth as gAuth } from '@googleapis/drive';
 import { sheets as sheetsApi } from '@googleapis/sheets';
+import { slides as slidesApi } from '@googleapis/slides';
 
 import { getGoogleAccessTokenForAgentGroup, type GwsPrincipal } from './gws-token.js';
 import { log } from './log.js';
@@ -307,7 +308,9 @@ export async function sheetReadRange(
       range: args.range,
     });
     const rawValues = (res.data.values ?? []) as unknown[][];
-    const values: string[][] = rawValues.map((row) => row.map((cell) => (cell === null || cell === undefined ? '' : String(cell))));
+    const values: string[][] = rawValues.map((row) =>
+      row.map((cell) => (cell === null || cell === undefined ? '' : String(cell))),
+    );
     const cells = values.reduce((sum, row) => sum + row.length, 0);
     return { ok: true, spreadsheetId: args.spreadsheet_id, range: args.range, values, cells };
   } catch (err) {
@@ -371,6 +374,182 @@ export async function sheetWriteRange(
     return {
       ok: false,
       error: `Sheets write failed for ${args.spreadsheet_id}!${args.range}: ${(err as Error).message}`,
+      status: typeof status === 'number' ? status : 500,
+    };
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Slides (Phase 13.5e — V2 surface)
+//
+// Slides decks are Drive files, so writes reuse the existing
+// pre-mutation hook chain and create reuses the existing post-create
+// hook chain (Mode A ownership tag + anyone-with-link share). No new
+// ownership infrastructure needed.
+// ────────────────────────────────────────────────────────────────────
+
+export interface SlidesCreateResult {
+  ok: true;
+  presentationId: string;
+  webViewLink: string | null;
+}
+
+export interface SlidesAppendResult {
+  ok: true;
+  presentationId: string;
+  slideId: string;
+}
+
+export interface SlidesReplaceTextResult {
+  ok: true;
+  presentationId: string;
+  occurrencesChanged: number;
+}
+
+function buildSlidesClient(accessToken: string): ReturnType<typeof slidesApi> {
+  const oauth = new gAuth.OAuth2();
+  oauth.setCredentials({ access_token: accessToken });
+  return slidesApi({ version: 'v1', auth: oauth });
+}
+
+/**
+ * Create a new Slides presentation. Uses Drive's `files.create` so we
+ * can drop it directly into `parent_folder_id` if supplied (Slides API's
+ * `presentations.create` lands the file in the user's root with no way
+ * to specify a parent). After creation, post-create hooks fire (Mode A
+ * stamps owner tag + applies anyone-with-link share).
+ */
+export async function slidesCreateDeck(
+  ctx: ToolContext,
+  args: { title?: string; parent_folder_id?: string },
+): Promise<SlidesCreateResult | ToolError> {
+  const tokenOrError = await resolveTokenOrError(ctx);
+  if (!('principal' in tokenOrError)) return tokenOrError;
+  const drive = buildDriveClient(tokenOrError.token);
+  try {
+    const res = await drive.files.create({
+      requestBody: {
+        name: args.title ?? 'Untitled',
+        mimeType: 'application/vnd.google-apps.presentation',
+        parents: args.parent_folder_id ? [args.parent_folder_id] : undefined,
+      },
+      fields: 'id,webViewLink',
+    });
+    const presentationId = res.data.id ?? '';
+    for (const hook of postCreateHooks) {
+      try {
+        await hook({ drive, fileId: presentationId, ctx, resolved: tokenOrError });
+      } catch (hookErr) {
+        log.warn('slides_create_deck: post-create hook threw', { presentationId, err: String(hookErr) });
+      }
+    }
+    return { ok: true, presentationId, webViewLink: res.data.webViewLink ?? null };
+  } catch (err) {
+    const status = (err as { code?: number; status?: number }).code ?? (err as { status?: number }).status;
+    log.warn('slides_create_deck failed', { title: args.title, err: String(err) });
+    return {
+      ok: false,
+      error: `Slides create failed: ${(err as Error).message}`,
+      status: typeof status === 'number' ? status : 500,
+    };
+  }
+}
+
+/**
+ * Append a blank (or layout-specified) slide to an existing deck via
+ * `presentations.batchUpdate` with a `createSlide` request. Runs
+ * pre-mutation hooks first (Mode A ownership check).
+ *
+ * Common `layout` values: `BLANK`, `TITLE`, `TITLE_AND_BODY`,
+ * `SECTION_HEADER`, etc. — passes through to Slides API; invalid layouts
+ * surface as a 400 from Google with the error message intact.
+ */
+export async function slidesAppendSlide(
+  ctx: ToolContext,
+  args: { presentation_id: string; layout?: string },
+): Promise<SlidesAppendResult | ToolError> {
+  const tokenOrError = await resolveTokenOrError(ctx);
+  if (!('principal' in tokenOrError)) return tokenOrError;
+  const drive = buildDriveClient(tokenOrError.token);
+
+  for (const hook of preMutationHooks) {
+    const result = await hook({ drive, fileId: args.presentation_id, ctx, resolved: tokenOrError });
+    if (!result.ok) return result;
+  }
+
+  const slides = buildSlidesClient(tokenOrError.token);
+  try {
+    const res = await slides.presentations.batchUpdate({
+      presentationId: args.presentation_id,
+      requestBody: {
+        requests: [
+          {
+            createSlide: {
+              slideLayoutReference: { predefinedLayout: args.layout ?? 'BLANK' },
+            },
+          },
+        ],
+      },
+    });
+    const reply = res.data.replies?.[0];
+    const slideId = reply?.createSlide?.objectId ?? '';
+    return { ok: true, presentationId: args.presentation_id, slideId };
+  } catch (err) {
+    const status = (err as { code?: number; status?: number }).code ?? (err as { status?: number }).status;
+    log.warn('slides_append_slide failed', { presentationId: args.presentation_id, err: String(err) });
+    return {
+      ok: false,
+      error: `Slides append failed for ${args.presentation_id}: ${(err as Error).message}`,
+      status: typeof status === 'number' ? status : 500,
+    };
+  }
+}
+
+/**
+ * Find/replace text across all slides in a deck via
+ * `presentations.batchUpdate` with a `replaceAllText` request. Runs
+ * pre-mutation hooks first.
+ *
+ * Case-sensitive by default. Returns the number of replacements made
+ * (0 is a successful no-op, not an error).
+ */
+export async function slidesReplaceText(
+  ctx: ToolContext,
+  args: { presentation_id: string; find: string; replace_with: string },
+): Promise<SlidesReplaceTextResult | ToolError> {
+  const tokenOrError = await resolveTokenOrError(ctx);
+  if (!('principal' in tokenOrError)) return tokenOrError;
+  const drive = buildDriveClient(tokenOrError.token);
+
+  for (const hook of preMutationHooks) {
+    const result = await hook({ drive, fileId: args.presentation_id, ctx, resolved: tokenOrError });
+    if (!result.ok) return result;
+  }
+
+  const slides = buildSlidesClient(tokenOrError.token);
+  try {
+    const res = await slides.presentations.batchUpdate({
+      presentationId: args.presentation_id,
+      requestBody: {
+        requests: [
+          {
+            replaceAllText: {
+              containsText: { text: args.find, matchCase: true },
+              replaceText: args.replace_with,
+            },
+          },
+        ],
+      },
+    });
+    const reply = res.data.replies?.[0];
+    const occurrencesChanged = reply?.replaceAllText?.occurrencesChanged ?? 0;
+    return { ok: true, presentationId: args.presentation_id, occurrencesChanged };
+  } catch (err) {
+    const status = (err as { code?: number; status?: number }).code ?? (err as { status?: number }).status;
+    log.warn('slides_replace_text failed', { presentationId: args.presentation_id, err: String(err) });
+    return {
+      ok: false,
+      error: `Slides replace-text failed for ${args.presentation_id}: ${(err as Error).message}`,
       status: typeof status === 'number' ? status : 500,
     };
   }

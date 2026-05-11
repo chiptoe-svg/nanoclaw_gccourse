@@ -31,6 +31,22 @@ vi.mock('./gws-mcp-tools.js', () => ({
     range: args.range,
     updatedCells: 4,
   })),
+  slidesCreateDeck: vi.fn(async (_ctx, args: { title?: string }) => ({
+    ok: true,
+    presentationId: 'pres_new',
+    webViewLink: `https://docs.google.com/presentation/d/pres_new`,
+    _title: args.title,
+  })),
+  slidesAppendSlide: vi.fn(async (_ctx, args: { presentation_id: string }) => ({
+    ok: true,
+    presentationId: args.presentation_id,
+    slideId: 'slide_xyz',
+  })),
+  slidesReplaceText: vi.fn(async (_ctx, args: { presentation_id: string }) => ({
+    ok: true,
+    presentationId: args.presentation_id,
+    occurrencesChanged: 3,
+  })),
 }));
 
 import { dispatchTool, listToolNames } from './gws-mcp-server.js';
@@ -40,7 +56,15 @@ afterEach(() => vi.clearAllMocks());
 describe('listToolNames', () => {
   it('returns the V1 + V2 base tool names (ext-installed names register elsewhere)', () => {
     expect(new Set(listToolNames())).toEqual(
-      new Set(['drive_doc_read_as_markdown', 'drive_doc_write_from_markdown', 'sheet_read_range', 'sheet_write_range']),
+      new Set([
+        'drive_doc_read_as_markdown',
+        'drive_doc_write_from_markdown',
+        'sheet_read_range',
+        'sheet_write_range',
+        'slides_create_deck',
+        'slides_append_slide',
+        'slides_replace_text',
+      ]),
     );
   });
 });
@@ -158,9 +182,67 @@ describe('dispatchTool', () => {
     const r = await dispatchTool({
       ctx: { agentGroupId: 'ag_x' },
       toolName: 'sheet_write_range',
-      args: { spreadsheet_id: 'sht_abc', range: 'A1:B2', values: [['x', 'y'], ['z', 'w']] },
+      args: {
+        spreadsheet_id: 'sht_abc',
+        range: 'A1:B2',
+        values: [
+          ['x', 'y'],
+          ['z', 'w'],
+        ],
+      },
     });
     expect(r.ok).toBe(true);
     expect((r as unknown as { updatedCells: number }).updatedCells).toBe(4);
+  });
+
+  it('dispatches to slides_create_deck with no required args', async () => {
+    const r = await dispatchTool({
+      ctx: { agentGroupId: 'ag_x' },
+      toolName: 'slides_create_deck',
+      args: {},
+    });
+    expect(r.ok).toBe(true);
+    expect((r as unknown as { presentationId: string }).presentationId).toBe('pres_new');
+  });
+
+  it('returns 400 when slides_append_slide is missing presentation_id', async () => {
+    const r = await dispatchTool({
+      ctx: { agentGroupId: 'ag_x' },
+      toolName: 'slides_append_slide',
+      args: {},
+    });
+    expect(r.ok).toBe(false);
+    expect((r as unknown as { status?: number }).status).toBe(400);
+  });
+
+  it('dispatches to slides_append_slide with validated args', async () => {
+    const r = await dispatchTool({
+      ctx: { agentGroupId: 'ag_x' },
+      toolName: 'slides_append_slide',
+      args: { presentation_id: 'pres_abc', layout: 'TITLE_AND_BODY' },
+    });
+    expect(r.ok).toBe(true);
+    expect((r as unknown as { slideId: string }).slideId).toBe('slide_xyz');
+  });
+
+  it('returns 400 when slides_replace_text is missing find', async () => {
+    const r = await dispatchTool({
+      ctx: { agentGroupId: 'ag_x' },
+      toolName: 'slides_replace_text',
+      args: { presentation_id: 'pres_abc', replace_with: 'hi' },
+    });
+    expect(r.ok).toBe(false);
+    expect((r as unknown as { status?: number }).status).toBe(400);
+    expect((r as unknown as { error: string }).error).toContain('find');
+  });
+
+  it('dispatches to slides_replace_text and returns the occurrences count', async () => {
+    const r = await dispatchTool({
+      ctx: { agentGroupId: 'ag_x' },
+      toolName: 'slides_replace_text',
+      args: { presentation_id: 'pres_abc', find: '{{name}}', replace_with: 'Sam' },
+    });
+    expect(r.ok).toBe(true);
+    expect((r as unknown as { occurrencesChanged: number }).occurrencesChanged).toBe(3);
   });
 });

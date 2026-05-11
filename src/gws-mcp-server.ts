@@ -19,6 +19,9 @@ import {
   driveDocWriteFromMarkdown,
   sheetReadRange,
   sheetWriteRange,
+  slidesCreateDeck,
+  slidesAppendSlide,
+  slidesReplaceText,
   type ToolContext,
   type ToolError,
   type DocReadResult,
@@ -34,7 +37,10 @@ export type ToolName =
   | 'drive_doc_read_as_markdown'
   | 'drive_doc_write_from_markdown'
   | 'sheet_read_range'
-  | 'sheet_write_range';
+  | 'sheet_write_range'
+  | 'slides_create_deck'
+  | 'slides_append_slide'
+  | 'slides_replace_text';
 
 /**
  * Result shape returned by `dispatchTool`. The dispatcher forwards
@@ -99,9 +105,7 @@ function validateSheetRead(raw: unknown): { spreadsheet_id: string; range: strin
 
 function validateSheetWrite(
   raw: unknown,
-):
-  | { spreadsheet_id: string; range: string; values: string[][]; value_input_option?: 'RAW' | 'USER_ENTERED' }
-  | string {
+): { spreadsheet_id: string; range: string; values: string[][]; value_input_option?: 'RAW' | 'USER_ENTERED' } | string {
   const o = asObject(raw);
   if (!o) return 'arguments must be an object';
   const id = asString(o, 'spreadsheet_id');
@@ -121,6 +125,36 @@ function validateSheetWrite(
     values: values as string[][],
     value_input_option: opt as 'RAW' | 'USER_ENTERED' | undefined,
   };
+}
+
+function validateSlidesCreate(raw: unknown): { title?: string; parent_folder_id?: string } | string {
+  const o = asObject(raw);
+  if (!o) return 'arguments must be an object';
+  // No required fields. Title defaults to "Untitled"; parent_folder_id is optional.
+  return {
+    title: asString(o, 'title') ?? undefined,
+    parent_folder_id: asString(o, 'parent_folder_id') ?? undefined,
+  };
+}
+
+function validateSlidesAppend(raw: unknown): { presentation_id: string; layout?: string } | string {
+  const o = asObject(raw);
+  if (!o) return 'arguments must be an object';
+  const id = asString(o, 'presentation_id');
+  if (!id) return '`presentation_id` (string) is required';
+  return { presentation_id: id, layout: asString(o, 'layout') ?? undefined };
+}
+
+function validateSlidesReplaceText(raw: unknown): { presentation_id: string; find: string; replace_with: string } | string {
+  const o = asObject(raw);
+  if (!o) return 'arguments must be an object';
+  const id = asString(o, 'presentation_id');
+  if (!id) return '`presentation_id` (string) is required';
+  const find = typeof o.find === 'string' ? o.find : null;
+  if (find === null || find.length === 0) return '`find` (non-empty string) is required';
+  const replaceWith = typeof o.replace_with === 'string' ? o.replace_with : null;
+  if (replaceWith === null) return '`replace_with` (string) is required';
+  return { presentation_id: id, find, replace_with: replaceWith };
 }
 
 // Mutable registry — populated below by built-in registerGwsTool calls,
@@ -159,6 +193,18 @@ registerGwsTool('sheet_read_range', {
 registerGwsTool('sheet_write_range', {
   handler: sheetWriteRange,
   validate: validateSheetWrite as (raw: unknown) => unknown | string,
+});
+registerGwsTool('slides_create_deck', {
+  handler: slidesCreateDeck,
+  validate: validateSlidesCreate as (raw: unknown) => unknown | string,
+});
+registerGwsTool('slides_append_slide', {
+  handler: slidesAppendSlide,
+  validate: validateSlidesAppend as (raw: unknown) => unknown | string,
+});
+registerGwsTool('slides_replace_text', {
+  handler: slidesReplaceText,
+  validate: validateSlidesReplaceText as (raw: unknown) => unknown | string,
 });
 
 /** Names of every registered tool — used by the relay's introspection

@@ -8,7 +8,15 @@
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
-import { driveDocReadAsMarkdown, driveDocWriteFromMarkdown, sheetReadRange, sheetWriteRange } from './gws.js';
+import {
+  driveDocReadAsMarkdown,
+  driveDocWriteFromMarkdown,
+  sheetReadRange,
+  sheetWriteRange,
+  slidesAppendSlide,
+  slidesCreateDeck,
+  slidesReplaceText,
+} from './gws.js';
 
 const RELAY_URL = 'http://host.docker.internal:3007';
 
@@ -244,6 +252,98 @@ describe('gws.ts → relay HTTP shape', () => {
 
     expect(cap.calls).toHaveLength(0);
     expect(result.isError).toBe(true);
+  });
+
+  test('slides_create_deck forwards optional title + parent_folder_id', async () => {
+    const cap = captureFetch({
+      status: 200,
+      body: {
+        ok: true,
+        presentationId: 'pres_new',
+        webViewLink: 'https://docs.google.com/presentation/d/pres_new',
+      },
+    });
+    restore = cap.restore;
+
+    const result = await slidesCreateDeck.handler({
+      title: 'My Deck',
+      parent_folder_id: 'folder_xyz',
+    });
+
+    expect(cap.calls[0]!.url).toBe(`${RELAY_URL}/tools/slides_create_deck`);
+    expect(JSON.parse(cap.calls[0]!.init?.body as string)).toEqual({
+      title: 'My Deck',
+      parent_folder_id: 'folder_xyz',
+    });
+    expect(result.isError).toBeUndefined();
+  });
+
+  test('slides_create_deck works with no args (lands in root, default title)', async () => {
+    const cap = captureFetch({
+      status: 200,
+      body: { ok: true, presentationId: 'pres_new', webViewLink: null },
+    });
+    restore = cap.restore;
+
+    const result = await slidesCreateDeck.handler({});
+
+    expect(JSON.parse(cap.calls[0]!.init?.body as string)).toEqual({});
+    expect(result.isError).toBeUndefined();
+  });
+
+  test('slides_append_slide forwards presentation_id + layout', async () => {
+    const cap = captureFetch({
+      status: 200,
+      body: { ok: true, presentationId: 'pres_abc', slideId: 'slide_xyz' },
+    });
+    restore = cap.restore;
+
+    const result = await slidesAppendSlide.handler({
+      presentation_id: 'pres_abc',
+      layout: 'TITLE_AND_BODY',
+    });
+
+    expect(JSON.parse(cap.calls[0]!.init?.body as string)).toEqual({
+      presentation_id: 'pres_abc',
+      layout: 'TITLE_AND_BODY',
+    });
+    expect(result.isError).toBeUndefined();
+  });
+
+  test('slides_replace_text forwards find + replace_with and surfaces count', async () => {
+    const cap = captureFetch({
+      status: 200,
+      body: { ok: true, presentationId: 'pres_abc', occurrencesChanged: 5 },
+    });
+    restore = cap.restore;
+
+    const result = await slidesReplaceText.handler({
+      presentation_id: 'pres_abc',
+      find: '{{name}}',
+      replace_with: 'Sam',
+    });
+
+    expect(JSON.parse(cap.calls[0]!.init?.body as string)).toEqual({
+      presentation_id: 'pres_abc',
+      find: '{{name}}',
+      replace_with: 'Sam',
+    });
+    expect(result.isError).toBeUndefined();
+    const text = (result.content[0] as { text: string }).text;
+    expect(text).toContain('"occurrencesChanged": 5');
+  });
+
+  test('slides_append_slide surfaces Mode A hard-block from relay', async () => {
+    const cap = captureFetch({
+      status: 403,
+      body: { ok: false, error: 'Blocked: this file is owned by Sam.', status: 403 },
+    });
+    restore = cap.restore;
+
+    const result = await slidesAppendSlide.handler({ presentation_id: 'pres_someone_elses' });
+
+    expect(result.isError).toBe(true);
+    expect((result.content[0] as { text: string }).text).toContain('Sam');
   });
 
 });

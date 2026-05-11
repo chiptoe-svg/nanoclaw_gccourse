@@ -26,6 +26,9 @@ importers:
       '@googleapis/sheets':
         specifier: ^13.0.1
         version: 13.0.1
+      '@googleapis/slides':
+        specifier: ^5.0.1
+        version: 5.0.1
       better-sqlite3:
         specifier: 11.10.0
         version: 11.10.0
@@ -306,6 +309,10 @@ packages:
 
   '@googleapis/sheets@13.0.1':
     resolution: {integrity: sha512-XTYObncN5Rqexc0uITZIN9OWTEyE/ZR2S6c7wAniqHe2oGXW9gcHR9f9hQwPMHFUTHjH7Jkj8SLdt0O0u37y2A==}
+    engines: {node: '>=12.0.0'}
+
+  '@googleapis/slides@5.0.1':
+    resolution: {integrity: sha512-1fGN7Yew0K2IRYQkKWCuSspgudfBII+fWI0BWNHllMr1Yh9t5at9mFYpeQ+57L0hyWiLN3FxX6ksMxbVWjebpg==}
     engines: {node: '>=12.0.0'}
 
   '@humanfs/core@0.19.1':
@@ -2003,6 +2010,12 @@ snapshots:
       - supports-color
 
   '@googleapis/sheets@13.0.1':
+    dependencies:
+      googleapis-common: 8.0.1
+    transitivePeerDependencies:
+      - supports-color
+
+  '@googleapis/slides@5.0.1':
     dependencies:
       googleapis-common: 8.0.1
     transitivePeerDependencies:
