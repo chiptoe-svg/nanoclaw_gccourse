@@ -1,26 +1,20 @@
 /**
- * Google Workspace MCP tools (Phase 13 V1).
+ * Google Workspace MCP tools (Phase 13).
  *
- * Two tools today, both for editing Google Docs as plain markdown
- * (which rclone can't do — it surfaces .gdoc files as opaque
- * pointers). Calls go to `${GWS_BASE_URL}/...` which is the host's
- * credential proxy at `http://host.docker.internal:3001/googleapis`;
- * the proxy injects the real OAuth Bearer from
- * `~/.config/gws/credentials.json` so the container never sees any
- * Google credentials.
+ * Forwards calls to the host-side relay (`src/gws-mcp-relay.ts`,
+ * default port 3007) rather than hitting googleapis.com directly. The
+ * relay authenticates the caller via the `X-NanoClaw-Agent-Group`
+ * header, applies role-based scoping (`canAccessAgentGroup`), and
+ * resolves a per-student OAuth bearer via
+ * `getGoogleAccessTokenForAgentGroup`. Everything Google-specific
+ * stays on the host.
  *
- * V1 surface — exactly what's needed to close the gap rclone leaves:
- *   drive_doc_read_as_markdown  — export a Google Doc to markdown
- *   drive_doc_write_from_markdown — create or replace a Doc from markdown
- *
- * V2+ (when use cases show up): sheets, calendar, gmail, etc. Each
- * is a thin wrapper around a known googleapis.com endpoint —
- * structurally identical to these two.
+ * V1 surface (mirrors `src/gws-mcp-server.ts`):
+ *   drive_doc_read_as_markdown    — export a Doc to markdown
+ *   drive_doc_write_from_markdown — overwrite (or create) a Doc from markdown
  */
 import { registerTools } from './server.js';
 import type { McpToolDefinition } from './types.js';
-
-const GWS_BASE_URL = process.env.GWS_BASE_URL;
 
 function ok(text: string) {
   return { content: [{ type: 'text' as const, text }] };
@@ -30,29 +24,57 @@ function err(message: string) {
   return { content: [{ type: 'text' as const, text: `ERROR: ${message}` }], isError: true };
 }
 
-function requireBaseUrl(): string {
-  if (!GWS_BASE_URL) {
-    throw new Error(
-      'GWS_BASE_URL not set. The host should inject this when spawning the container; if you are running the agent-runner outside a NanoClaw container, this tool is unavailable.',
-    );
-  }
-  return GWS_BASE_URL;
+interface RelayCallResult {
+  ok: true;
+  body: unknown;
+}
+interface RelayCallError {
+  ok: false;
+  error: string;
 }
 
-async function callGws(path: string, init?: RequestInit): Promise<Response> {
-  const base = requireBaseUrl();
-  const url = `${base}${path}`;
-  const headers = new Headers(init?.headers);
-  // The proxy substitutes this with the real OAuth Bearer. Anything
-  // we send here is fine — the value is replaced before the request
-  // hits googleapis.com.
-  if (!headers.has('authorization')) {
-    headers.set('authorization', 'Bearer placeholder');
+async function callRelay(toolName: string, args: Record<string, unknown>): Promise<RelayCallResult | RelayCallError> {
+  const relayUrl = process.env.GWS_MCP_RELAY_URL;
+  const agentGroupId = process.env.X_NANOCLAW_AGENT_GROUP;
+  if (!relayUrl) {
+    return { ok: false, error: 'GWS_MCP_RELAY_URL not set — running outside a NanoClaw container?' };
   }
-  return fetch(url, { ...init, headers });
+  if (!agentGroupId) {
+    return { ok: false, error: 'X_NANOCLAW_AGENT_GROUP not set — relay would reject the call.' };
+  }
+  let res: Response;
+  try {
+    res = await fetch(`${relayUrl}/tools/${toolName}`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-nanoclaw-agent-group': agentGroupId,
+      },
+      body: JSON.stringify(args),
+    });
+  } catch (e) {
+    return { ok: false, error: `GWS relay unreachable: ${e instanceof Error ? e.message : String(e)}` };
+  }
+
+  let body: unknown;
+  try {
+    body = await res.json();
+  } catch (e) {
+    return { ok: false, error: `GWS relay returned non-JSON (${res.status}): ${e instanceof Error ? e.message : String(e)}` };
+  }
+  // Relay echoes `{ ok, ... }` for both success and tool-error paths;
+  // status code mirrors `ok`. Either signal is sufficient to branch.
+  if (body && typeof body === 'object' && (body as { ok?: unknown }).ok === false) {
+    const message = (body as { error?: unknown }).error;
+    return { ok: false, error: typeof message === 'string' ? message : `GWS relay error (status ${res.status})` };
+  }
+  if (!res.ok) {
+    return { ok: false, error: `GWS relay HTTP ${res.status}` };
+  }
+  return { ok: true, body };
 }
 
-const driveDocReadAsMarkdown: McpToolDefinition = {
+export const driveDocReadAsMarkdown: McpToolDefinition = {
   tool: {
     name: 'drive_doc_read_as_markdown',
     description:
@@ -60,100 +82,51 @@ const driveDocReadAsMarkdown: McpToolDefinition = {
     inputSchema: {
       type: 'object' as const,
       properties: {
-        fileId: { type: 'string', description: 'Drive file ID of the Google Doc.' },
+        file_id: { type: 'string', description: 'Drive file ID of the Google Doc.' },
       },
-      required: ['fileId'],
+      required: ['file_id'],
     },
   },
   async handler(args) {
-    const fileId = args.fileId as string;
-    if (!fileId) return err('fileId is required');
-    try {
-      const res = await callGws(
-        `/drive/v3/files/${encodeURIComponent(fileId)}/export?mimeType=text%2Fmarkdown`,
-      );
-      if (!res.ok) {
-        const body = await res.text().catch(() => '<no body>');
-        return err(`Drive export failed: ${res.status} ${res.statusText} — ${body.slice(0, 500)}`);
-      }
-      const markdown = await res.text();
-      return ok(markdown);
-    } catch (e) {
-      return err(e instanceof Error ? e.message : String(e));
-    }
+    const fileId = args.file_id as string;
+    if (!fileId) return err('file_id is required');
+    const r = await callRelay('drive_doc_read_as_markdown', { file_id: fileId });
+    if (!r.ok) return err(r.error);
+    const markdown = (r.body as { markdown?: unknown }).markdown;
+    if (typeof markdown !== 'string') return err('GWS relay response missing `markdown` field.');
+    return ok(markdown);
   },
 };
 
-const driveDocWriteFromMarkdown: McpToolDefinition = {
+export const driveDocWriteFromMarkdown: McpToolDefinition = {
   tool: {
     name: 'drive_doc_write_from_markdown',
     description:
-      'Create a new Google Doc (or replace an existing one) from markdown content. When `fileId` is provided, that Doc is replaced. When omitted, a new Doc is created with `title` (default "Untitled") in the user\'s root Drive folder. Returns the resulting Doc\'s file ID and webViewLink.',
+      'Overwrite an existing Google Doc with new markdown content. Pass `file_id` of the target Doc and the `markdown` body. To create a new Doc when the file_id does not exist yet, set `create_if_missing: true` and provide `parent_folder_id` + `name`. Returns the resulting Doc\'s file ID and whether it was newly created.',
     inputSchema: {
       type: 'object' as const,
       properties: {
-        markdown: { type: 'string', description: 'Markdown body to convert + upload as a Google Doc.' },
-        title: { type: 'string', description: 'Document title (used when creating a new Doc).' },
-        fileId: { type: 'string', description: 'Existing Doc file ID to overwrite, instead of creating new.' },
+        file_id: { type: 'string', description: 'Drive file ID of the Google Doc to overwrite (or create at, with create_if_missing).' },
+        markdown: { type: 'string', description: 'Markdown body to upload as the Doc\'s new content.' },
+        create_if_missing: { type: 'boolean', description: 'When true and the file_id 404s, create a new Doc instead.' },
+        parent_folder_id: { type: 'string', description: 'Drive folder ID to place the new Doc in (used only on create).' },
+        name: { type: 'string', description: 'Title for the new Doc (used only on create).' },
       },
-      required: ['markdown'],
+      required: ['file_id', 'markdown'],
     },
   },
   async handler(args) {
+    const fileId = args.file_id as string;
     const markdown = args.markdown as string;
+    if (!fileId) return err('file_id is required');
     if (typeof markdown !== 'string') return err('markdown is required');
-    const title = (args.title as string) || 'Untitled';
-    const fileId = args.fileId as string | undefined;
-
-    try {
-      // The Drive REST API supports importing markdown to a Google Doc
-      // via the upload endpoint with `?uploadType=media` and the
-      // request body's content-type set to `text/markdown`. For new
-      // docs, also pass metadata via `multipart` upload to set title.
-      // We use the 'multipart' form: small + handles both create and
-      // update with metadata in one call.
-      const boundary = `----nanoclaw-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-      const metadata: Record<string, unknown> = {
-        mimeType: 'application/vnd.google-apps.document',
-      };
-      if (!fileId) metadata.name = title;
-
-      const partMetadata =
-        `--${boundary}\r\n` +
-        `Content-Type: application/json; charset=UTF-8\r\n\r\n` +
-        `${JSON.stringify(metadata)}\r\n`;
-      const partBody =
-        `--${boundary}\r\n` +
-        `Content-Type: text/markdown\r\n\r\n` +
-        `${markdown}\r\n` +
-        `--${boundary}--`;
-      const body = partMetadata + partBody;
-
-      const path = fileId
-        ? `/upload/drive/v3/files/${encodeURIComponent(fileId)}?uploadType=multipart&fields=id,webViewLink,name`
-        : '/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink,name';
-      const method = fileId ? 'PATCH' : 'POST';
-
-      const res = await callGws(path, {
-        method,
-        headers: { 'content-type': `multipart/related; boundary=${boundary}` },
-        body,
-      });
-
-      if (!res.ok) {
-        const errBody = await res.text().catch(() => '<no body>');
-        return err(`Drive upload failed: ${res.status} ${res.statusText} — ${errBody.slice(0, 500)}`);
-      }
-      const json = (await res.json()) as { id?: string; webViewLink?: string; name?: string };
-      const result = {
-        fileId: json.id,
-        webViewLink: json.webViewLink,
-        name: json.name,
-      };
-      return ok(JSON.stringify(result, null, 2));
-    } catch (e) {
-      return err(e instanceof Error ? e.message : String(e));
-    }
+    const payload: Record<string, unknown> = { file_id: fileId, markdown };
+    if (typeof args.create_if_missing === 'boolean') payload.create_if_missing = args.create_if_missing;
+    if (typeof args.parent_folder_id === 'string') payload.parent_folder_id = args.parent_folder_id;
+    if (typeof args.name === 'string') payload.name = args.name;
+    const r = await callRelay('drive_doc_write_from_markdown', payload);
+    if (!r.ok) return err(r.error);
+    return ok(JSON.stringify(r.body, null, 2));
   },
 };
 

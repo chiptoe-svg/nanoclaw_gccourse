@@ -163,10 +163,42 @@ These don't work on this install (require OneCLI gateway). Phase
 - [x] Reuses the credential proxy's per-container placeholder
       pattern to identify the caller.
 
-#### 13.4 — Container stub + skill
-- [ ] `container/agent-runner/src/mcp-tools/gws-stub.ts` — local
-      stub MCP that forwards to the host relay.
-- [ ] `.claude/skills/add-gws-tool/` (SKILL.md, REMOVE.md, VERIFY.md).
+#### 13.4 — Container → relay wiring + install skill ✅
+
+Originally framed as "stub MCP that forwards to the host relay." In
+practice the container already has an inline `gws.ts` registered via
+`registerTools()` (global, every agent), reaching the credential
+proxy's `/googleapis/*` pass-through at port 3001. That works but
+bypasses the per-agent role boundary the relay enforces.
+
+So 13.4 is a refactor, not a new stub file: point `gws.ts` at the
+Phase 13.3 relay (port 3007) so role checks via `canAccessAgentGroup`
+actually fire on every tool call. The per-agent attribution header
+(`X-NanoClaw-Agent-Group`) is already set on every container by the
+recent `feat/credential-proxy-attribution` work — we just have to
+include the relay's origin in the set of "proxy-bound" hosts.
+
+- [x] `src/container-runner.ts` — add `GWS_MCP_RELAY_URL=http://<gateway>:GWS_MCP_RELAY_PORT`
+      env at spawn; drop the now-unused `GWS_BASE_URL` (gws.ts was the
+      only consumer; proxy-fetch falls back to `ANTHROPIC_BASE_URL`).
+- [x] `container/agent-runner/src/mcp-tools/gws.ts` — rewrite both
+      handlers to `POST ${GWS_MCP_RELAY_URL}/tools/<name>`, JSON body =
+      args, header `X-NanoClaw-Agent-Group` set explicitly from
+      `X_NANOCLAW_AGENT_GROUP`. Mirror host's write surface (file_id
+      required; create_if_missing/parent_folder_id/name optional).
+- [x] `container/agent-runner/src/proxy-fetch.ts` + `.test.ts` — drop
+      the now-stale `GWS_BASE_URL` reference; relay's port-3007 attribution
+      is set explicitly by `gws.ts` so it doesn't need to live in the
+      monkey-patched fetch's match set.
+- [x] `container/agent-runner/src/mcp-tools/gws.test.ts` — new bun:test
+      file. Mock fetch, verify path/header/body and that `ok:false` is
+      surfaced as MCP `isError: true`.
+- [x] `.claude/skills/add-gws-tool/SKILL.md` — verify
+      `~/.config/gws/credentials.json` exists, smoke-test the relay
+      with `curl /tools`. Convention in this tree is single SKILL.md
+      (no separate REMOVE.md / VERIFY.md); uninstall + verify steps
+      are inline. Defers OAuth bootstrap to manual or the future
+      `scripts/gws-authorize.ts` (still pending — see Phase 14).
 
 #### 13.5 — V2 tool surface (separate plan, write when needed)
 

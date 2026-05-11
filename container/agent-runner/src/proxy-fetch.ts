@@ -21,15 +21,17 @@
  *
  * Determining "is this a proxy call": match against the host:port the
  * proxy is bound to. Each container reads `ANTHROPIC_BASE_URL` /
- * `OPENAI_BASE_URL` / `GWS_BASE_URL` at startup; all three point at the
- * same host:port (just different path prefixes). We extract that origin
- * from any one of them and match against it.
+ * `OPENAI_BASE_URL` at startup; both point at the same host:port (just
+ * different path prefixes). We extract that origin from either one and
+ * match against it. The Google Workspace relay sits on a different port
+ * and `gws.ts` sets the attribution header explicitly, so it doesn't
+ * need to be in this match set.
  */
 
 const HEADER_NAME = 'X-NanoClaw-Agent-Group';
 
 function deriveProxyOrigin(): string | null {
-  const candidate = process.env.ANTHROPIC_BASE_URL || process.env.OPENAI_BASE_URL || process.env.GWS_BASE_URL;
+  const candidate = process.env.ANTHROPIC_BASE_URL || process.env.OPENAI_BASE_URL;
   if (!candidate) return null;
   try {
     const u = new URL(candidate);

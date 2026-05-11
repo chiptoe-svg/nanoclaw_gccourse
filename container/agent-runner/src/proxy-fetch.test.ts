@@ -83,7 +83,6 @@ describe('installProxyFetch', () => {
     process.env.X_NANOCLAW_AGENT_GROUP = 'ag_test_42';
     delete process.env.ANTHROPIC_BASE_URL;
     delete process.env.OPENAI_BASE_URL;
-    delete process.env.GWS_BASE_URL;
     const cap = captureHeaders();
     restoreFetch = cap.reset;
 
