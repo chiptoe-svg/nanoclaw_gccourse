@@ -153,12 +153,17 @@ Mode B: Google native — own sheets only unless explicitly shared.
 **Trigger to start:** office hours, deadlines, or class-schedule
 workflows.
 
-**Mode stance.** Mode 1: works. Mode A: one shared class calendar.
-Anyone in the workspace can create events (claim-on-create stamps
-`nanoclaw_owners`). Delete/edit gated by ownership tag — students
-**cannot delete events they didn't create** (hard block per Phase
-13.6). Mode B: each user has their own primary calendar; Google
-native boundaries.
+**Mode stance — defer to Phase 2 (Mode B).** Calendar in Mode A
+collapses to one shared class calendar; the friction model boils
+down to "instructor manages it" which doesn't need agent tooling.
+Per-person calendars (Mode B) are where these tools earn their
+keep — students invite each other to office hours, students see
+their own deadlines, etc. Pushed out of Phase 1 because the value
+isn't there yet.
+
+Mode 1: works (instructor's own primary). Mode A: shared class
+calendar — friction collapses; deferred. Mode B: each user has
+their own primary calendar; Google native boundaries.
 
 - New dep: `@googleapis/calendar`.
 - Tools:
@@ -279,12 +284,14 @@ when each sub-phase is either landed or explicitly closed-as-not-needed.
 
 **Mapping to master-plan phases:**
 
-- **Phase 1 (Mode A class MVP):** 13.5a (Sheets) + 13.5b (Calendar) +
-  13.5e (Slides). All three use the 13.6 ownership tag for Mode A
-  friction. 13.6 is the upstream blocker.
-- **Phase 2 (Mode B, per-person GWS):** 13.5c (Drive listing) + 13.5d
-  (Gmail). Both need Google's own permissions as the boundary, which
-  only exists in Mode B. Don't ship until Phase 14 lands.
+- **Phase 1 (Mode A class MVP):** 13.5a (Sheets) + 13.5e (Slides).
+  Both reuse 13.6's Drive ownership tag — they're Drive files, no
+  new ownership infrastructure needed.
+- **Phase 2 (Mode B, per-person GWS):** 13.5b (Calendar) + 13.5c
+  (Drive listing) + 13.5d (Gmail). All three earn their utility from
+  per-person accounts: calendar makes sense when each user has their
+  own; drive listing scopes naturally to a user's own Drive; gmail
+  send-as-self is the only safe mode. Don't ship until Phase 14 lands.
 
 ## Substeps
 

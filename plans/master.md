@@ -78,37 +78,36 @@ it. Items at the same nesting depth can run in parallel.
    (commits `dc7f429`, `1d0bbac` on `feat/gws-skill-refactor`).
    Trunk keeps `gws-auth.ts` (playground needs it) + `gws-token.ts`
    (credential proxy needs it).
-3. **gws-mcp Phase 13.5a — Sheets read/write.** Gradebook /
-   attendance / structured-data workflows. Details:
-   [gws-mcp-v2.md §13.5a](gws-mcp-v2.md).
-4. **gws-mcp Phase 13.5b — Calendar list/create.** Shared class
-   calendar — instructor posts deadlines, students may add events
-   (hard-block on delete-not-yours per 13.6). Details:
-   [gws-mcp-v2.md §13.5b](gws-mcp-v2.md).
-5. **gws-mcp Phase 13.5e — Slides create/append/replace-text.** Same
-   ownership-tag mechanism as Docs (Slides are Drive files). Cheap
-   to bundle alongside 13.5a/b. Details:
+3. ✅ **gws-mcp Phase 13.5a — Sheets read/write.** Shipped on
+   `origin/gws-mcp` (commit `c5c614d`) + `/add-gws-tool` SKILL.md
+   updated on `main` (`5e7e0c1`). Details: [gws-mcp-v2.md §13.5a](gws-mcp-v2.md).
+4. ✅ **gws-mcp Phase 13.5e — Slides create/append/replace-text.**
+   Shipped on `origin/gws-mcp` (commit `7c61346`) + `/add-gws-tool`
+   SKILL.md updated on `main` (`1d3deb3`). Same ownership-tag
+   mechanism as Docs/Sheets (Slides are Drive files). Details:
    [gws-mcp-v2.md §13.5e](gws-mcp-v2.md).
-6. **credential-proxy Phase X.4 — instructor provider OAuth.** Wire
+   *(13.5b Calendar pushed to Phase 2 — see "GWS Phase 1 closes here"
+   note below.)*
+5. **credential-proxy Phase X.4 — instructor provider OAuth.** Wire
    instructor's chosen agent provider's OAuth into the credential
    proxy so all student agents draw from one pool. Codex/OpenAI is
    the expected provider for this class.
    Details: [credential-proxy-per-call-attribution.md §X.4](credential-proxy-per-call-attribution.md).
-7. **classroom Phase 4 (Phase-1 slice) — homepage + playground
+6. **classroom Phase 4 (Phase-1 slice) — homepage + playground
    integration.** Student-facing entry: login by personal email,
    Telegram channel link, basic dashboard, picker for which agent
    to talk to, embedded Agent Playground access. **No provider
    settings panel yet** — that's Phase 2 work, gated on per-student
    provider OAuth. Spec in
    [classroom-web-multiuser.md §Phase 4](classroom-web-multiuser.md).
-8. **classroom Phase 6 — local-LLM runbook + .env.** Mostly docs +
+7. **classroom Phase 6 — local-LLM runbook + .env.** Mostly docs +
    small `credential-proxy.ts` audit for arbitrary upstream-host
    `OPENAI_BASE_URL` correctness. Bundle into Phase 1 because it's
    cheap and unlocks cost-economical RAG prep in Phase 2.
-9. **ai-coding-cli Phase G — smoke matrix** (~2 hr). Pure
+8. **ai-coding-cli Phase G — smoke matrix** (~2 hr). Pure
    verification work for the CLI-picker subsystem. Clears the
    upstream-PR signal for that subsystem.
-10. **`scripts/gws-authorize.ts`** (~30 min). One-off CLI wrapping
+9. **`scripts/gws-authorize.ts`** (~30 min). One-off CLI wrapping
     `src/gws-auth.ts` helpers so the instructor can mint a fresh
     refresh token via localhost callback. Recovers from
     expired-token states; also becomes the manual-test backstop for
@@ -153,27 +152,31 @@ RAG-driven labs with evaluation framework, and walkaway cloud deploy.
    code (`ncl temp-creds grant --user X --hours 24`) that grants
    instructor-pool access during student onboarding. Details:
    [credential-proxy-per-call-attribution.md §X.7](credential-proxy-per-call-attribution.md).
-3. **gws-mcp Phase 13.5c — Drive listing.** Safe to expose once
+3. **gws-mcp Phase 13.5b — Calendar list/create.** Earns its keep
+   once each user has their own calendar (Mode B). In Mode A it
+   collapses to a single shared workspace calendar and doesn't need
+   agent tooling. Details: [gws-mcp-v2.md §13.5b](gws-mcp-v2.md).
+4. **gws-mcp Phase 13.5c — Drive listing.** Safe to expose once
    Mode B lands — Google's own auth scopes the result. Details:
    [gws-mcp-v2.md §13.5c](gws-mcp-v2.md).
-4. **gws-mcp Phase 13.5d — Gmail search/send.** Same reasoning.
+5. **gws-mcp Phase 13.5d — Gmail search/send.** Same reasoning.
    Details: [gws-mcp-v2.md §13.5d](gws-mcp-v2.md).
-5. **classroom Phase 4 (Phase-2 slice) — provider settings panel.**
+6. **classroom Phase 4 (Phase-2 slice) — provider settings panel.**
    Adds the homepage UI for students to manage their own provider
    OAuth + GWS OAuth + temp-code redemption.
-6. **classroom Phase 5 — agent export tooling.**
+7. **classroom Phase 5 — agent export tooling.**
    `nanoclaw / claude-code / codex / json` formats; `GET
    /api/draft/<folder>/export?format=…`. Spec in
    [classroom-web-multiuser.md §Phase 5](classroom-web-multiuser.md).
-7. **classroom Phase 7 — expert system builder + RAG strategies.**
+8. **classroom Phase 7 — expert system builder + RAG strategies.**
    Pipeline framework + named strategies + UI. Cost-economical only
    after Phase 1 #8 (local-LLM runbook) lands. Spec in
    [classroom-web-multiuser.md §Phase 7](classroom-web-multiuser.md).
-8. **classroom Phase 8 — evaluation framework.** Side-by-side
+9. **classroom Phase 8 — evaluation framework.** Side-by-side
    comparison + LLM-as-judge mode. Depends on Phase 7 (nothing to
    evaluate without strategies). Spec in
    [classroom-web-multiuser.md §Phase 8](classroom-web-multiuser.md).
-9. **classroom Phase 9 — walk-away cloud deploy.** Bundle +
+10. **classroom Phase 9 — walk-away cloud deploy.** Bundle +
    bootstrap script. Depends on Phase 5 (export) for the bundle
    format. Spec in
    [classroom-web-multiuser.md §Phase 9](classroom-web-multiuser.md).
