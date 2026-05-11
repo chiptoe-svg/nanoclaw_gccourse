@@ -61,52 +61,51 @@ nothing else."
 
 ## Three deployment modes
 
-V2 is **designed for mode 3** (per-person OAuth). Modes 1 and 2 are
-documented degradation paths that the same code path handles, not
-parallel implementations.
+V2 supports three deployment shapes. Mode B is the highest-fidelity
+boundary model; Mode A is the simplest setup that's still safe enough
+for low-stakes classroom use; Mode 1 is the single-user install.
 
 **Mode 1 — single instructor / non-class install.** One GWS account,
-no roles, no Phase 14. Every call resolves the host's single OAuth
-bearer; the relay's role matrix collapses to "all" everywhere. This
-is what the install does today and what most non-classroom users
-will run forever. Mode 3 code in this mode is just "resolve the
-sole bearer and call Google" — no extra cost.
+one user, no roles. Every call resolves the host's single OAuth
+bearer. The role matrix collapses to "all" everywhere. No ownership
+checks needed.
 
-**Mode 2 — class install, pre-Phase-14.** Roles exist in the DB
-(`student_NN`, `ta_*`, `instructor_*`) but per-student OAuth isn't
-wired yet. Every call still resolves the instructor's bearer. The
-*only* enforcement of "student → own data" is URL/ID parsing inside
-the relay or tool handler. This is brittle by design — the parent
-plan calls it a "real boundary problem" — and **mode 2 must not be
-exposed to students** for any tool that touches data outside their
-own scope. Each V2 sub-phase below states its mode-2 stance (most
-will refuse to dispatch for student/ta callers in mode 2).
+**Mode A — class install with shared workspace.** One class GWS
+account; everyone (instructor + students) operates under that single
+OAuth bearer. **No expectation of Google-level privacy** — Drive is
+effectively a public folder for the class. Friction comes from
+NanoClaw's own ownership primitive (Phase 13.6): every doc/event we
+create is tagged with `nanoclaw_owners`; writes/deletes on docs the
+caller doesn't own hard-block at the tool layer. Setup is one OAuth
+dance for the workspace, then student web logins via personal email
+work against shared docs (anyone-with-link). Single point of failure:
+class account lockout = whole class down. Documented operational
+risk; no code fix.
 
-**Mode 3 — class install, post-Phase-14.** Each student/TA/instructor
-has their own refresh token at
-`data/student-google-auth/<sanitized_user_id>/credentials.json`.
-`getGoogleAccessTokenForAgentGroup` picks the right token based on
-the calling agent group's `student_user_id` metadata. Boundaries are
-enforced by Google itself: a student token literally can't see the
-instructor's Drive. This is the safe-for-classroom mode and the one
-the role matrix below assumes.
+**Mode B — per-person personal accounts.** Each user authorizes their
+own personal Google account via magic-link OAuth (Phase 14).
+`getGoogleAccessTokenForAgentGroup` resolves per-user tokens.
+Boundaries are Google's own — a student token literally can't see the
+instructor's Drive. Setup heavier (per-student OAuth flow), but
+boundaries are bulletproof and the ownership primitive is redundant.
 
-**Mode detection.** The relay doesn't need an explicit mode flag — it
-asks `getGoogleAccessTokenForAgentGroup(agentGroupId)` for a token
-and falls back to the instructor token if no per-student token
-exists. Mode 2 is the state where the fallback fires for a student
-caller. Each V2 tool handler can check `wasFallback` (returned
-alongside the token) and refuse to run if the caller's role + the
-tool's scope demand mode 3.
+**Mode detection.** The relay asks
+`getGoogleAccessTokenForAgentGroup(agentGroupId)` for a token and
+either gets a per-user token (Mode B) or the workspace fallback
+(Mode A / Mode 1). The `principal` return value (`'self' |
+'instructor-fallback'`) tells the tool which world it's in. In Mode A,
+the tool runs the ownership-tag check before mutating. In Mode B, the
+tag check is skipped — Google already enforces.
 
-## Role matrix (assumes mode 3)
+## Role matrix (assumes Mode B)
 
 Each tool is gated by `canAccessAgentGroup` (already enforced in
 `gws-mcp-relay.ts`). The matrix below specifies what each role can do
-*through the relay's resolved OAuth bearer*, **assuming mode 3**. In
-mode 1 every cell collapses to "all" (one principal). In mode 2,
-student/TA cells must read "refuse" for any tool that's not safe
-against the instructor bearer — see per-tool stance below.
+*through the relay's resolved OAuth bearer*, **assuming Mode B**. In
+Mode 1 every cell collapses to "all" (one principal). In Mode A, the
+caller has the workspace bearer (effectively "all" from Google's
+view), but the ownership tag check from Phase 13.6 gates writes —
+read everything, write only what `nanoclaw_owners` permits.
 
 | Tool                          | Student     | TA          | Instructor | Non-class agent |
 |-------------------------------|-------------|-------------|------------|-----------------|
@@ -130,10 +129,10 @@ explicitly if a real instructor-approved workflow emerges.
 structured-data collection workflow that students or TAs must update
 programmatically.
 
-**Mode stance.** Mode 1: works (instructor's own sheets). Mode 2:
-**refuse for student/TA callers** — the sole bearer is the
-instructor's, so any sheet ID a student supplies would resolve
-against the instructor's Drive. Mode 3: full row from the matrix.
+**Mode stance.** Mode 1: works. Mode A: reads are open (workspace
+shared by design); writes gated by `nanoclaw_owners` tag from
+Phase 13.6 — students can only write to sheets they own / co-own.
+Mode B: Google native — own sheets only unless explicitly shared.
 
 - New dep: `@googleapis/sheets` (per-API package; check release age
   policy on the host).
@@ -154,12 +153,12 @@ against the instructor's Drive. Mode 3: full row from the matrix.
 **Trigger to start:** office hours, deadlines, or class-schedule
 workflows.
 
-**Mode stance.** Mode 1: works on instructor's primary calendar.
-Mode 2: read-only for students/TAs against the *instructor's*
-calendar (low-risk — student sees instructor's office hours), but
-**refuse `calendar_create_event`** for student/TA callers in mode 2
-(would create events on instructor's calendar, impersonation risk).
-Mode 3: full matrix.
+**Mode stance.** Mode 1: works. Mode A: one shared class calendar.
+Anyone in the workspace can create events (claim-on-create stamps
+`nanoclaw_owners`). Delete/edit gated by ownership tag — students
+**cannot delete events they didn't create** (hard block per Phase
+13.6). Mode B: each user has their own primary calendar; Google
+native boundaries.
 
 - New dep: `@googleapis/calendar`.
 - Tools:
@@ -179,12 +178,11 @@ Mode 3: full matrix.
 scope (rclone view stale or filter-heavy queries don't translate
 cleanly to a filesystem walk).
 
-**Mode stance.** Mode 1: lists everything the instructor sees. Mode 2:
-**refuse for student/TA callers** — listing the instructor's whole
-Drive is the worst possible leak. (The q-mutation to constrain by
-class folder is a Google-side filter and trivially bypassable
-client-side; can't be the boundary.) Mode 3: q-mutation constrains
-to the role's folder and Google enforces the rest.
+**Mode stance.** Mode 1: lists everything. Mode A: **don't expose to
+non-instructor agents.** The point of Mode A is "students only have
+the links they're given" — handing them a search tool defeats that
+explicitly. Boundary by tool surface, not by query rewriting. Mode B:
+Google native — each user lists their own Drive.
 
 - No new dep (already on `@googleapis/drive`).
 - Tool: `drive_list_files({ q?, page_size?, page_token?, fields? })`
@@ -202,10 +200,11 @@ to the role's folder and Google enforces the rest.
 on their behalf (e.g., "email the parents of students with overdue
 assignments").
 
-**Mode stance.** Same in all three modes: `gmail_send` is blocked for
-student/TA callers regardless of mode (impersonation risk outweighs
-utility). `gmail_search` is also refused for student/TA in mode 2
-(instructor inbox leak); allowed against own inbox in mode 3.
+**Mode stance.** All three modes: `gmail_send` blocked for student/TA
+callers. Mode A: also block `gmail_search` for non-instructor agents
+(class workspace inbox is shared with the workspace admin; students
+shouldn't browse it). Mode B: `gmail_search` allowed against own
+inbox; `gmail_send` still blocked.
 
 - New dep: `@googleapis/gmail`.
 - Tools:
@@ -220,6 +219,31 @@ utility). `gmail_search` is also refused for student/TA in mode 2
 - `gmail_send` deliberately has no draft/preview step in V2 — if the
   call goes through, the email goes out. Adding a "draft + approve"
   flow is a Phase 15+ idea, tracked separately when use case appears.
+
+### 13.5e — Slides
+
+**Trigger to start:** a lab or assignment needs students (or the
+instructor agent) to create / edit Google Slides decks
+programmatically.
+
+**Mode stance.** Mode 1: works. Mode A: reads open, writes/deletes
+gated by `nanoclaw_owners` (Slides are Drive files — same tag
+mechanism as Docs). Mode B: Google native.
+
+- New dep: `@googleapis/slides`.
+- Tools:
+  - `slides_create_deck({ title?, parent_folder_id? })` → create new
+    Slides presentation. Sets `nanoclaw_owners` + anyone-with-link
+    sharing on create.
+    Returns `{ ok: true, presentationId, webViewLink }`.
+  - `slides_append_slide({ presentation_id, layout? })` → add a new
+    slide at the end. `layout` defaults to `BLANK`; other valid
+    values pass through to the Slides API.
+    Returns `{ ok: true, slideId, position }`.
+  - `slides_replace_text({ presentation_id, find, replace_with })`
+    — find/replace across the deck (Slides API has a native batch
+    `replaceAllText`). Returns `{ ok: true, occurrencesChanged }`.
+- Same dual-layer tests as 13.5a.
 
 ## Open questions (decide at sub-phase start, not now)
 
@@ -250,11 +274,14 @@ utility). `gmail_search` is also refused for student/TA in mode 2
 ## Acceptance criteria for the whole phase
 
 13.5 isn't "done" — it's a parent phase under which 13.5a / 13.5b /
-13.5c / 13.5d each ship independently. The parent is done when each
-sub-phase is either landed or explicitly closed-as-not-needed.
+13.5c / 13.5d / 13.5e each ship independently. The parent is done
+when each sub-phase is either landed or explicitly closed-as-not-needed.
 
-Suggested order: 13.5a (sheets) first — gradebook is the most likely
-classroom need. Defer 13.5b–d until a concrete request shows up.
+Suggested order: **Phase 13.6 (ownership primitive) is the blocker for
+any of these to land safely in Mode A.** Once 13.6 ships, 13.5a (sheets)
+first — gradebook is the most likely classroom need. 13.5e (slides)
+piggybacks on the same ownership tag mechanism and is small. Defer
+13.5b–d until a concrete request shows up.
 
 ## Substeps
 
@@ -267,3 +294,5 @@ classroom need. Defer 13.5b–d until a concrete request shows up.
 #### 13.5c — Drive listing
 
 #### 13.5d — Gmail (instructor-only)
+
+#### 13.5e — Slides create/append/replace-text

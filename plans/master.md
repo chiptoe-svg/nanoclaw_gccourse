@@ -94,27 +94,51 @@ per-agent MCP role checks). All but the smoke matrix done.
 
 ### Tier 2b — GWS follow-ons (active worklist)
 
-8. 🛠 **gws-mcp Phase 13.5 sub-phases.** Sub-plan written in
-   [gws-mcp-v2.md](gws-mcp-v2.md). Each is gated on a real use
-   case showing up; sheets (13.5a) is the suggested first lander
-   when a classroom gradebook need appears.
+**Suggested order:** 8 (ownership primitive) is the blocker for safe
+Mode A classroom deploys. Land it first. Then 9 (`wasFallback` infra)
+is a 1-hour prerequisite for the V2 tools to detect Mode A vs Mode B.
+Then any of 10–13 in any order driven by classroom needs.
+
+8. 🛠 **gws-mcp Phase 13.6 — Mode A ownership primitive.** ~4–6 hr.
+   Adds `customProperties.nanoclaw_owners` tagging to all
+   NanoClaw-created Drive/Calendar files. Claim-on-first-touch for
+   untagged docs. Hard-block writes/deletes when caller isn't in
+   owners list. Three new tools: `drive_doc_grant_ownership` /
+   `_revoke_ownership` / `_list_owners`. Amends shipped 13.2 code
+   (`drive_doc_write_from_markdown` needs to stamp the tag + apply
+   anyone-with-link sharing on create). Detailed substeps in
+   [gws-mcp.md](gws-mcp.md) §13.6. **Unblocks Mode A for class
+   deploy.**
 9. 🛠 **`wasFallback` infra prerequisite.** ~1 hr. Extend
    `getGoogleAccessTokenForAgentGroup` to return `{ token, principal }`
    where `principal` is `'self' | 'instructor-fallback'`. Lets every
-   V2 sub-phase enforce its mode-2 refusal stance. Independent of
+   V2 tool detect Mode A vs Mode B at call time and skip the
+   ownership-tag check in Mode B (Google enforces). Independent of
    Phase 14 — landable today.
-10. 🛠 **Phase 14 — per-student GWS OAuth.** Designed in
+10. 🛠 **gws-mcp Phase 13.5a — Sheets read/write.** Sub-plan in
+    [gws-mcp-v2.md](gws-mcp-v2.md). First V2 tool to land; gradebook
+    is the most likely classroom use case. Inherits the 13.6
+    ownership primitive for Mode A writes.
+11. 🛠 **gws-mcp Phase 13.5e — Slides create/append/replace-text.**
+    Sub-plan in [gws-mcp-v2.md](gws-mcp-v2.md). Small follow-on to
+    13.5a using the same ownership-tag mechanism (Slides are Drive
+    files). Lands alongside 13.5a when slides workflows surface.
+12. 🛠 **gws-mcp Phase 13.5b/c/d.** Calendar, Drive listing, Gmail.
+    Each lands when a real use case shows up. Stances per
+    [gws-mcp-v2.md](gws-mcp-v2.md).
+13. 🛠 **Phase 14 — per-person GWS OAuth (Mode B).** Designed in
     [gws-mcp.md](gws-mcp.md) §Phase 14. Magic-link flow on the
-    student-auth-server (port 3003), per-student credentials at
+    student-auth-server (port 3003), per-user credentials at
     `data/student-google-auth/<id>/`, `/gauth` Telegram command.
     **Partly blocked on GCP redirect URI** registration — see
     `project_gcp_oauth_pending` memory; deferred until Mac Studio
     LAN IP is assigned. Code can land now (gated behind a feature
-    flag) and verification waits for the URI.
-11. 🛠 **`scripts/gws-authorize.ts`** — referenced in plans as
+    flag) and verification waits for the URI. Mode A is the
+    fallback that runs while this matures.
+14. 🛠 **`scripts/gws-authorize.ts`** — referenced in plans as
     "foundation already in place" but doesn't actually exist on
     disk. ~30 min. One-off CLI wrapping `src/gws-auth.ts` helpers
-    so the instructor can mint a fresh refresh token via localhost
+    so the operator can mint a fresh refresh token via localhost
     callback. Useful today (recovers from expired-token states);
     becomes the manual-test backstop for Phase 14.
 
@@ -124,18 +148,18 @@ These don't block anything and don't depend on anything new. Slot
 them in between the heavier Tier 2 items if you want a smaller-win
 break.
 
-12. **classroom Phase 6 — local-LLM runbook + .env.** ~2–3 hr.
+15. **classroom Phase 6 — local-LLM runbook + .env.** ~2–3 hr.
     Mostly docs + a small audit of `credential-proxy.ts` for
     `OPENAI_BASE_URL` correctness with arbitrary upstream hosts.
     Exact phase content in `classroom-web-multiuser.md` §Phase 6.
-13. **classroom Phase 5 — agent export tooling.** ~4–5 hr.
+16. **classroom Phase 5 — agent export tooling.** ~4–5 hr.
     `nanoclaw / claude-code / codex / json` formats; `GET
     /api/draft/<folder>/export?format=…`. Spec in
     `classroom-web-multiuser.md` §Phase 5.
 
 ### Tier 4 — UI surface for everything above
 
-14. **classroom Phase 4 — home page expansion.** ~9–12 hr.
+17. **classroom Phase 4 — home page expansion.** ~9–12 hr.
     Provider settings panel (depends on Tier 1 #2 + per-student
     Anthropic/OpenAI auth — see Decision 10 in the multi-user plan),
     dashboard, picker filter, Telegram link. Spec in
@@ -143,20 +167,20 @@ break.
 
 ### Tier 5 — lab content (the bulk of in-class work)
 
-15. **classroom Phase 7 — expert system builder + RAG strategies.** ~12–30 hr.
+18. **classroom Phase 7 — expert system builder + RAG strategies.** ~12–30 hr.
     Pipeline framework + named strategies + UI. Scope decisions still
     open (lab sequence, capstone-stage support). Spec in
     `classroom-web-multiuser.md` §Phase 7. Cost-economical only after
-    Tier 3 #12 lands (local LLM).
-16. **classroom Phase 8 — evaluation framework.** ~8–10 hr.
+    Tier 3 #15 lands (local LLM).
+19. **classroom Phase 8 — evaluation framework.** ~8–10 hr.
     Side-by-side comparison view + LLM-as-judge mode. Depends on
     Phase 7 (no strategies = nothing to evaluate). Spec in
     `classroom-web-multiuser.md` §Phase 8.
 
 ### Tier 6 — semester capstone
 
-17. **classroom Phase 9 — walk-away cloud deploy.** ~6–8 hr.
-    Bundle + bootstrap script. Depends on Tier 3 #13 (export) for the
+20. **classroom Phase 9 — walk-away cloud deploy.** ~6–8 hr.
+    Bundle + bootstrap script. Depends on Tier 3 #16 (export) for the
     bundle format. Spec in `classroom-web-multiuser.md` §Phase 9.
 
 ## Cross-cutting
