@@ -236,14 +236,23 @@ Slot into Phase 2 or a small interleave when convenient.
   installed; degrades to "contact instructor" UI when not.
 - **`/codex-auth` Telegram admin command** alongside `/auth`,
   `/model`, `/provider`. ~1 hr. Flips `~/.codex/auth.json` between
-  `auth_mode: chatgpt` (ChatGPT subscription OAuth) and
-  `auth_mode: api_key` (uses `OPENAI_API_KEY` from `.env`) without
-  hand-editing the file. Surfaced during Phase 1 verification when
-  the user's ChatGPT subscription hit its daily quota and we had
-  to manually rewrite auth.json to fall back to API. Companion to
+  ChatGPT subscription OAuth (`auth_mode: "chatgpt"`) and OpenAI
+  API key mode (`auth_mode: "apikey"` — note **no underscore** in
+  codex's format) without hand-editing the file. Surfaced during
+  Phase 1 verification when the user's ChatGPT subscription hit
+  its daily quota and we had to fall back to API. Companion to
   `/auth` (which only switches Anthropic mode); make this the
-  codex-aware equivalent. Lives on `admin` branch alongside the
-  other admin handlers.
+  codex-aware equivalent.
+  **Implementation note:** the codex auth.json format is poorly
+  documented and trivially easy to get wrong — when I first tried
+  to hand-roll `auth_mode: "api_key"` (underscored, mirror of
+  Python style) codex returned 401 on `/v1/responses`. The
+  correct path is to shell out to the codex CLI's own writer:
+  `printenv OPENAI_API_KEY | codex login --with-api-key` for
+  api-key mode, and `codex logout` + tell the user to re-run
+  `codex login` for chatgpt mode (the latter requires interactive
+  browser auth, can't be fully automated from Telegram).
+  Lives on `admin` branch alongside the other admin handlers.
 - **agent_groups.agent_provider ↔ container.json `provider` drift
   detection.** During Phase 1 verification the local install had a
   mismatch (`agent_provider=claude` in DB; `provider=codex` in
