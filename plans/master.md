@@ -123,29 +123,43 @@ it. Items at the same nesting depth can run in parallel.
    `NANOCLAW_AI_CODING_CLI` set, so setup would hit the
    two-installed-picker branch on re-run). Adapter contract that the
    picker depends on already covered by `index.test.ts`.
-9. **`scripts/gws-authorize.ts`** (~30 min). One-off CLI wrapping
-    `src/gws-auth.ts` helpers so the instructor can mint a fresh
-    refresh token via localhost callback. Recovers from
-    expired-token states; also becomes the manual-test backstop for
-    Phase 14.
+9. ✅ **`scripts/gws-authorize.ts`** — already existed (commit `7e54dd9`
+   from May 6, predating the plan note that said "still pending").
+   Enhanced today to deliver the OAuth URL via a tmp file (mode 0600)
+   instead of inline-print only — matches the
+   `feedback_gws_auth_flow` memory note that terminal wrap breaks
+   copy-paste. Inline URL kept as a fallback. SIGINT cleanup wipes
+   the URL file on Ctrl-C since it has the client_id embedded.
 
 ### Phase 1 success criteria
 
 - Instructor runs `/setup` end-to-end without manual file edits and
-  ends up with a class workspace + provider OAuth + working agent
-  group + working homepage.
-- A test student can log into the homepage with their personal
-  email, access the embedded playground, and trigger an LLM call
-  that hits the instructor's provider pool.
+  ends up with a class workspace + provider auth + working agent
+  groups + working homepage stub.
+- A test student can log into the homepage via their bookmarked
+  `?token=...` URL (no Google OAuth required), access the embedded
+  playground, and trigger an LLM call that hits the class API
+  credit pool (or instructor ChatGPT OAuth as fallback / local LLM
+  if configured).
 - A test student can ask their agent to create a Google Doc; the
   doc lands in the class workspace with `nanoclaw_owners` set and
-  anyone-with-link sharing. The student can open the doc URL from
-  their personal email login.
-- A second student cannot delete the first student's doc through
-  their agent — relay returns the hard-block error with the
-  creator's display name.
-- Sheet read/write, calendar create/list, slides create work for
-  whichever student created them; hard-block on others' content.
+  anyone-with-link sharing. Anyone with the link (instructor /
+  other students who get it shared) can open it.
+- A second student cannot delete or overwrite the first student's
+  doc through their agent — relay returns the hard-block error
+  with the creator's display name.
+- Sheet read/write and slides create/append/replace-text work
+  end-to-end; writes on someone else's doc/sheet/slides are
+  hard-blocked in Mode A.
+- Local LLM deploy (mlx-omni-server / Ollama / LM Studio per
+  `docs/local-llm.md`) is a documented alternative to the API
+  credit pool; `/model` Telegram command discovers models from the
+  local server's `/v1/models`.
+
+(Calendar, Gmail, Drive listing deferred to Phase 2 — they earn
+their utility only when each user has their own Google account.
+Provider settings UI / dashboard / Telegram link panels deferred
+until OAuth + Mac Studio LAN IP unblock.)
 
 ## Phase 2 — Full classroom capability (per-person accounts + labs)
 
