@@ -24,7 +24,9 @@ this file is the sequencing layer.
 | GWS MCP server + relay — Phase 13.2 + 13.3 | `main` (merge `4161e55`) |
 | GWS MCP container → relay + `/add-gws-tool` skill — Phase 13.4 | `main` (commit `cecfb36`) |
 | Phase 13.5 V2 surface — mode-aware sub-plan | `main` (commits `e8aede2` + `bb337d9`); no tools landed yet |
-| Phase 13.6 ownership primitive — Mode A friction sub-plan | `main` (commit `0f5df8a`); not built yet |
+| Phase 13.6 ownership primitive — Mode A friction sub-plan | `main` (commit `0f5df8a`); built on `feat/gws-skill-refactor` (commits `28e2c45`, `670de8d`, `06d7493`) — installed by `/add-classroom-gws` |
+| `wasFallback` infra — `{ token, principal }` from `getGoogleAccessTokenForAgentGroup` (Phase 1 #1) | `main` (commit `90caf28`) — `gws-token.ts` kept in trunk |
+| GWS small-trunk-with-skills refactor (rule 5) — base GWS → `origin/gws-mcp`, ownership ext → `origin/classroom`, skills rewritten to install | `feat/gws-skill-refactor` (commits `dc7f429`, `1d0bbac`) — **pending merge after user verification + /ultrareview** |
 
 ## Active sub-plans (referenced from the delivery phases below)
 
@@ -62,18 +64,20 @@ workspace with anyone-with-link sharing.
 The order matters: each item below depends on the one or two above
 it. Items at the same nesting depth can run in parallel.
 
-1. **`wasFallback` infra prerequisite** (~1 hr). Extend
-   `getGoogleAccessTokenForAgentGroup` to return
-   `{ token, principal }` where `principal` is `'self' |
-   'instructor-fallback'`. Lets V2 tools detect Mode A vs Mode B at
-   call time. Used by 13.6 and every 13.5* tool.
-2. **gws-mcp Phase 13.6 — Mode A ownership primitive** (~4–6 hr).
-   `customProperties.nanoclaw_owners` tagging, claim-on-first-touch
-   for untagged docs, hard-block on writes/deletes when caller isn't
-   in the owners list, three grant/revoke/list tools,
-   anyone-with-link sharing on create, display-name in error
-   messages. Amends shipped 13.2 code (the write path).
+1. ✅ **`wasFallback` infra prerequisite.** Shipped on `main`
+   (commit `90caf28`). `getGoogleAccessTokenForAgentGroup` returns
+   `{ token, principal: 'self' | 'instructor-fallback' }`. Used by
+   13.6 and every 13.5* tool.
+2. ✅ **gws-mcp Phase 13.6 — Mode A ownership primitive.** Built
+   on `feat/gws-skill-refactor` (commits `28e2c45`, `670de8d`,
+   `06d7493`). After the refactor merge, this code lives on
+   `origin/classroom` and is installed by `/add-classroom-gws`.
    Details: [gws-mcp.md §13.6](gws-mcp.md).
+   **Refactor follow-on:** The whole GWS surface was extracted from
+   trunk to `origin/gws-mcp` + `origin/classroom` per rule 5
+   (commits `dc7f429`, `1d0bbac` on `feat/gws-skill-refactor`).
+   Trunk keeps `gws-auth.ts` (playground needs it) + `gws-token.ts`
+   (credential proxy needs it).
 3. **gws-mcp Phase 13.5a — Sheets read/write.** Gradebook /
    attendance / structured-data workflows. Details:
    [gws-mcp-v2.md §13.5a](gws-mcp-v2.md).

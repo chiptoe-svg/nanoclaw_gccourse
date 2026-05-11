@@ -21,10 +21,13 @@ Layered on top of `/add-classroom`. Adds:
 ## Prerequisites
 
 - `/add-classroom` must be installed first. The skill aborts otherwise.
+- `/add-gws-tool` must be installed first — Mode A ownership ext
+  (installed below in step 7+) needs the base GWS MCP infrastructure
+  it provides.
 - Google OAuth credentials with `drive` scope at
   `~/.config/gws/credentials.json` (already present on most installs
-  that ran `/add-gmail-tool` or `/add-gcal-tool`). The skill validates
-  this file exists during VERIFY.
+  that ran the taylorwilsdon-MCP or `/add-gws-tool`). The skill
+  validates this file exists during VERIFY.
 - `rclone` installed on the host. The skill does NOT install or
   configure rclone — see `docs/class-setup.md` for the configuration
   steps. (Without rclone running, the bind mounts work but reference
@@ -42,11 +45,17 @@ Skip to **Configure** if all of these are in place:
 - `src/index.ts` contains `import './class-pair-drive.js';`
 - `scripts/class-skeleton-extensions.ts` contains
   `import '../src/class-skeleton-drive-mount.js';`
+- `src/gws-ownership.ts` and `src/gws-ownership-ext.ts` exist
+- `container/agent-runner/src/mcp-tools/gws-ownership.ts` exists
+- `src/index.ts` contains `import './gws-ownership-ext.js';`
+- `container/agent-runner/src/mcp-tools/index.ts` contains
+  `import './gws-ownership.js';`
 
-### 1. Verify base skill is installed
+### 1. Verify base skills are installed
 
 ```bash
 [ -f src/class-pair-greeting.ts ] || { echo "Run /add-classroom first."; exit 1; }
+[ -f src/gws-mcp-tools.ts ]       || { echo "Run /add-gws-tool first."; exit 1; }
 ```
 
 ### 2. Fetch the classroom branch
@@ -63,18 +72,42 @@ git show origin/classroom:src/class-pair-drive.ts           > src/class-pair-dri
 git show origin/classroom:src/class-skeleton-drive-mount.ts > src/class-skeleton-drive-mount.ts
 ```
 
+### 3b. Copy the Mode A ownership ext files
+
+These wire the `nanoclaw_owners` Drive customProperties primitive on
+top of `/add-gws-tool`'s base tools — students collaborate freely in
+the shared workspace, but writes/deletes on docs the caller doesn't
+own are hard-blocked at the tool layer with the creator's display
+name surfaced in the error.
+
+```bash
+git show origin/classroom:src/gws-ownership.ts                                      > src/gws-ownership.ts
+git show origin/classroom:src/gws-ownership.test.ts                                 > src/gws-ownership.test.ts
+git show origin/classroom:src/gws-ownership-ext.ts                                  > src/gws-ownership-ext.ts
+git show origin/classroom:src/gws-ownership-ext.test.ts                             > src/gws-ownership-ext.test.ts
+git show origin/classroom:container/agent-runner/src/mcp-tools/gws-ownership.ts     > container/agent-runner/src/mcp-tools/gws-ownership.ts
+git show origin/classroom:container/agent-runner/src/mcp-tools/gws-ownership.test.ts > container/agent-runner/src/mcp-tools/gws-ownership.test.ts
+```
+
 ### 4. Append the self-registration imports
 
-Append to `src/index.ts` (skip if present):
+Append to `src/index.ts` (skip each if present):
 
 ```typescript
 import './class-pair-drive.js';
+import './gws-ownership-ext.js';
 ```
 
 Append to `scripts/class-skeleton-extensions.ts` (skip if present):
 
 ```typescript
 import '../src/class-skeleton-drive-mount.js';
+```
+
+Append to `container/agent-runner/src/mcp-tools/index.ts` (skip if present):
+
+```typescript
+import './gws-ownership.js';
 ```
 
 ### 5. Install the googleapis dep

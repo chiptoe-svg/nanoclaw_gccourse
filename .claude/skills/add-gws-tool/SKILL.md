@@ -1,52 +1,148 @@
 ---
 name: add-gws-tool
-description: Wire the host-side Google Workspace MCP relay so agents can read and write Google Docs as markdown. Replaces the deleted /add-gmail-tool and /add-gcal-tool skills (which required OneCLI). Triggers on "add gws tool", "google workspace mcp", "drive doc tool".
+description: Install the host-side Google Workspace MCP from the gws-mcp branch — relay + V1 Drive Doc tools (drive_doc_read_as_markdown, drive_doc_write_from_markdown). Lightweight per-API @googleapis/* installs, no monolithic googleapis package. Triggers on "add gws tool", "google workspace mcp", "drive doc tool".
 ---
 
 # Add Google Workspace MCP
 
-Wires up Phase 13 Google Workspace tools (Drive / Docs as markdown today; Sheets / Calendar / Gmail as separate sub-phases when needed). The tools live in `container/agent-runner/src/mcp-tools/gws.ts` and forward every call to `src/gws-mcp-relay.ts` on the host. The relay reads `X-NanoClaw-Agent-Group`, applies role-based access checks via `canAccessAgentGroup`, and resolves an OAuth bearer per-agent (instructor's token today; per-student tokens once Phase 14 lands).
+Installs the host-side Google Workspace MCP infrastructure into trunk by copying from the `gws-mcp` branch on origin. Lightweight by design: uses per-API `@googleapis/*` packages (~2 MB each) rather than the monolithic `googleapis` package (~200 MB, has crashed hosts on install).
 
-Tools surfaced to every agent:
+After install, agents get two tools:
 
 - `drive_doc_read_as_markdown(file_id)` — export a Google Doc to markdown.
 - `drive_doc_write_from_markdown(file_id, markdown, ...)` — overwrite (or create-if-missing) a Doc from markdown.
-- `drive_doc_grant_ownership(file_id, agent_group_id)` — add a co-owner.
-- `drive_doc_revoke_ownership(file_id, agent_group_id)` — remove a co-owner (refuses to leave a file unowned).
-- `drive_doc_list_owners(file_id)` — list owners by display name.
 
-The relay starts with the host on `pnpm run dev` / `systemctl --user start nanoclaw`, so there's no separate service to manage.
+For Mode A classroom friction (`nanoclaw_owners` ownership tagging + grant/revoke/list tools), layer `/add-classroom-gws` on top.
 
-## Mode A operational caveats
+## Prerequisites
 
-When deploying this to a class against a shared workspace account
-(Mode A — instructor signs in once, everyone consumes the bearer):
+- Google OAuth credentials at `~/.config/gws/credentials.json` with at minimum the `drive` and `documents` scopes (most installs that ran the old taylorwilsdon-MCP or `/add-gmail-tool` already have this).
+- The credential proxy's `/googleapis/*` route is in trunk by default and uses `src/gws-token.ts` (which stays in trunk to keep credential-proxy whole). No additional credential setup is needed beyond `credentials.json`.
 
-- **Single point of failure.** Class workspace account lockout =
-  whole class down. Mitigations:
-  - Use a **dedicated Workspace account**, not your personal Gmail.
-  - Store recovery codes off the host machine.
-  - Don't enable hardware-key 2FA without a backup.
-  - If you're paranoid, set up a second workspace-admin email so
-    you can recover from inside the same Workspace org.
-- **Drive/Calendar/Sheets API quotas are per-OAuth-user.** With
-  every student hammering one account, a busy class can hit
-  Drive's 1000-req/100-sec/user limit. Workspace plans raise this
-  but not infinitely. Symptoms: 429 errors in `logs/nanoclaw.log`
-  for `/googleapis/*` paths.
-- **The `nanoclaw_owners` tag is polite enforcement, not secure.**
-  Anyone with workspace edit access can rewrite the
-  `customProperties.nanoclaw_owners` value via the Drive API
-  directly. Non-technical students won't; a determined one can
-  bypass. For low-stakes classroom workflows this is acceptable;
-  if the stakes go up, switch to Mode B (per-person OAuth).
+## Install
 
-## Phase 1: Pre-flight
+### Pre-flight (idempotent)
+
+Skip to **Configure** if all of these are in place:
+
+- `src/gws-mcp-relay.ts` exists
+- `src/gws-mcp-server.ts` exists
+- `src/gws-mcp-tools.ts` exists
+- `container/agent-runner/src/mcp-tools/gws.ts` exists
+- `@googleapis/drive` is in `package.json` dependencies
+- `src/index.ts` contains `startGwsMcpRelay`
+- `src/config.ts` contains `GWS_MCP_RELAY_PORT`
+
+### 1. Fetch the gws-mcp branch
+
+```bash
+git fetch origin gws-mcp
+```
+
+### 2. Copy the source files
+
+```bash
+git show origin/gws-mcp:src/gws-mcp-relay.ts       > src/gws-mcp-relay.ts
+git show origin/gws-mcp:src/gws-mcp-relay.test.ts  > src/gws-mcp-relay.test.ts
+git show origin/gws-mcp:src/gws-mcp-server.ts      > src/gws-mcp-server.ts
+git show origin/gws-mcp:src/gws-mcp-server.test.ts > src/gws-mcp-server.test.ts
+git show origin/gws-mcp:src/gws-mcp-tools.ts       > src/gws-mcp-tools.ts
+git show origin/gws-mcp:container/agent-runner/src/mcp-tools/gws.ts      > container/agent-runner/src/mcp-tools/gws.ts
+git show origin/gws-mcp:container/agent-runner/src/mcp-tools/gws.test.ts > container/agent-runner/src/mcp-tools/gws.test.ts
+```
+
+### 3. Patch `src/config.ts` — add the relay-port export
+
+In `src/config.ts`, find:
+
+```ts
+export const PLAYGROUND_PORT = parseInt(process.env.PLAYGROUND_PORT || '3002', 10);
+```
+
+Add immediately after it (skip if present):
+
+```ts
+export const GWS_MCP_RELAY_PORT = parseInt(process.env.GWS_MCP_RELAY_PORT || '3007', 10);
+```
+
+### 4. Patch `src/index.ts` — start/stop the relay
+
+In `src/index.ts`, find the existing `startCredentialProxy` import and add `startGwsMcpRelay` / `stopGwsMcpRelay` alongside it. Add (skip if present):
+
+```ts
+import { startGwsMcpRelay, stopGwsMcpRelay } from './gws-mcp-relay.js';
+```
+
+Then find the line that starts the credential proxy (`proxyServer = await startCredentialProxy(...)` or similar) and add right after the comment block that begins `// 2b.` or wherever the proxy is started:
+
+```ts
+  // 2c. GWS MCP relay — host-side Google Workspace tools. Containers reach
+  // it via the same host-gateway pattern as the credential proxy; per-call
+  // attribution header authenticates the calling agent group. Loopback only.
+  await startGwsMcpRelay(PROXY_BIND_HOST);
+```
+
+And in the shutdown handler (near the existing `proxyServer?.close()` line):
+
+```ts
+  await stopGwsMcpRelay();
+```
+
+### 5. Patch `src/container-runner.ts` — pass GWS_MCP_RELAY_URL to containers
+
+In the import block at the top, add `GWS_MCP_RELAY_PORT` to the `from './config.js'` import (alongside `CREDENTIAL_PROXY_PORT`, etc.).
+
+In `buildContainerArgs`, find the `OPENAI_BASE_URL` env line:
+
+```ts
+args.push('-e', `OPENAI_BASE_URL=http://${CONTAINER_HOST_GATEWAY}:${CREDENTIAL_PROXY_PORT}/openai/v1`);
+```
+
+Add immediately after (skip if present):
+
+```ts
+// Google Workspace MCP relay — host-side gateway that the container's
+// gws.ts shims forward to. Per-call attribution header set by gws.ts.
+args.push('-e', `GWS_MCP_RELAY_URL=http://${CONTAINER_HOST_GATEWAY}:${GWS_MCP_RELAY_PORT}`);
+```
+
+### 6. Patch `container/agent-runner/src/mcp-tools/index.ts` — wire the container shim
+
+Append (skip if present):
+
+```ts
+import './gws.js';
+```
+
+### 7. Install the per-API @googleapis/* deps
+
+```bash
+pnpm add @googleapis/drive@20.1.0 @googleapis/docs@9.2.1
+```
+
+### 8. Build + container typecheck + rebuild container image
+
+```bash
+pnpm run build
+pnpm exec tsc -p container/agent-runner/tsconfig.json --noEmit
+./container/build.sh
+```
+
+All three must be clean before proceeding.
+
+### 9. Restart the service
+
+```bash
+launchctl kickstart -k gui/$(id -u)/com.nanoclaw   # macOS
+# systemctl --user restart nanoclaw                # Linux
+```
+
+## Verify
 
 ### Check the relay is running
 
 ```bash
-curl -s http://127.0.0.1:3007/tools | head
+curl -s http://127.0.0.1:3007/tools
 ```
 
 Expected response:
@@ -55,52 +151,47 @@ Expected response:
 {"tools":["drive_doc_read_as_markdown","drive_doc_write_from_markdown"]}
 ```
 
-If the relay isn't reachable: the host service isn't running (`systemctl --user status nanoclaw` or check `logs/nanoclaw.log`).
+If the relay isn't reachable: the host service isn't running (check `logs/nanoclaw.log`).
 
-### Check Google OAuth credentials exist
-
-The host reads its OAuth refresh token from `~/.config/gws/credentials.json`. Verify:
-
-```bash
-ls -l ~/.config/gws/credentials.json
-```
-
-If the file is missing the relay will return `{ ok: false, error: "No Google OAuth token available — ..." }` on every call. Three ways to obtain it:
-
-1. **Existing taylorwilsdon Google Workspace MCP install** — the file is already there from that setup. Reuse as-is.
-2. **Phase 14 magic-link flow** — not yet implemented. Tracked in `plans/gws-mcp.md`.
-3. **Manual** — populate `credentials.json` with `client_id`, `client_secret`, and `refresh_token` matching the scopes in `src/gws-auth.ts` (`DEFAULT_GWS_SCOPES`). Mint the refresh token by running an OAuth consent flow against your Google Cloud project's OAuth client and exchanging the resulting code for tokens.
-
-Once obtained, smoke-test:
-
-```bash
-pnpm exec tsx -e "import('./src/gws-token.js').then(m => m.getGoogleAccessTokenForAgentGroup(null).then(t => console.log(t ? 'ok' : 'no token')))"
-```
-
-## Phase 2: Smoke test from an agent
+### Smoke test from an agent
 
 Send your agent a message like:
 
 > Read the Google Doc with file ID `1abcDEF...` and summarize it.
 
-The agent should call `drive_doc_read_as_markdown` and return the contents. If you see a `404` or `permission denied` error, that's Google's response — the OAuth account doesn't have access to the file. The relay is working; it's the underlying authorization that's blocking.
+The agent should call `drive_doc_read_as_markdown` and return the contents. A `404` / `permission denied` means Google says the OAuth account doesn't have access to the file — the relay is working; underlying authorization is blocking.
+
+## Mode A operational caveats
+
+When deploying this to a class against a shared workspace account
+(Mode A — instructor signs in once, everyone consumes the bearer):
+
+- **Single point of failure.** Class workspace account lockout =
+  whole class down. Use a **dedicated Workspace account** (not your
+  personal Gmail), store recovery codes off the host, and keep a
+  second workspace-admin email so you can recover from inside the
+  same Workspace org.
+- **Drive/Calendar/Sheets API quotas are per-OAuth-user.** A busy
+  class can hit Drive's 1000-req/100-sec/user limit. Symptoms: 429
+  errors in `logs/nanoclaw.log` for `/googleapis/*` paths.
 
 ## Troubleshooting
 
 ### Relay returns 401 "Missing X-NanoClaw-Agent-Group header"
 
-The container isn't setting the attribution header. Two likely causes:
-1. The container image is stale (built before `feat/credential-proxy-attribution` landed). Rebuild: `./container/build.sh`.
-2. `X_NANOCLAW_AGENT_GROUP` env var isn't being passed — check `src/container-runner.ts` around line 489.
+Container isn't setting the attribution header. Either:
+
+1. Container image is stale — rebuild: `./container/build.sh`.
+2. `X_NANOCLAW_AGENT_GROUP` env var isn't being passed — check `src/container-runner.ts` around the env-vars section.
 
 ### Relay returns 401 "Unknown agent_group_id"
 
-The container's agent group ID doesn't match anything in the central DB. Either the DB is stale or the group was deleted. Verify with `ncl groups list`.
+Container's agent group ID doesn't match anything in the central DB. Verify with `ncl groups list`.
 
 ### Tool returns "GWS_MCP_RELAY_URL not set"
 
-The container env doesn't have the relay URL. Rebuild the image (`./container/build.sh`) and restart the service. Verify with `docker inspect <container> | grep GWS_MCP_RELAY_URL`.
+Container env doesn't have the relay URL — step 5 above wasn't applied. Patch and rebuild the image.
 
 ### `No Google OAuth token available`
 
-The host couldn't load `~/.config/gws/credentials.json` (or the token is expired and refresh failed). Check `logs/nanoclaw.log` for refresh errors. Typical fix: re-run OAuth consent and replace `credentials.json` (see Phase 1 above).
+Host couldn't load `~/.config/gws/credentials.json` (or the token is expired and refresh failed). Check `logs/nanoclaw.log` for refresh errors. Re-run your OAuth flow and replace `credentials.json`.
