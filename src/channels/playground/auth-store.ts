@@ -229,3 +229,31 @@ export function _sessionCountForTest(): number {
 export function _hasSessionForTest(cookieValue: string): boolean {
   return sessions.has(cookieValue);
 }
+
+/**
+ * Extension hook — lets a classroom-installed module register a
+ * persistent-token redeemer that consults its own token table (e.g.,
+ * class_login_tokens) and returns a fresh session for a matched
+ * student. Used by the `GET /?token=...` public route in server.ts.
+ *
+ * Default null — when nothing is registered, the route falls through to
+ * the normal /login redirect. Extension-installed in trunk by
+ * /add-classroom from the classroom branch; trunk itself doesn't know
+ * about class tokens.
+ */
+type ClassTokenRedeemer = (token: string) => PlaygroundSession | null;
+let classTokenRedeemer: ClassTokenRedeemer | null = null;
+
+export function registerClassTokenRedeemer(fn: ClassTokenRedeemer): void {
+  classTokenRedeemer = fn;
+}
+
+export function redeemClassToken(token: string): PlaygroundSession | null {
+  if (!classTokenRedeemer) return null;
+  return classTokenRedeemer(token);
+}
+
+/** Test hook — clear any registered class-token redeemer. */
+export function _resetClassTokenRedeemerForTest(): void {
+  classTokenRedeemer = null;
+}

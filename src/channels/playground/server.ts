@@ -30,6 +30,7 @@ import {
   getSessionByCookie,
   mintMagicToken,
   type PlaygroundSession,
+  redeemClassToken,
   revokeAllSessions,
   startIdleSweep,
   stopIdleSweep,
@@ -168,6 +169,27 @@ function handleAuthExchange(url: URL, res: http.ServerResponse): boolean {
   return true;
 }
 
+/**
+ * Class-login token redemption — `GET /?token=<class-token>`. Lets
+ * students bookmark a per-roster URL minted by `scripts/class-skeleton.ts`
+ * and reach the home page without going through Google OAuth.
+ *
+ * The actual lookup happens in a classroom-installed module that
+ * registers a redeemer via `registerClassTokenRedeemer`. Trunk doesn't
+ * know about class tokens — if no redeemer is registered, this is a
+ * no-op and the request flows through the normal auth check.
+ */
+function handleClassTokenRedemption(url: URL, res: http.ServerResponse): boolean {
+  if (url.pathname !== '/') return false;
+  const token = url.searchParams.get('token');
+  if (!token) return false;
+  const session = redeemClassToken(token);
+  if (!session) return false; // not a class token — let normal auth flow handle the request
+  res.writeHead(302, { location: '/', 'set-cookie': formatSessionCookie(session.cookieValue) });
+  res.end();
+  return true;
+}
+
 function authenticate(req: http.IncomingMessage): PlaygroundSession | null {
   const submitted = parseCookie(req.headers['cookie'], COOKIE_NAME);
   if (!submitted) return null;
@@ -194,6 +216,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
 
   // Public endpoints — no auth required.
   if (method === 'GET' && handleAuthExchange(url, res)) return;
+  if (method === 'GET' && handleClassTokenRedemption(url, res)) return;
   if (method === 'GET' && handleOAuthStart(url, res)) return;
   if (method === 'GET' && url.pathname === '/oauth/google/callback') {
     void handleOAuthCallback(url, res).catch((err) => {
