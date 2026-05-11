@@ -381,3 +381,20 @@ admin-bypass for TAs and instructors).
 The class-wide socratic stance lives in
 `data/class-shared-students.md` and only applies to students. Edit
 that one file; every student's next session picks it up.
+
+## Where this fits in the deploy story
+
+This skill installs the classroom **base**. For a complete
+shared-classroom deploy, also run:
+
+1. `/add-gws-tool` — Google Workspace MCP infrastructure (Docs,
+   Sheets, Slides, Drive). Install before `/add-classroom-gws`.
+2. `/add-classroom-gws` — per-student Drive folders + shared-classroom
+   ownership friction (`nanoclaw_owners` tag, hard-block on
+   cross-student writes).
+
+End-to-end guide: [`docs/shared-classroom.md`](../../../docs/shared-classroom.md).
+
+`/add-classroom-auth` is for the **per-person classroom** deploy
+shape (each student authorizes their own ChatGPT subscription) —
+defer until you've validated the shared-classroom deploy first.

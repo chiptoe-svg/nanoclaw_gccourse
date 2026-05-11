@@ -227,9 +227,9 @@ The playground UI doesn't yet have a model picker — that's **Phase 4 work** (c
 
 When Phase 4 lands, the UI will surface the discovered model list as a dropdown — the discovery code (`src/model-discovery.ts`) is already provider-agnostic and will work for local servers without further changes.
 
-## Mode A and Mode B compatibility
+## shared-classroom mode and per-person mode compatibility
 
 Local LLM works in either deployment mode:
 
-- **Mode A** (shared class workspace): all class agents share the local model. No per-student auth needed — the local server doesn't care about the Bearer token.
-- **Mode B** (per-person Google + provider auth): students choose between local LLM and their own OAuth'd provider via the Phase 4 provider-settings panel. The codex `auth.json` resolver chain picks the class-shared local-LLM config when no per-student override exists; per-student OAuth shadows it when present.
+- **shared-classroom mode** (shared class workspace): all class agents share the local model. No per-student auth needed — the local server doesn't care about the Bearer token.
+- **per-person mode** (per-person Google + provider auth): students choose between local LLM and their own OAuth'd provider via the Phase 4 provider-settings panel. The codex `auth.json` resolver chain picks the class-shared local-LLM config when no per-student override exists; per-student OAuth shadows it when present.

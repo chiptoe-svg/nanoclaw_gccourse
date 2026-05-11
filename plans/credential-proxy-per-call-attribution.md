@@ -142,7 +142,7 @@ header), revisit Candidate B then.
 
 ### Phase X.4 — instructor provider OAuth (master-plan Phase 1)
 
-The shared-class deployment shape (Mode A): one instructor authorizes
+The shared-classroom deployment shape: one instructor authorizes
 the chosen agent provider (Codex / Anthropic / OpenAI / etc.) once at
 setup, and every student agent in the class consumes from that
 credential pool. No per-student auth in this phase.

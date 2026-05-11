@@ -61,8 +61,8 @@ nothing else."
 
 ## Three deployment modes
 
-V2 supports three deployment shapes. Mode B is the highest-fidelity
-boundary model; Mode A is the simplest setup that's still safe enough
+V2 supports three deployment shapes. per-person mode is the highest-fidelity
+boundary model; shared-classroom mode is the simplest setup that's still safe enough
 for low-stakes classroom use; Mode 1 is the single-user install.
 
 **Mode 1 — single instructor / non-class install.** One GWS account,
@@ -70,7 +70,7 @@ one user, no roles. Every call resolves the host's single OAuth
 bearer. The role matrix collapses to "all" everywhere. No ownership
 checks needed.
 
-**Mode A — class install with shared workspace.** One class GWS
+**Shared-classroom mode — class install with shared workspace.** One class GWS
 account; everyone (instructor + students) operates under that single
 OAuth bearer. **No expectation of Google-level privacy** — Drive is
 effectively a public folder for the class. Friction comes from
@@ -82,7 +82,7 @@ work against shared docs (anyone-with-link). Single point of failure:
 class account lockout = whole class down. Documented operational
 risk; no code fix.
 
-**Mode B — per-person personal accounts.** Each user authorizes their
+**Per-person mode — per-person personal accounts.** Each user authorizes their
 own personal Google account via magic-link OAuth (Phase 14).
 `getGoogleAccessTokenForAgentGroup` resolves per-user tokens.
 Boundaries are Google's own — a student token literally can't see the
@@ -91,18 +91,18 @@ boundaries are bulletproof and the ownership primitive is redundant.
 
 **Mode detection.** The relay asks
 `getGoogleAccessTokenForAgentGroup(agentGroupId)` for a token and
-either gets a per-user token (Mode B) or the workspace fallback
-(Mode A / Mode 1). The `principal` return value (`'self' |
-'instructor-fallback'`) tells the tool which world it's in. In Mode A,
-the tool runs the ownership-tag check before mutating. In Mode B, the
+either gets a per-user token (per-person mode) or the workspace fallback
+(shared-classroom mode / Mode 1). The `principal` return value (`'self' |
+'instructor-fallback'`) tells the tool which world it's in. In shared-classroom mode,
+the tool runs the ownership-tag check before mutating. In per-person mode, the
 tag check is skipped — Google already enforces.
 
-## Role matrix (assumes Mode B)
+## Role matrix (assumes per-person mode)
 
 Each tool is gated by `canAccessAgentGroup` (already enforced in
 `gws-mcp-relay.ts`). The matrix below specifies what each role can do
-*through the relay's resolved OAuth bearer*, **assuming Mode B**. In
-Mode 1 every cell collapses to "all" (one principal). In Mode A, the
+*through the relay's resolved OAuth bearer*, **assuming per-person mode**. In
+Mode 1 every cell collapses to "all" (one principal). In shared-classroom mode, the
 caller has the workspace bearer (effectively "all" from Google's
 view), but the ownership tag check from Phase 13.6 gates writes —
 read everything, write only what `nanoclaw_owners` permits.
@@ -129,10 +129,10 @@ explicitly if a real instructor-approved workflow emerges.
 structured-data collection workflow that students or TAs must update
 programmatically.
 
-**Mode stance.** Mode 1: works. Mode A: reads are open (workspace
+**Mode stance.** Mode 1: works. shared-classroom mode: reads are open (workspace
 shared by design); writes gated by `nanoclaw_owners` tag from
 Phase 13.6 — students can only write to sheets they own / co-own.
-Mode B: Google native — own sheets only unless explicitly shared.
+per-person mode: Google native — own sheets only unless explicitly shared.
 
 - New dep: `@googleapis/sheets` (per-API package; check release age
   policy on the host).
@@ -153,16 +153,16 @@ Mode B: Google native — own sheets only unless explicitly shared.
 **Trigger to start:** office hours, deadlines, or class-schedule
 workflows.
 
-**Mode stance — defer to Phase 2 (Mode B).** Calendar in Mode A
+**Mode stance — defer to Phase 2 (per-person mode).** Calendar in shared-classroom mode
 collapses to one shared class calendar; the friction model boils
 down to "instructor manages it" which doesn't need agent tooling.
-Per-person calendars (Mode B) are where these tools earn their
+Per-person calendars (per-person mode) are where these tools earn their
 keep — students invite each other to office hours, students see
 their own deadlines, etc. Pushed out of Phase 1 because the value
 isn't there yet.
 
-Mode 1: works (instructor's own primary). Mode A: shared class
-calendar — friction collapses; deferred. Mode B: each user has
+Mode 1: works (instructor's own primary). shared-classroom mode: shared class
+calendar — friction collapses; deferred. per-person mode: each user has
 their own primary calendar; Google native boundaries.
 
 - New dep: `@googleapis/calendar`.
@@ -183,10 +183,10 @@ their own primary calendar; Google native boundaries.
 scope (rclone view stale or filter-heavy queries don't translate
 cleanly to a filesystem walk).
 
-**Mode stance.** Mode 1: lists everything. Mode A: **don't expose to
-non-instructor agents.** The point of Mode A is "students only have
+**Mode stance.** Mode 1: lists everything. shared-classroom mode: **don't expose to
+non-instructor agents.** The point of shared-classroom mode is "students only have
 the links they're given" — handing them a search tool defeats that
-explicitly. Boundary by tool surface, not by query rewriting. Mode B:
+explicitly. Boundary by tool surface, not by query rewriting. per-person mode:
 Google native — each user lists their own Drive.
 
 - No new dep (already on `@googleapis/drive`).
@@ -206,9 +206,9 @@ on their behalf (e.g., "email the parents of students with overdue
 assignments").
 
 **Mode stance.** All three modes: `gmail_send` blocked for student/TA
-callers. Mode A: also block `gmail_search` for non-instructor agents
+callers. shared-classroom mode: also block `gmail_search` for non-instructor agents
 (class workspace inbox is shared with the workspace admin; students
-shouldn't browse it). Mode B: `gmail_search` allowed against own
+shouldn't browse it). per-person mode: `gmail_search` allowed against own
 inbox; `gmail_send` still blocked.
 
 - New dep: `@googleapis/gmail`.
@@ -231,9 +231,9 @@ inbox; `gmail_send` still blocked.
 instructor agent) to create / edit Google Slides decks
 programmatically.
 
-**Mode stance.** Mode 1: works. Mode A: reads open, writes/deletes
+**Mode stance.** Mode 1: works. shared-classroom mode: reads open, writes/deletes
 gated by `nanoclaw_owners` (Slides are Drive files — same tag
-mechanism as Docs). Mode B: Google native.
+mechanism as Docs). per-person mode: Google native.
 
 - New dep: `@googleapis/slides`.
 - Tools:
@@ -284,10 +284,10 @@ when each sub-phase is either landed or explicitly closed-as-not-needed.
 
 **Mapping to master-plan phases:**
 
-- **Phase 1 (Mode A class MVP):** 13.5a (Sheets) + 13.5e (Slides).
+- **Phase 1 (shared-classroom MVP):** 13.5a (Sheets) + 13.5e (Slides).
   Both reuse 13.6's Drive ownership tag — they're Drive files, no
   new ownership infrastructure needed.
-- **Phase 2 (Mode B, per-person GWS):** 13.5b (Calendar) + 13.5c
+- **Phase 2 (per-person mode, per-person GWS):** 13.5b (Calendar) + 13.5c
   (Drive listing) + 13.5d (Gmail). All three earn their utility from
   per-person accounts: calendar makes sense when each user has their
   own; drive listing scopes naturally to a user's own Drive; gmail

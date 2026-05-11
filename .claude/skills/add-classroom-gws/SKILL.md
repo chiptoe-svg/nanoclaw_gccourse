@@ -179,3 +179,16 @@ base greeting:
 The folder URL appears in the second message. After ~15s (rclone's
 poll cycle), the folder is also visible inside the student's
 container at `/workspace/drive/`.
+
+## Where this fits in the deploy story
+
+This skill completes the **shared-classroom** GWS setup. Prereqs
+`/add-classroom` (base) and `/add-gws-tool` (GWS MCP infra) must
+be installed first; the skill aborts otherwise.
+
+End-to-end guide: [`docs/shared-classroom.md`](../../../docs/shared-classroom.md).
+
+If you want students to authorize *their own* Google accounts
+instead of operating under the instructor's OAuth, that's the
+**per-person classroom** mode (master plan Phase 2) — separate
+work, not yet shipped.

@@ -147,3 +147,15 @@ yet against a real Codex refresh failure. If you observe the agent
 appearing broken after a token expires AND no nudge fires, check
 `logs/nanoclaw.log` for the actual error string and update the
 regex in auth-nudge.ts.
+
+## Where this fits in the deploy story
+
+This skill is the per-student-auth layer for the **per-person
+classroom** mode (master plan Phase 2). It assumes students will
+authorize their own ChatGPT subscriptions and the instructor's
+pool acts as a fallback.
+
+For the simpler **shared classroom** mode (one instructor key,
+shared by all students) you do NOT need this skill — just set
+`CLASS_OPENAI_API_KEY` in `.env` during `/add-classroom` step 5.
+See [`docs/shared-classroom.md`](../../../docs/shared-classroom.md).

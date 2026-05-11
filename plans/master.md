@@ -1,6 +1,6 @@
 # NanoClaw gccourse — master plan
 
-Two-phase delivery plan for this fork. Phase 1 ships a working Mode A
+Two-phase delivery plan for this fork. Phase 1 ships a working shared-classroom mode
 classroom MVP on shared workspace + shared LLM credit pool. Phase 2
 adds per-person accounts, RAG-driven labs, exports, and walkaway
 deploy. Detailed designs live in the sub-plans referenced inline;
@@ -24,7 +24,7 @@ this file is the sequencing layer.
 | GWS MCP server + relay — Phase 13.2 + 13.3 | `main` (merge `4161e55`) |
 | GWS MCP container → relay + `/add-gws-tool` skill — Phase 13.4 | `main` (commit `cecfb36`) |
 | Phase 13.5 V2 surface — mode-aware sub-plan | `main` (commits `e8aede2` + `bb337d9`); no tools landed yet |
-| Phase 13.6 ownership primitive — Mode A friction sub-plan | `main` (commit `0f5df8a`); built on `feat/gws-skill-refactor` (commits `28e2c45`, `670de8d`, `06d7493`) — installed by `/add-classroom-gws` |
+| Phase 13.6 ownership primitive — shared-classroom mode friction sub-plan | `main` (commit `0f5df8a`); built on `feat/gws-skill-refactor` (commits `28e2c45`, `670de8d`, `06d7493`) — installed by `/add-classroom-gws` |
 | `wasFallback` infra — `{ token, principal }` from `getGoogleAccessTokenForAgentGroup` (Phase 1 #1) | `main` (commit `90caf28`) — `gws-token.ts` kept in trunk |
 | GWS small-trunk-with-skills refactor (rule 5) — base GWS → `origin/gws-mcp`, ownership ext → `origin/classroom`, skills rewritten to install | `main` (merge `88db845`) — branch `feat/gws-skill-refactor` deleted |
 | credential-proxy Phase X.4 — instructor provider OAuth (verification slice) | `main` (commit `52b1837`) |
@@ -44,7 +44,7 @@ this file is the sequencing layer.
 
 Archived: `agent-playground-v2.md` (SHIPPED — kept as design record).
 
-## Phase 1 — Mode A class MVP
+## Phase 1 — shared-classroom MVP
 
 **Goal.** A class can deploy with: one Google Workspace OAuth
 (instructor's, shared by everyone), one LLM provider OAuth
@@ -71,7 +71,7 @@ it. Items at the same nesting depth can run in parallel.
    (commit `90caf28`). `getGoogleAccessTokenForAgentGroup` returns
    `{ token, principal: 'self' | 'instructor-fallback' }`. Used by
    13.6 and every 13.5* tool.
-2. ✅ **gws-mcp Phase 13.6 — Mode A ownership primitive.** Built
+2. ✅ **gws-mcp Phase 13.6 — shared-classroom mode ownership primitive.** Built
    on `feat/gws-skill-refactor` (commits `28e2c45`, `670de8d`,
    `06d7493`). After the refactor merge, this code lives on
    `origin/classroom` and is installed by `/add-classroom-gws`.
@@ -167,7 +167,7 @@ it. Items at the same nesting depth can run in parallel.
   with the creator's display name.
 - Sheet read/write and slides create/append/replace-text work
   end-to-end; writes on someone else's doc/sheet/slides are
-  hard-blocked in Mode A.
+  hard-blocked in shared-classroom mode.
 - Local LLM deploy (mlx-omni-server / Ollama / LM Studio per
   `docs/local-llm.md`) is a documented alternative to the API
   credit pool; `/model` Telegram command discovers models from the
@@ -180,13 +180,13 @@ until OAuth + Mac Studio LAN IP unblock.)
 
 ## Phase 2 — Full classroom capability (per-person accounts + labs)
 
-**Goal.** Layer per-person Google Workspace OAuth (Mode B) and
+**Goal.** Layer per-person Google Workspace OAuth (per-person mode) and
 per-person provider OAuth on top of Phase 1, add agent export,
 RAG-driven labs with evaluation framework, and walkaway cloud deploy.
 
 ### Build order
 
-1. **Phase 14 — per-person GWS OAuth (Mode B).** Magic-link flow on
+1. **Phase 14 — per-person GWS OAuth (per-person mode).** Magic-link flow on
    the student-auth-server, per-user credentials at
    `data/student-google-auth/<id>/`, `/gauth` Telegram command.
    Partly blocked on GCP redirect URI registration — see
@@ -200,11 +200,11 @@ RAG-driven labs with evaluation framework, and walkaway cloud deploy.
    instructor-pool access during student onboarding. Details:
    [credential-proxy-per-call-attribution.md §X.7](credential-proxy-per-call-attribution.md).
 3. **gws-mcp Phase 13.5b — Calendar list/create.** Earns its keep
-   once each user has their own calendar (Mode B). In Mode A it
+   once each user has their own calendar (per-person mode). In shared-classroom mode it
    collapses to a single shared workspace calendar and doesn't need
    agent tooling. Details: [gws-mcp-v2.md §13.5b](gws-mcp-v2.md).
 4. **gws-mcp Phase 13.5c — Drive listing.** Safe to expose once
-   Mode B lands — Google's own auth scopes the result. Details:
+   per-person mode lands — Google's own auth scopes the result. Details:
    [gws-mcp-v2.md §13.5c](gws-mcp-v2.md).
 5. **gws-mcp Phase 13.5d — Gmail search/send.** Same reasoning.
    Details: [gws-mcp-v2.md §13.5d](gws-mcp-v2.md).
@@ -305,7 +305,7 @@ Slot into Phase 2 or a small interleave when convenient.
   some prior setup step); 3007 doesn't. Document the ufw allow
   rule (`sudo ufw allow in on docker0 to any port 3007 proto tcp`)
   in `/add-gws-tool` SKILL.md and/or have `/setup` add it. Not
-  blocking for Mode A class deploy (codex doesn't use the relay)
+  blocking for shared-classroom deploy (codex doesn't use the relay)
   but blocks any GWS MCP tool calls from inside containers.
 
 ## Cross-cutting

@@ -200,3 +200,17 @@ Container env doesn't have the relay URL — step 5 above wasn't applied. Patch 
 ### `No Google OAuth token available`
 
 Host couldn't load `~/.config/gws/credentials.json` (or the token is expired and refresh failed). Check `logs/nanoclaw.log` for refresh errors. Re-run your OAuth flow and replace `credentials.json`.
+
+## Where this fits in the deploy story
+
+This skill installs the Google Workspace MCP **infrastructure** —
+host-side relay + server + container-side tools. It works
+standalone for a single-user install (the instructor's own Drive).
+
+For a classroom deploy, layer `/add-classroom-gws` on top: it adds
+per-student Drive folders, the shared-classroom ownership-tag
+mechanism (`nanoclaw_owners`), and grant/revoke/list tools. The
+mode check applies to Docs *and* Sheets *and* Slides writes since
+all three are Drive files.
+
+End-to-end guide: [`docs/shared-classroom.md`](../../../docs/shared-classroom.md).

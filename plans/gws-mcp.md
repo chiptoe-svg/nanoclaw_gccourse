@@ -207,10 +207,10 @@ five sub-phases (sheets, calendar, drive-listing, gmail, slides), each
 gated on a real use case. Sheets (13.5a) is the suggested first
 landing target when a classroom gradebook need appears.
 
-#### 13.6 — Mode A ownership primitive (unblocks shared-workspace mode) ✅
+#### 13.6 — shared-classroom mode ownership primitive (unblocks shared-workspace mode) ✅
 
 V1 + V2 tools assume Google's own permissions are the boundary. For
-**Mode A** — one shared class-workspace OAuth account, students
+**Shared-classroom mode** — one shared class-workspace OAuth account, students
 operate under it, no privacy expectation but real friction expected
 when one student touches another's work — Google can't help us: every
 file is owned by the same workspace account. We tag NanoClaw ownership
@@ -269,7 +269,7 @@ Sheets and Slides ride on Drive's `customProperties` — same tools work.
       for grant/revoke/list + a "hard block" case verifying the
       error text includes a display name (not just an ID).
 - [x] Operational note in `.claude/skills/add-gws-tool/SKILL.md`
-      — flag the single-point-of-failure caveat for Mode A, plus
+      — flag the single-point-of-failure caveat for shared-classroom mode, plus
       per-account API quota + polite-enforcement-not-secure notes.
 
 ## Out of scope (V1)

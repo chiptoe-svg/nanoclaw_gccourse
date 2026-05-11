@@ -33,6 +33,12 @@ bash nanoclaw.sh
 
 `nanoclaw.sh` walks you from a fresh machine to a named agent you can message. It installs Node, pnpm, and Docker if missing, registers your Anthropic credential with OneCLI, builds the agent container, and pairs your first channel (Telegram, Discord, WhatsApp, or a local CLI). If a step fails, your chosen coding-assistant CLI (Claude Code or OpenAI Codex — setup asks which on first run, then remembers it) is invoked automatically to diagnose and resume from where it broke. To switch later, run `pnpm exec tsx setup/auto.ts --reconfigure-cli`.
 
+## Deploying a classroom
+
+This fork supports two classroom deployment shapes. For most teaching scenarios, the **shared classroom** mode is the right starting point: one instructor authorizes Google Workspace and the LLM credit pool, students log in via personal email through a bookmark URL, and per-student agents share the class workspace with NanoClaw-side ownership friction preventing cross-student damage. End-to-end deploy guide: [docs/shared-classroom.md](docs/shared-classroom.md).
+
+The **per-person classroom** mode (each student authorizes their own Google + LLM provider) is more setup-heavy and lands incrementally — see [plans/master.md](plans/master.md) Phase 2.
+
 ## Philosophy
 
 **Small enough to understand.** One process, a few source files and no microservices. If you want to understand the full NanoClaw codebase, just ask Claude Code to walk you through it.
