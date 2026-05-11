@@ -148,19 +148,19 @@ gongrzhe/cocal MCPs).
 These don't work on this install (require OneCLI gateway). Phase
 13's `/add-gws-tool` supersedes them.
 
-#### 13.2 — Host-side MCP server (V1: Doc read/write)
-- [ ] `src/gws-mcp-server.ts` — minimal MCP over JSON-RPC.
-- [ ] `src/gws-mcp-tools.ts` — `drive_doc_read_as_markdown`,
+#### 13.2 — Host-side MCP server (V1: Doc read/write) ✅
+- [x] `src/gws-mcp-server.ts` — minimal MCP over JSON-RPC.
+- [x] `src/gws-mcp-tools.ts` — `drive_doc_read_as_markdown`,
       `drive_doc_write_from_markdown`. Use `@googleapis/drive` and
       `@googleapis/docs`.
-- [ ] OAuth client setup in `src/gws-auth.ts` — reads
+- [x] OAuth client setup in `src/gws-auth.ts` — reads
       `~/.config/gws/credentials.json`, exchanges refresh for
       access token, refreshes on 401.
 
-#### 13.3 — Per-agent relay
-- [ ] `src/gws-mcp-relay.ts` — JSON-RPC pass-through with role
+#### 13.3 — Per-agent relay ✅
+- [x] `src/gws-mcp-relay.ts` — JSON-RPC pass-through with role
       check via `canAccessAgentGroup`.
-- [ ] Reuses the credential proxy's per-container placeholder
+- [x] Reuses the credential proxy's per-container placeholder
       pattern to identify the caller.
 
 #### 13.4 — Container stub + skill
