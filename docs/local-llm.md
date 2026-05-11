@@ -143,6 +143,90 @@ Inside a container `127.0.0.1` is the container, not the host. **You don't need 
 
 mlx-omni-server lazy-loads the model. First request after `--model` mismatch or idle eviction takes ~30 s of "warming up." Subsequent requests are fast. Use `mlx-omni-server --preload` (or LM Studio's "keep loaded" toggle) to avoid the cold start.
 
+## Tool calling
+
+The OpenAI Chat Completions API supports tool calls via the `tools` parameter; the model returns `tool_calls` in its response. NanoClaw's agents lean on this heavily (MCP tools are exposed to the model as OpenAI-style tools). Local models can do this, but **two things have to be true**:
+
+1. **The server has to expose the tool-call surface.** mlx-omni-server, Ollama (≥ 0.5), and LM Studio all do as of late 2025. Earlier Ollama versions silently dropped `tools` from the request — verify with a curl test if you're on an old install.
+2. **The model has to be trained for it.** Not all local models can emit well-formed tool-call JSON. Even ones that can sometimes hallucinate tool names, malform arguments, or ignore the schema.
+
+### Models that work well
+
+These have been validated for tool calling on at least one local server (your mileage varies by quantization and server):
+
+- **Qwen 2.5 Coder family (7B / 14B / 32B)** — best in class for agent use. Trained explicitly for function calling. The 32B Q4 is the sweet spot on a single Mac Studio.
+- **Qwen 2.5 (non-coder) 32B+** — solid generalist tool use; slightly weaker on code than the Coder variant.
+- **Llama 3.1 (70B for quality; 8B for speed)** — Meta's official function-calling format works through the OpenAI-compat shim, with some quirks.
+- **Llama 3.3 70B Instruct** — best Llama for tool use, but ~40 GB even at Q4; only viable on the biggest Mac Studio.
+- **DeepSeek Coder V2 16B** — solid on coding + tool use; smaller footprint than the Llamas.
+
+### Models that struggle
+
+- **Anything under 7B parameters** — generally too small to emit reliable structured outputs.
+- **Models not explicitly fine-tuned for tool use** — base models, raw chat tunes, older RLHF models. They'll emit prose where JSON is expected.
+- **Heavy quantization (Q2/Q3) of even good models** — quantization noise often shows up as malformed JSON first.
+
+### Diagnostics
+
+If your agent is misbehaving and you suspect tool calling is the issue:
+
+```bash
+# Hit the local server directly with a tool-call request.
+curl -s http://127.0.0.1:8080/v1/chat/completions \
+  -H "content-type: application/json" \
+  -d '{
+    "model": "qwen2.5-coder-32b-instruct-mlx-4bit",
+    "messages": [{"role": "user", "content": "What is 2+2? Use the calculator tool."}],
+    "tools": [{
+      "type": "function",
+      "function": {
+        "name": "calculator",
+        "description": "Evaluate an arithmetic expression",
+        "parameters": {
+          "type": "object",
+          "properties": {"expression": {"type": "string"}},
+          "required": ["expression"]
+        }
+      }
+    }]
+  }' | jq '.choices[0].message'
+```
+
+A working model returns `{"role": "assistant", "tool_calls": [{...}]}`. A struggling model returns `{"role": "assistant", "content": "I'll compute 2+2 = 4..."}` — prose instead of a tool call. If you see prose, swap models before debugging anything else.
+
+### When tool use fails partway through
+
+The codex CLI inside the container handles tool-call retries with a small budget. If the local model emits malformed JSON, you'll see `[agent-runner]` logs reporting parse errors. The session usually recovers within 2–3 retries; if it consistently fails, the model isn't suitable for the workload.
+
+## Model selection — making local models show up
+
+Once your local server is running, models discoverable to NanoClaw fall out of two pieces:
+
+### How model discovery works
+
+1. **The server's `/v1/models` endpoint** lists what's loaded / available locally. mlx-omni-server, Ollama, and LM Studio all expose this. Try `curl http://127.0.0.1:<port>/v1/models | jq '.data[].id'` to see your local list.
+2. **NanoClaw's `/model` Telegram command** (installed via `/add-admintools`) calls that endpoint via `src/model-discovery.ts`. Results are cached for 1 hour. It uses `OPENAI_BASE_URL` to find the upstream — so if you've set that to your local server, `/model` automatically shows local models.
+
+### Per-group model picking
+
+Each agent group has a `model` column. Three layers, in priority order:
+
+1. **Per-group override** — `ncl groups update <id> --model <name>` sets `agent_groups.model`. Takes precedence over everything.
+2. **`OPENAI_MODEL` env var** — provider default when no per-group override.
+3. **Codex CLI's hardcoded fallback** — if neither of the above is set, codex picks a default (cloud) model. Not useful for local-LLM mode.
+
+For a class running on local LLM, set `OPENAI_MODEL` in `.env` once. Students inherit it via their student_NN agent groups. Instructor can override per-group from Telegram with `/model <alias>`.
+
+### Agent playground UI
+
+The playground UI doesn't yet have a model picker — that's **Phase 4 work** (classroom Phase 4 provider-settings panel, deferred until OAuth + Mac Studio LAN IP unblock). Today, model switching is via:
+
+- `/model <alias>` from Telegram (per-group)
+- `ncl groups update <id> --model <name>` from CLI (per-group)
+- `OPENAI_MODEL` in `.env` (default for new groups)
+
+When Phase 4 lands, the UI will surface the discovered model list as a dropdown — the discovery code (`src/model-discovery.ts`) is already provider-agnostic and will work for local servers without further changes.
+
 ## Mode A and Mode B compatibility
 
 Local LLM works in either deployment mode:
