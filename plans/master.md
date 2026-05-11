@@ -20,6 +20,8 @@ sequencing layer.
 | Credential-proxy per-call attribution (Tier 1 keystone) | `main` (merge `4161e55`) |
 | Per-student GWS read in proxy (Phase 3 slice B) | `main` (folded into the keystone merge) |
 | GWS MCP server + relay — Phase 13.2 + 13.3 | `main` (same merge as keystone) |
+| GWS MCP container → relay wiring + `/add-gws-tool` skill — Phase 13.4 | `main` (commit `cecfb36`) |
+| Phase 13.5 V2 surface — mode-aware sub-plan | `main` (commits `e8aede2` + `bb337d9`); no tools landed yet |
 
 Latest tracker: `plans/upstream-pr-prep.md` for the per-item PR-readiness state.
 
@@ -29,7 +31,8 @@ Latest tracker: `plans/upstream-pr-prep.md` for the per-item PR-readiness state.
 |---|---|---|
 | [classroom-web-multiuser.md](classroom-web-multiuser.md) | Phases 4–9 of the class web rebuild | Phases 1–3 shipped; 4–9 pending |
 | [credential-proxy-per-call-attribution.md](credential-proxy-per-call-attribution.md) | Per-call agent-group attribution in the credential proxy | ✅ shipped (X.1–X.3 + X.6); X.4 (per-provider OAuth resolvers) deferred to Phase 4; X.5 (observability log) deferred |
-| [gws-mcp.md](gws-mcp.md) | Host-side Google Workspace MCP (Doc/Drive/Sheet tools) | 13.0–13.3 done; 13.4 pending |
+| [gws-mcp.md](gws-mcp.md) | Host-side Google Workspace MCP (Doc/Drive/Sheet/Calendar/Gmail tools) | 13.0–13.4 done; 13.5 sub-plan written ([gws-mcp-v2.md](gws-mcp-v2.md)); Phase 14 (per-student OAuth) pending |
+| [gws-mcp-v2.md](gws-mcp-v2.md) | V2 tool surface — sheets / calendar / drive-listing / gmail, mode-aware | Sub-plan only; each sub-phase landed when a real use case appears |
 | [ai-coding-cli-pick.md](ai-coding-cli-pick.md) | AI-coding-CLI picker | A–F shipped; only Phase G (smoke matrix) left |
 
 ## Sub-plans (archived as historical)
@@ -63,10 +66,7 @@ per-agent MCP role checks). All but the smoke matrix done.
    `upstream-pr-prep.md` §1. Pure verification work; clears the
    upstream-PR signal for that subsystem.
 
-### Tier 2 — payoffs of Tier 1 (mostly done) ✅
-
-Each item here was waiting on Tier 1 #2; Phase 13.4 is the last bit
-needed to make GWS tools actually callable from agent containers.
+### Tier 2 — payoffs of Tier 1 ✅
 
 4. ✅ **classroom Phase 3 slice B — per-student GWS read in proxy.**
    Folded into the Tier 1 #2 keystone merge (`4161e55`). The proxy
@@ -82,13 +82,41 @@ needed to make GWS tools actually callable from agent containers.
    Shipped in `4161e55`. `src/gws-mcp-relay.ts` listens on
    loopback `:3007`, reads X-NanoClaw-Agent-Group, validates the
    agent group exists, dispatches into the in-process server.
-7. 🛠 **gws-mcp Phase 13.4 — container stub + skill.** ~3–4 hr.
-   `container/agent-runner/src/mcp-tools/gws-stub.ts` — local stub
-   MCP that forwards stdio JSON-RPC to the host relay (via
-   `host.docker.internal:3007`).
-   `.claude/skills/add-gws-tool/` (SKILL.md, REMOVE.md, VERIFY.md)
-   packages the install. **First candidate for the next
-   `/ultrareview` round** when the service is healthy again.
+7. ✅ **gws-mcp Phase 13.4 — container → relay + install skill.**
+   Shipped in commit `cecfb36`. `container/agent-runner/src/mcp-tools/gws.ts`
+   rewritten to POST `${GWS_MCP_RELAY_URL}/tools/<name>` with explicit
+   `X-NanoClaw-Agent-Group` header (no separate stub file — global
+   tool registration kept, single-file refactor). `GWS_BASE_URL`
+   removed from container env (was only used by `gws.ts`).
+   `.claude/skills/add-gws-tool/SKILL.md` packages the install.
+   First `/ultrareview` candidate once the service is healthy
+   (memory: 4 prior attempts failed on backend issues, not branch).
+
+### Tier 2b — GWS follow-ons (active worklist)
+
+8. 🛠 **gws-mcp Phase 13.5 sub-phases.** Sub-plan written in
+   [gws-mcp-v2.md](gws-mcp-v2.md). Each is gated on a real use
+   case showing up; sheets (13.5a) is the suggested first lander
+   when a classroom gradebook need appears.
+9. 🛠 **`wasFallback` infra prerequisite.** ~1 hr. Extend
+   `getGoogleAccessTokenForAgentGroup` to return `{ token, principal }`
+   where `principal` is `'self' | 'instructor-fallback'`. Lets every
+   V2 sub-phase enforce its mode-2 refusal stance. Independent of
+   Phase 14 — landable today.
+10. 🛠 **Phase 14 — per-student GWS OAuth.** Designed in
+    [gws-mcp.md](gws-mcp.md) §Phase 14. Magic-link flow on the
+    student-auth-server (port 3003), per-student credentials at
+    `data/student-google-auth/<id>/`, `/gauth` Telegram command.
+    **Partly blocked on GCP redirect URI** registration — see
+    `project_gcp_oauth_pending` memory; deferred until Mac Studio
+    LAN IP is assigned. Code can land now (gated behind a feature
+    flag) and verification waits for the URI.
+11. 🛠 **`scripts/gws-authorize.ts`** — referenced in plans as
+    "foundation already in place" but doesn't actually exist on
+    disk. ~30 min. One-off CLI wrapping `src/gws-auth.ts` helpers
+    so the instructor can mint a fresh refresh token via localhost
+    callback. Useful today (recovers from expired-token states);
+    becomes the manual-test backstop for Phase 14.
 
 ### Tier 3 — independent small wins (interleave anywhere after Tier 1)
 
@@ -96,18 +124,18 @@ These don't block anything and don't depend on anything new. Slot
 them in between the heavier Tier 2 items if you want a smaller-win
 break.
 
-8. **classroom Phase 6 — local-LLM runbook + .env.** ~2–3 hr.
-   Mostly docs + a small audit of `credential-proxy.ts` for
-   `OPENAI_BASE_URL` correctness with arbitrary upstream hosts.
-   Exact phase content in `classroom-web-multiuser.md` §Phase 6.
-9. **classroom Phase 5 — agent export tooling.** ~4–5 hr.
-   `nanoclaw / claude-code / codex / json` formats; `GET
-   /api/draft/<folder>/export?format=…`. Spec in
-   `classroom-web-multiuser.md` §Phase 5.
+12. **classroom Phase 6 — local-LLM runbook + .env.** ~2–3 hr.
+    Mostly docs + a small audit of `credential-proxy.ts` for
+    `OPENAI_BASE_URL` correctness with arbitrary upstream hosts.
+    Exact phase content in `classroom-web-multiuser.md` §Phase 6.
+13. **classroom Phase 5 — agent export tooling.** ~4–5 hr.
+    `nanoclaw / claude-code / codex / json` formats; `GET
+    /api/draft/<folder>/export?format=…`. Spec in
+    `classroom-web-multiuser.md` §Phase 5.
 
 ### Tier 4 — UI surface for everything above
 
-10. **classroom Phase 4 — home page expansion.** ~9–12 hr.
+14. **classroom Phase 4 — home page expansion.** ~9–12 hr.
     Provider settings panel (depends on Tier 1 #2 + per-student
     Anthropic/OpenAI auth — see Decision 10 in the multi-user plan),
     dashboard, picker filter, Telegram link. Spec in
@@ -115,20 +143,20 @@ break.
 
 ### Tier 5 — lab content (the bulk of in-class work)
 
-11. **classroom Phase 7 — expert system builder + RAG strategies.** ~12–30 hr.
+15. **classroom Phase 7 — expert system builder + RAG strategies.** ~12–30 hr.
     Pipeline framework + named strategies + UI. Scope decisions still
     open (lab sequence, capstone-stage support). Spec in
     `classroom-web-multiuser.md` §Phase 7. Cost-economical only after
-    Tier 3 #8 lands (local LLM).
-12. **classroom Phase 8 — evaluation framework.** ~8–10 hr.
+    Tier 3 #12 lands (local LLM).
+16. **classroom Phase 8 — evaluation framework.** ~8–10 hr.
     Side-by-side comparison view + LLM-as-judge mode. Depends on
     Phase 7 (no strategies = nothing to evaluate). Spec in
     `classroom-web-multiuser.md` §Phase 8.
 
 ### Tier 6 — semester capstone
 
-13. **classroom Phase 9 — walk-away cloud deploy.** ~6–8 hr.
-    Bundle + bootstrap script. Depends on Tier 3 #9 (export) for the
+17. **classroom Phase 9 — walk-away cloud deploy.** ~6–8 hr.
+    Bundle + bootstrap script. Depends on Tier 3 #13 (export) for the
     bundle format. Spec in `classroom-web-multiuser.md` §Phase 9.
 
 ## Cross-cutting
@@ -144,12 +172,19 @@ break.
   `--no-ff` so each phase stays revertable as a single merge commit.
   Feature branches deleted (local + remote) once merged.
 - **`/ultrareview` deferred for the credential-proxy + GWS MCP
-  bundle.** Service was 100% broken across 4 attempts (503 / two
-  zlib failures / 502) — backend issue, not branch content. Bundle
-  merged to `main` based on test coverage (510 host + 119 container)
-  + the deliberate self-audit. Next architecturally-novel chunk
-  (Phase 13.4 container stub, or Phase 4 home page expansion) is
-  the next `/ultrareview` candidate when the service is back.
+  bundle + Phase 13.4.** Service was 100% broken across 4 attempts
+  (503 / two zlib failures / 502) — backend issue, not branch
+  content. Bundle merged to `main` based on test coverage (510 host
+  + 124 container) + the deliberate self-audit. Phase 13.4 landed on
+  top with its own test pass (510 host + 124 container). Next
+  `/ultrareview` candidate when the service is back is the whole
+  GWS MCP arc (13.2 → 13.3 → 13.4) reviewed against `main`, or the
+  next architecturally-novel chunk (`wasFallback` infra, Phase 14
+  scaffold, or Phase 4 home page expansion).
+- **Memory note.** `feedback_ultrareview_before_merge.md` says to
+  run `/ultrareview` *before* merging feature work — going forward,
+  feature-branch new work and ultrareview on the branch tip before
+  merging to main, not after.
 
 ## How to use this file
 
