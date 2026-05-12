@@ -1,7 +1,7 @@
 # NanoClaw gccourse — master plan
 
-Two-phase delivery plan for this fork. Phase 1 ships a working shared-classroom mode
-classroom MVP on shared workspace + shared LLM credit pool. Phase 2
+Two-phase delivery plan for this fork. Phase 1 ships a working
+shared-classroom MVP on shared workspace + shared LLM credit pool. Phase 2
 adds per-person accounts, RAG-driven labs, exports, and walkaway
 deploy. Detailed designs live in the sub-plans referenced inline;
 this file is the sequencing layer.
@@ -10,7 +10,7 @@ this file is the sequencing layer.
 
 | Subsystem | Where it landed |
 |---|---|
-| AI-coding-CLI picker (Phases A–F) | `main`, commits per `plans/ai-coding-cli-pick.md` |
+| AI-coding-CLI picker (Phases A–G, all shipped) | `main`, commits per `plans/ai-coding-cli-pick.md` |
 | Agent Playground v2 | installed via `/add-agent-playground`, declared SHIPPED in `plans/agent-playground-v2.md` |
 | Class feature foundation (`/add-classroom*` skills) | `origin/classroom` branch |
 | Multi-user playground session store (classroom Phase 1) | `main` (merge `7e5398d`) |
