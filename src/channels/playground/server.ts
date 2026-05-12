@@ -264,6 +264,14 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
   if (method === 'GET' && url.pathname === '/login.js') {
     return serveStatic(res, 'login.js', 'application/javascript; charset=utf-8');
   }
+  // Brand assets — served from the public dir, no auth required (they're
+  // referenced by /login.html before the user has a session).
+  if (method === 'GET' && url.pathname === '/favicon.png') {
+    return serveStatic(res, 'favicon.png', 'image/png');
+  }
+  if (method === 'GET' && url.pathname === '/nanoclaw-icon.png') {
+    return serveStatic(res, 'nanoclaw-icon.png', 'image/png');
+  }
   if (method === 'POST' && url.pathname === '/login/recover') {
     void handleLostLinkRecover(req, res).catch((err) => {
       log.error('Lost-link recover error', { err });

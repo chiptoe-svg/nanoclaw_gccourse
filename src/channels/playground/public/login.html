@@ -3,11 +3,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Sign in — NanoClaw Playground</title>
+  <title>Sign in — NanoClaw</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
   <link rel="stylesheet" href="home.css">
 </head>
 <body class="centered">
   <main class="card">
+    <div class="brand-hero">
+      <img src="/nanoclaw-icon.png" alt="">
+      <span>NanoClaw Playground</span>
+    </div>
     <h1>Sign in</h1>
     <p>Use your school Google account to access the class playground.</p>
     <p>
@@ -21,13 +26,13 @@
     <hr>
     <details>
       <summary>Lost your link?</summary>
-      <p class="muted">
+      <p class="muted" style="margin-top: 0.5rem;">
         If your class uses bookmark-URL login and you've misplaced
         yours, enter your email below. We'll send a fresh link if
         you're on the roster.
       </p>
       <form id="recover-form">
-        <label for="recover-email" class="muted">Email</label>
+        <label for="recover-email">Email</label>
         <input id="recover-email" name="email" type="email" required autocomplete="email" placeholder="alice@example.com">
         <button type="submit" class="primary-btn">Send me a fresh link</button>
       </form>
