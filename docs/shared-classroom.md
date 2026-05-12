@@ -35,10 +35,21 @@ This guide covers shared classroom only.
   (`~/.config/nanoclaw/mount-allowlist.json`)
 
 **Accounts the instructor needs:**
-- Anthropic API key (for setup / `/customize` work — not the runtime credential)
+- A credential for your chosen AI-coding-CLI — either an Anthropic
+  API key (if you pick Claude Code) or an OpenAI API key / ChatGPT
+  subscription (if you pick Codex). `nanoclaw.sh` asks which CLI on
+  first run; the AI-coding-CLI is the operator-side assistant for
+  `/customize`, `/debug`, and setup recovery, separate from the
+  runtime agent provider below.
 - A Telegram bot (or any other DM channel — Slack, Discord, etc.)
-- An OpenAI API key for the class LLM pool (alternative: a local
-  OpenAI-compatible LLM server — see [local-llm.md](local-llm.md))
+- An OpenAI API key for the class LLM pool — this is the **runtime**
+  credential that funds every student's agent. Codex (api-key mode)
+  is the documented agent provider for shared classroom deploys
+  because students consume directly from `CLASS_OPENAI_API_KEY`
+  without per-student auth. (Alternative: a local OpenAI-compatible
+  LLM server — see [local-llm.md](local-llm.md). Or use Claude as
+  the runtime provider, but that requires per-student Anthropic
+  keys or a shared key with no per-student attribution.)
 - Google account with Drive access for the instructor (one OAuth
   authorization covers all class students in this mode)
 
@@ -60,9 +71,16 @@ cd nanoclaw-classroom
 bash nanoclaw.sh
 ```
 
-This walks you through: dependencies, the Anthropic credential, the
-agent container build, the credential proxy, the service unit, and
-your first DM channel.
+This walks you through: dependencies, the AI-coding-CLI picker
+(Claude Code or Codex — your operator-side assistant for the rest
+of this guide), the agent container build, the credential proxy,
+the service unit, and your first DM channel.
+
+**Pick Codex** when the CLI picker asks — the rest of this guide
+assumes Codex is your AI-coding-CLI because the runtime agent
+provider for the class is also Codex (one less context-switch for
+the instructor). Claude Code works fine; you'll just be reading
+about codex commands when you're using a different CLI.
 
 **Pick Telegram** when prompted for a channel — every other shared-
 classroom skill is documented against the Telegram flow. Other DM
