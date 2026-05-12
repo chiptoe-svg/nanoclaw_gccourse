@@ -257,3 +257,36 @@ export function redeemClassToken(token: string): PlaygroundSession | null {
 export function _resetClassTokenRedeemerForTest(): void {
   classTokenRedeemer = null;
 }
+
+/**
+ * Lost-link recovery — extension hook. When a student forgets their
+ * bookmarked `?token=...` URL, they enter their email on the /login
+ * page and the registered recoverer rotates their token + emails the
+ * fresh URL. Trunk doesn't know how to send mail or look up roster
+ * entries; the classroom branch registers an implementation at install
+ * time. When no recoverer is registered, the /login/recover route
+ * returns the "contact your instructor" fallback.
+ *
+ * The recoverer must be careful not to leak whether the email was
+ * found — same response shape on hit and miss.
+ */
+export type LostLinkRecoverer = (email: string) => Promise<void>;
+let lostLinkRecoverer: LostLinkRecoverer | null = null;
+
+export function registerLostLinkRecoverer(fn: LostLinkRecoverer): void {
+  lostLinkRecoverer = fn;
+}
+
+export function hasLostLinkRecoverer(): boolean {
+  return lostLinkRecoverer !== null;
+}
+
+export async function recoverLostLink(email: string): Promise<void> {
+  if (!lostLinkRecoverer) return;
+  await lostLinkRecoverer(email);
+}
+
+/** Test hook — clear any registered lost-link recoverer. */
+export function _resetLostLinkRecovererForTest(): void {
+  lostLinkRecoverer = null;
+}

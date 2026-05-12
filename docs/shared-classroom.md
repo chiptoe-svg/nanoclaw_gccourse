@@ -273,14 +273,25 @@ contact students individually — Canvas, class email, Slack DM,
 printed handout. Treat each URL like a password: anyone who has it
 logs in as that student.
 
-**A student lost their URL:**
+**A student lost their URL — manual recovery:**
 
 ```bash
 ncl class-tokens rotate --email alice@example.com
 ```
 
 Revokes prior tokens, mints a fresh one. The old URL stops working
-immediately.
+immediately. Send the new URL via your usual channel.
+
+**A student lost their URL — self-serve recovery (optional):**
+
+If you've configured Resend (see `/add-classroom` step 5c — three
+`RESEND_*` env vars), the `/login` page has a "Lost your link?"
+form. Students enter their email, the server rotates their token,
+and the fresh URL goes to their inbox automatically. Anti-enumeration:
+the form shows the same generic success message regardless of
+whether the email is on the roster — no info leaks about which
+students are enrolled. Without Resend configured, the form falls
+back to a "contact your instructor" message.
 
 ### 8. Student onboarding
 

@@ -233,6 +233,42 @@ but a harmless placeholder so the CLI doesn't crash printing URLs.
 Rotation: edit `.env`, restart the host; future `ncl class-tokens`
 output picks up the new base.
 
+### 5c. (Optional) Wire Resend for student self-serve link recovery
+
+The `/login` page includes a "Lost your link?" form. When a student
+enters their email, the server looks them up in `classroom_roster`,
+rotates their token, and emails the fresh URL — if Resend is
+configured. Without Resend, the form returns a generic "contact
+your instructor" message and the student has to ask you to run
+`ncl class-tokens rotate --email <e>` manually.
+
+To enable self-serve recovery, add to `.env` (skip if already
+present from `/add-resend`):
+
+```bash
+RESEND_API_KEY=re_...                    # from https://resend.com/api-keys
+RESEND_FROM_ADDRESS=class@your-domain    # must be a verified Resend sender
+RESEND_FROM_NAME=Class Bot               # optional; shown as the From name
+```
+
+The Resend channel adapter (`/add-resend`) uses these same env vars,
+so if you've already installed it, you're done — no extra config.
+You do NOT need to install the Resend *channel* just for lost-link
+recovery; the recovery flow calls the Resend API directly.
+
+Verify after restart:
+
+- Visit `${PUBLIC_PLAYGROUND_URL}/login`, expand "Lost your link?",
+  enter a roster email, click Send. The page should show a generic
+  success message.
+- Check the student's inbox for an email from
+  `RESEND_FROM_ADDRESS`. The link should be a fresh
+  `?token=...` URL that supersedes any prior token.
+- Anti-enumeration check: enter a non-roster email — same generic
+  success message, no email actually sent. (Logs at
+  `logs/nanoclaw.log` confirm: "Lost-link recovery: no roster
+  entry".)
+
 ### 6. Build
 
 ```bash

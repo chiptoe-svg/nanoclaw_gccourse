@@ -28,15 +28,17 @@ import {
   createSessionFromMagicToken,
   formatSessionCookie,
   getSessionByCookie,
+  hasLostLinkRecoverer,
   mintMagicToken,
   type PlaygroundSession,
+  recoverLostLink,
   redeemClassToken,
   revokeAllSessions,
   startIdleSweep,
   stopIdleSweep,
 } from './auth-store.js';
 import { handleOAuthCallback, handleOAuthStart } from './google-oauth.js';
-import { parseCookie, send } from './http-helpers.js';
+import { parseCookie, readJsonBody, send } from './http-helpers.js';
 
 let server: http.Server | null = null;
 
@@ -190,6 +192,37 @@ function handleClassTokenRedemption(url: URL, res: http.ServerResponse): boolean
   return true;
 }
 
+/**
+ * "Lost your link?" recovery — students who forgot their class-login
+ * URL enter their email and a fresh URL is emailed via the registered
+ * recoverer (classroom branch's class-login-tokens.ts, wired to Resend).
+ *
+ * Anti-enumeration: the response is identical for "email on roster" and
+ * "email not on roster" — both return ok:true with a generic message.
+ * The recoverer must not throw on miss; it should just log and return.
+ *
+ * When no recoverer is registered (classroom not installed), the
+ * response includes a hint pointing the student at their instructor.
+ */
+async function handleLostLinkRecover(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+  const body = (await readJsonBody(req)) as { email?: unknown };
+  const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+  if (!email || !email.includes('@')) {
+    send(res, 200, { ok: true, message: "If we have you on file, you'll receive a fresh link shortly." });
+    return;
+  }
+  if (!hasLostLinkRecoverer()) {
+    send(res, 200, {
+      ok: true,
+      message: 'Self-serve recovery is not enabled here. Please contact your instructor for a fresh login link.',
+    });
+    return;
+  }
+  // Fire-and-forget the actual recovery: the response stays generic regardless of outcome.
+  recoverLostLink(email).catch((err) => log.error('Lost-link recover handler error', { err: String(err) }));
+  send(res, 200, { ok: true, message: "If we have you on file, you'll receive a fresh link shortly." });
+}
+
 function authenticate(req: http.IncomingMessage): PlaygroundSession | null {
   const submitted = parseCookie(req.headers['cookie'], COOKIE_NAME);
   if (!submitted) return null;
@@ -227,6 +260,16 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
   }
   if (method === 'GET' && url.pathname === '/login') {
     return serveStatic(res, 'login.html', 'text/html; charset=utf-8');
+  }
+  if (method === 'GET' && url.pathname === '/login.js') {
+    return serveStatic(res, 'login.js', 'application/javascript; charset=utf-8');
+  }
+  if (method === 'POST' && url.pathname === '/login/recover') {
+    void handleLostLinkRecover(req, res).catch((err) => {
+      log.error('Lost-link recover error', { err });
+      if (!res.headersSent) send(res, 500, { ok: false });
+    });
+    return;
   }
 
   const session = authenticate(req);
