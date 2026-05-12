@@ -476,6 +476,156 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   box-shadow: 0 0 0 3px var(--brand-teal-soft);
 }
 
+/* Empty states — used in picker, files list, skills lists, diff view */
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1.5rem 1rem;
+  text-align: center;
+  color: var(--text-muted);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+.empty .empty-icon {
+  font-size: 1.5rem;
+  opacity: 0.5;
+}
+.empty .empty-hint {
+  font-size: 0.825rem;
+  color: var(--text-faint);
+}
+
+/* Multi-line chat input */
+#chat-input {
+  flex: 1;
+  padding: 0.75rem 0.9rem;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  font: inherit;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  resize: none;
+  min-height: 2.75rem;
+  max-height: 12rem;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+#chat-input:focus {
+  outline: none;
+  border-color: var(--brand-teal);
+  box-shadow: 0 0 0 3px var(--brand-teal-soft);
+}
+#chat-form .send-hint {
+  align-self: center;
+  font-size: 0.75rem;
+  color: var(--text-faint);
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+kbd {
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0.05rem 0.35rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+/* Markdown rendering inside agent chat bubbles */
+.chat-log li.agent code {
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  background: var(--surface-alt);
+  padding: 0.1rem 0.35rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.85em;
+  color: var(--brand-navy);
+}
+.chat-log li.agent pre {
+  margin: 0.5rem 0;
+  padding: 0.7rem 0.9rem;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow-x: auto;
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-size: 0.85em;
+  line-height: 1.5;
+}
+.chat-log li.agent pre code {
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  color: var(--text);
+}
+.chat-log li.agent strong { font-weight: 600; }
+.chat-log li.agent em { font-style: italic; }
+
+/* File-row dirty indicator (•) */
+.files-list .file-row.dirty .file-name::after {
+  content: '•';
+  color: var(--brand-teal);
+  margin-left: 0.4rem;
+  font-size: 1.1em;
+  line-height: 0;
+  vertical-align: middle;
+}
+
+/* Subtle scrollbars (WebKit + Firefox) */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--text-faint);
+  background-clip: padding-box;
+}
+
+/* Smooth scroll for chat log */
+.chat-log { scroll-behavior: smooth; }
+
+/* Mobile / tablet breakpoint — keep the workbench usable on smaller screens */
+@media (max-width: 768px) {
+  #topbar {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding: 0.625rem 0.875rem;
+  }
+  #active-info {
+    flex-wrap: wrap;
+    width: 100%;
+  }
+  #mode-tabs {
+    order: 10;          /* push tabs to a second row on narrow viewports */
+    width: 100%;
+    overflow-x: auto;
+    margin-left: 0;
+    -webkit-overflow-scrolling: touch;
+  }
+  .pane { padding: 0.875rem; }
+  .chat-log li { max-width: 90%; }
+  .files-pane { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+  .skills-pane { grid-template-columns: 1fr; }
+  .diff-pair { grid-template-columns: 1fr; }
+}
+
 /* Toasts (notifications) */
 #toasts {
   position: fixed;

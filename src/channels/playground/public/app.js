@@ -25,10 +25,43 @@ function toast(msg, kind = 'info') {
   setTimeout(() => el.remove(), 4000);
 }
 
+// Escape HTML to safely render user-supplied / agent-supplied text. Used
+// as the first pass before applying our tiny markdown subset, so any
+// HTML tags in the source render as literal characters, not markup.
+function escapeHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// Minimal markdown subset for agent chat bubbles. Order matters: fenced
+// code blocks first (with placeholders so their contents don't get
+// re-formatted), then inline code, then bold/italic, then line breaks.
+// User and tool bubbles stay as plain text via the textContent path.
+function renderAgentMarkdown(text) {
+  const codeBlocks = [];
+  let s = text.replace(/```([a-zA-Z0-9_+.-]*)\n([\s\S]*?)```/g, (_, lang, code) => {
+    codeBlocks.push({ lang, code });
+    return `\x00CODE${codeBlocks.length - 1}\x00`;
+  });
+  s = escapeHtml(s);
+  s = s.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+  s = s.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+  s = s.replace(/(^|[^\\])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+  s = s.replace(/\n/g, '<br>');
+  s = s.replace(/\x00CODE(\d+)\x00/g, (_, i) => {
+    const { code } = codeBlocks[+i];
+    return `<pre><code>${escapeHtml(code)}</code></pre>`;
+  });
+  return s;
+}
+
 function logChat(role, text) {
   const li = document.createElement('li');
   li.className = role;
-  li.textContent = text;
+  if (role === 'agent') {
+    li.innerHTML = renderAgentMarkdown(text);
+  } else {
+    li.textContent = text;
+  }
   $('chat-log').appendChild(li);
   $('chat-log').scrollTop = $('chat-log').scrollHeight;
 }
@@ -289,8 +322,11 @@ async function loadFilesList() {
       const row = document.createElement('div');
       row.className = 'file-row';
       if (f.name === activeFile) row.classList.add('active');
+      if (f.name === activeFile && $('files-text').value !== activeFileOriginal) {
+        row.classList.add('dirty');
+      }
       row.dataset.name = f.name;
-      row.innerHTML = `<div>${f.name}</div><div class="file-meta">${f.size} bytes</div>`;
+      row.innerHTML = `<div class="file-name">${escapeHtml(f.name)}</div><div class="file-meta">${f.size} bytes</div>`;
       list.appendChild(row);
     }
     list.onclick = async (ev) => {
@@ -326,6 +362,10 @@ async function saveActiveFile() {
     await api('PUT', `/api/drafts/${activeDraft}/files/${encodeURIComponent(activeFile)}`, { text });
     activeFileOriginal = text;
     $('files-save-btn').disabled = true;
+    // Clear the dirty dot on the just-saved row.
+    for (const row of document.querySelectorAll('#files-list .file-row')) {
+      if (row.dataset.name === activeFile) row.classList.remove('dirty');
+    }
     toast(`Saved ${activeFile}`);
     refreshStatusBadge();
   } catch (err) {
@@ -334,7 +374,13 @@ async function saveActiveFile() {
 }
 
 $('files-text').addEventListener?.('input', () => {
-  $('files-save-btn').disabled = $('files-text').value === activeFileOriginal;
+  const dirty = $('files-text').value !== activeFileOriginal;
+  $('files-save-btn').disabled = !dirty;
+  // Reflect the dirty state on the active file row so the user sees the
+  // dot indicator the moment they type, not on the next refresh.
+  for (const row of document.querySelectorAll('#files-list .file-row')) {
+    if (row.dataset.name === activeFile) row.classList.toggle('dirty', dirty);
+  }
 });
 $('files-save-btn').addEventListener?.('click', saveActiveFile);
 $('files-refresh-btn').addEventListener?.('click', loadFilesList);
@@ -506,18 +552,46 @@ document.querySelectorAll('#provider-toggle .toggle').forEach((btn) => {
   btn.onclick = () => switchProvider(btn.dataset.provider);
 });
 
-$('chat-form').onsubmit = async (ev) => {
-  ev.preventDefault();
+// Chat input: textarea that auto-resizes with content + Cmd/Ctrl+Enter
+// submits. Plain Enter inserts a newline so multi-line messages stay
+// natural; the kbd hint label adapts to mac/non-mac.
+const isMac = navigator.platform.includes('Mac') || /Mac OS X/.test(navigator.userAgent);
+const sendKey = $('send-key');
+if (sendKey) sendKey.textContent = isMac ? '⌘↵' : 'Ctrl+↵';
+
+function autosizeChatInput() {
+  const ta = $('chat-input');
+  ta.style.height = 'auto';
+  ta.style.height = Math.min(ta.scrollHeight, 192) + 'px';
+}
+$('chat-input').addEventListener('input', autosizeChatInput);
+
+async function submitChat() {
   const input = $('chat-input');
   const text = input.value.trim();
   if (!text || !activeDraft) return;
   input.value = '';
+  autosizeChatInput();
   logChat('user', text);
   try {
     await api('POST', `/api/drafts/${activeDraft}/messages`, { text });
   } catch (err) {
     logChat('error', err.message);
   }
+}
+
+$('chat-form').onsubmit = (ev) => {
+  ev.preventDefault();
+  void submitChat();
 };
+
+$('chat-input').addEventListener('keydown', (ev) => {
+  // Cmd+Enter on Mac, Ctrl+Enter elsewhere. Shift+Enter falls through to
+  // the default (newline) — never submits with shift held.
+  if (ev.key === 'Enter' && !ev.shiftKey && (ev.metaKey || ev.ctrlKey)) {
+    ev.preventDefault();
+    void submitChat();
+  }
+});
 
 refreshPicker();

@@ -36,11 +36,19 @@
     <section id="picker" class="pane">
       <h2>Drafts</h2>
       <ul id="drafts-list" class="list"></ul>
-      <div id="picker-empty" class="empty" hidden>No drafts yet.</div>
+      <div id="picker-empty" class="empty" hidden>
+        <div class="empty-icon">📝</div>
+        <div>No drafts yet.</div>
+        <div class="empty-hint">Pick an agent group below to start one.</div>
+      </div>
 
       <h2>Create a new draft</h2>
       <ul id="groups-list" class="list"></ul>
-      <div id="groups-empty" class="empty" hidden>No agent groups available.</div>
+      <div id="groups-empty" class="empty" hidden>
+        <div class="empty-icon">🪧</div>
+        <div>No agent groups available.</div>
+        <div class="empty-hint">An admin needs to provision one with <code>ncl groups create</code>.</div>
+      </div>
 
       <button id="refresh-btn" class="ghost">Refresh</button>
     </section>
@@ -49,8 +57,9 @@
       <div id="mode-chat" class="mode active">
         <ul id="chat-log" class="chat-log"></ul>
         <form id="chat-form">
-          <input id="chat-input" type="text" placeholder="Send a message to your draft agent…" autocomplete="off">
+          <textarea id="chat-input" rows="1" placeholder="Send a message to your draft agent…" autocomplete="off"></textarea>
           <button type="submit" class="primary">Send</button>
+          <span class="send-hint"><kbd id="send-key">⌘↵</kbd> to send</span>
         </form>
       </div>
 
