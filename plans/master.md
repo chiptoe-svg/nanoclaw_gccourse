@@ -246,11 +246,14 @@ RAG-driven labs with evaluation framework, and walkaway cloud deploy.
 Items surfaced during Phase 1 work but not blocking the close-out.
 Slot into Phase 2 or a small interleave when convenient.
 
-- **Web "Lost your link?" form on `/login`** + Resend integration
-  (Phase 1 #6 follow-on). ~1.5 hr. Students self-serve a fresh
-  token URL via email rather than asking the instructor to run
-  `ncl class-tokens rotate`. Gates on `/add-resend` being
-  installed; degrades to "contact instructor" UI when not.
+- ~~**Web "Lost your link?" form on `/login`** + Resend integration~~
+  ✅ shipped 2026-05-12. Trunk hook (`registerLostLinkRecoverer` +
+  POST `/login/recover` route + form) on `main` (commit `b1a0346`);
+  classroom-side recoverer + Resend send on `origin/classroom`
+  (commit `25e0c41`). Anti-enumeration: identical success response
+  whether email is on roster or not. Three RESEND_* env vars in
+  `.env` enable it (same vars as `/add-resend`); falls back to
+  "contact instructor" message when unset. 3 new vitest cases.
 - **Codex ChatGPT-subscription OAuth refresh daemon** + **`/codex-auth`
   Telegram admin command.** Bundle: the admin command flips
   `~/.codex/auth.json` into chatgpt mode, and the daemon keeps it
