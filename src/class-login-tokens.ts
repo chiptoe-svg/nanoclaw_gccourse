@@ -23,10 +23,12 @@
 import crypto from 'crypto';
 
 import { getDb } from './db/connection.js';
+import { readEnvFile } from './env.js';
 import { log } from './log.js';
 import {
   mintSessionForUser,
   registerClassTokenRedeemer,
+  registerLostLinkRecoverer,
   type PlaygroundSession,
 } from './channels/playground/auth-store.js';
 
@@ -124,3 +126,75 @@ function classTokenRedeemer(token: string): PlaygroundSession | null {
 }
 
 registerClassTokenRedeemer(classTokenRedeemer);
+
+/**
+ * Lost-link recovery — fires when a student submits their email on
+ * /login. Looks them up in `classroom_roster`, rotates their token,
+ * and emails the fresh URL via Resend.
+ *
+ * Silent on miss (no roster row, no RESEND_API_KEY, Resend API error):
+ * the caller already returns a generic success response so we can't
+ * leak which case happened. Just log and return.
+ */
+function resolveUserIdByEmail(email: string): string | null {
+  const row = getDb().prepare('SELECT user_id FROM classroom_roster WHERE LOWER(email) = LOWER(?)').get(email) as
+    | { user_id: string }
+    | undefined;
+  return row?.user_id ?? null;
+}
+
+function publicPlaygroundBaseUrl(): string {
+  // Mirrors src/cli/resources/class-tokens.ts — instructor sets
+  // PUBLIC_PLAYGROUND_URL in .env to the externally-reachable host.
+  return (process.env.PUBLIC_PLAYGROUND_URL || 'http://localhost:3002').replace(/\/+$/, '');
+}
+
+async function sendLostLinkEmail(toEmail: string, loginUrl: string): Promise<void> {
+  const env = readEnvFile(['RESEND_API_KEY', 'RESEND_FROM_ADDRESS', 'RESEND_FROM_NAME']);
+  if (!env.RESEND_API_KEY) {
+    log.warn('Lost-link recovery: RESEND_API_KEY not set — email not sent', { email: toEmail });
+    return;
+  }
+  const from = env.RESEND_FROM_NAME ? `${env.RESEND_FROM_NAME} <${env.RESEND_FROM_ADDRESS}>` : env.RESEND_FROM_ADDRESS;
+  if (!from) {
+    log.warn('Lost-link recovery: RESEND_FROM_ADDRESS not set — email not sent', { email: toEmail });
+    return;
+  }
+  const payload = {
+    from,
+    to: [toEmail],
+    subject: 'Your NanoClaw login link',
+    text: `Hi,\n\nHere's your fresh login link for the class playground:\n\n${loginUrl}\n\nBookmark it — this URL is your identity. If you lose it again, request another from the same page.\n\nYour previous link (if any) has been deactivated.\n`,
+  };
+  try {
+    const resp = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${env.RESEND_API_KEY}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => '');
+      log.error('Lost-link recovery: Resend API error', { status: resp.status, body: text.slice(0, 300) });
+      return;
+    }
+    log.info('Lost-link recovery email sent', { email: toEmail });
+  } catch (err) {
+    log.error('Lost-link recovery: fetch failed', { err: String(err) });
+  }
+}
+
+export async function recoverLostLinkForEmail(email: string): Promise<void> {
+  const userId = resolveUserIdByEmail(email);
+  if (!userId) {
+    log.info('Lost-link recovery: no roster entry', { email });
+    return;
+  }
+  const token = rotateClassLoginToken(userId);
+  const url = `${publicPlaygroundBaseUrl()}/?token=${token}`;
+  await sendLostLinkEmail(email, url);
+}
+
+registerLostLinkRecoverer(recoverLostLinkForEmail);
