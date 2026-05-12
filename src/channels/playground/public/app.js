@@ -25,17 +25,11 @@ function toast(msg, kind = 'info') {
   setTimeout(() => el.remove(), 4000);
 }
 
-// Escape HTML to safely render user-supplied / agent-supplied text. Used
-// as the first pass before applying our tiny markdown subset, so any
-// HTML tags in the source render as literal characters, not markup.
-function escapeHtml(s) {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
 // Minimal markdown subset for agent chat bubbles. Order matters: fenced
 // code blocks first (with placeholders so their contents don't get
 // re-formatted), then inline code, then bold/italic, then line breaks.
-// User and tool bubbles stay as plain text via the textContent path.
+// User and tool bubbles stay plain text via the textContent path.
+// (escapeHtml is defined later in this file — used for the HTML-safe pass.)
 function renderAgentMarkdown(text) {
   const codeBlocks = [];
   let s = text.replace(/```([a-zA-Z0-9_+.-]*)\n([\s\S]*?)```/g, (_, lang, code) => {
