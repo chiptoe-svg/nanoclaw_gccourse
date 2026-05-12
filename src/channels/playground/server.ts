@@ -331,7 +331,16 @@ function serveStatic(res: http.ServerResponse, filename: string, contentType: st
       send(res, 404, { error: `Not found: ${filename}` });
       return;
     }
-    res.writeHead(200, { 'content-type': contentType });
+    // No client cache for our HTML/JS/CSS so we don't get stuck behind
+    // a broken cached copy after pushing a fix. Browsers were sticking
+    // on a stale app.js that had a SyntaxError, defeating manual
+    // hard-refreshes (the page reloaded but the cached JS came back).
+    // Images get a short cache since they rarely change.
+    const isImage = /\.(png|jpg|jpeg|gif|webp|svg|ico)$/i.test(filename);
+    res.writeHead(200, {
+      'content-type': contentType,
+      'cache-control': isImage ? 'public, max-age=3600' : 'no-cache, must-revalidate',
+    });
     res.end(data);
   });
 }
