@@ -299,14 +299,11 @@ Slot into Phase 2 or a small interleave when convenient.
   `UPDATE agent_groups SET agent_provider = (SELECT json_extract(...))`
   is doable but not worth scripting for the handful of groups
   affected; manual `ncl groups update --provider <p>` works too.
-- **Container can't reach GWS relay on port 3007** when ufw is
-  active without an explicit allow rule for docker0 traffic. Port
-  3001 (credential proxy) has an iptables ACCEPT (likely added by
-  some prior setup step); 3007 doesn't. Document the ufw allow
-  rule (`sudo ufw allow in on docker0 to any port 3007 proto tcp`)
-  in `/add-gws-tool` SKILL.md and/or have `/setup` add it. Not
-  blocking for shared-classroom deploy (codex doesn't use the relay)
-  but blocks any GWS MCP tool calls from inside containers.
+- ~~**Container can't reach GWS relay on port 3007** when ufw is
+  active without an explicit allow rule for docker0 traffic~~ ✅
+  fixed 2026-05-12 — `/add-gws-tool` SKILL.md step 9b documents
+  the `sudo ufw allow in on docker0 to any port 3007 proto tcp`
+  rule + the verify step.
 
 ## Cross-cutting
 

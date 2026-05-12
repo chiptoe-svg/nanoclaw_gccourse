@@ -142,6 +142,37 @@ launchctl kickstart -k gui/$(id -u)/com.nanoclaw   # macOS
 # systemctl --user restart nanoclaw                # Linux
 ```
 
+### 9b. Linux + ufw: allow docker0 → port 3007
+
+**Skip this step on macOS** (Docker for Mac handles host-side
+networking transparently) or on Linux without ufw active.
+
+If the host runs ufw, containers can't reach the GWS relay on
+3007 by default. The credential proxy on 3001 usually has an
+iptables ACCEPT from an earlier setup step, but 3007 doesn't —
+so codex's MCP calls to the relay hang or 502 with no obvious
+cause. Add the rule:
+
+```bash
+sudo ufw allow in on docker0 to any port 3007 proto tcp
+```
+
+This allows traffic from any container on the docker0 bridge to
+reach the host's 3007. The proxy is bound to docker0's host IP
+(127.x range on Linux, not 0.0.0.0 — see `src/credential-proxy.ts`),
+so no public exposure.
+
+Verify:
+
+```bash
+sudo ufw status | grep 3007
+# → 3007/tcp on docker0      ALLOW IN    Anywhere
+```
+
+If you're using Apple Container instead of Docker, replace
+`docker0` with whatever bridge interface Apple Container created
+(`ip link show | grep -E 'bridge|veth'` to find it).
+
 ## Verify
 
 ### Check the relay is running
