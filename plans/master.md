@@ -28,8 +28,15 @@ this file is the sequencing layer.
 | `wasFallback` infra — `{ token, principal }` from `getGoogleAccessTokenForAgentGroup` (Phase 1 #1) | `main` (commit `90caf28`) — `gws-token.ts` kept in trunk |
 | GWS small-trunk-with-skills refactor (rule 5) — base GWS → `origin/gws-mcp`, ownership ext → `origin/classroom`, skills rewritten to install | `main` (merge `88db845`) — branch `feat/gws-skill-refactor` deleted |
 | credential-proxy Phase X.4 — instructor provider OAuth (verification slice) | `main` (commit `52b1837`) |
+| **Phase 1 closure — docs + first follow-ups** | |
+| `docs/shared-classroom.md` — end-to-end deploy guide | `main` (commit `8090500`) |
+| Docs rollout — README "Deploying a classroom" subsection, `docs/isolation-model.md` classroom section, four `/add-classroom*` SKILL.md cross-links, "Mode A/B" → "shared-classroom/per-person" rebrand across 5 files | `main` (commits `1b5abe9`, `1b71052`) |
+| Stale student-side docs cleanup — `student-playground-setup.md` deleted, `student-setup-guide.md` → `add-web-hosting.md` (renamed + npm→pnpm) | `main` (commit `141ea07`) |
+| AI-coding-CLI neutralization — present Claude Code + Codex as a real operator choice in README, shared-classroom guide, architecture, setup-flow, setup-wiring | `main` (commit `602dc2c`) |
+| Phase 1 follow-up — ufw docker0 → 3007 documentation in `/add-gws-tool` step 9b | `main` (commit `42d0dfc`) |
+| Phase 1 follow-up — `/login` "Lost your link?" form + Resend integration | trunk hook + form: `main` (commit `b1a0346`); classroom-side recoverer + Resend send: `origin/classroom` (commit `25e0c41`) |
 
-**Phase 1 status: complete.** All 9 build-order items shipped; refactor merged; nothing else blocking. Phase 2 unblocked.
+**Phase 1 status: complete.** All 9 build-order items shipped; refactor merged; deploy guide written; two follow-ups shipped (ufw doc, lost-link form). Phase 2 unblocked.
 
 ## Active sub-plans (referenced from the delivery phases below)
 
@@ -39,7 +46,7 @@ this file is the sequencing layer.
 | [gws-mcp-v2.md](gws-mcp-v2.md) | GWS V2 tool surface — sheets / calendar / drive-listing / gmail / slides |
 | [credential-proxy-per-call-attribution.md](credential-proxy-per-call-attribution.md) | Header-based attribution + provider OAuth resolvers (X.4 instructor / X.7 per-student) |
 | [classroom-web-multiuser.md](classroom-web-multiuser.md) | The 9-phase classroom web rebuild; phases referenced individually below |
-| [ai-coding-cli-pick.md](ai-coding-cli-pick.md) | AI-coding-CLI picker (A–F shipped; G remains) |
+| [ai-coding-cli-pick.md](ai-coding-cli-pick.md) | AI-coding-CLI picker (A–G all shipped — design record) |
 | [upstream-pr-prep.md](upstream-pr-prep.md) | Per-subsystem PR-readiness tracker for upstream `qwibitai/nanoclaw` |
 
 Archived: `agent-playground-v2.md` (SHIPPED — kept as design record).
