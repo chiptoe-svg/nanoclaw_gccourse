@@ -333,6 +333,33 @@ export class ClaudeProvider implements AgentProvider {
         } else if (message.type === 'system' && (message as { subtype?: string }).subtype === 'task_notification') {
           const tn = message as { summary?: string };
           yield { type: 'progress', message: tn.summary || 'Task notification' };
+        } else if (message.type === 'assistant' || message.type === 'user') {
+          // Scan the message's content array for tool_use / tool_result
+          // blocks and emit them as trace events. Skip plain text blocks —
+          // those collapse into the final `result` message anyway.
+          const content = (message as { message?: { content?: unknown[] } }).message?.content;
+          if (Array.isArray(content)) {
+            for (const block of content) {
+              if (!block || typeof block !== 'object') continue;
+              const b = block as { type?: string };
+              if (b.type === 'tool_use') {
+                const tu = block as { id?: string; name?: string; input?: unknown };
+                if (tu.id && tu.name) {
+                  yield { type: 'tool_use', toolUseId: tu.id, toolName: tu.name, input: tu.input };
+                }
+              } else if (b.type === 'tool_result') {
+                const tr = block as { tool_use_id?: string; content?: unknown; is_error?: boolean };
+                if (tr.tool_use_id) {
+                  yield {
+                    type: 'tool_result',
+                    toolUseId: tr.tool_use_id,
+                    content: tr.content,
+                    isError: tr.is_error,
+                  };
+                }
+              }
+            }
+          }
         }
       }
       log(`Query completed after ${messageCount} SDK messages`);

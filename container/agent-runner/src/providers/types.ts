@@ -87,4 +87,19 @@ export type ProviderEvent =
    * after compaction. Distinct from `result` so it doesn't mark the turn
    * completed or get dispatched as a chat message. See qwibitai/nanoclaw#2325.
    */
-  | { type: 'compacted'; text: string };
+  | { type: 'compacted'; text: string }
+  /**
+   * Tool invocation by the agent. Providers MUST emit this when the
+   * model calls a tool (Bash, file read, MCP, etc.) so the playground
+   * trace panel can surface what the agent is doing under the hood.
+   * Other delivery surfaces (Telegram, Slack, etc.) drop trace events;
+   * they only ever land on a `playground` channel destination.
+   */
+  | { type: 'tool_use'; toolUseId: string; toolName: string; input: unknown }
+  /**
+   * Tool result returning to the agent. Paired with a prior tool_use by
+   * `toolUseId`. `isError` is the SDK-reported execution outcome (not
+   * "the tool reported a failure logically" — that's domain-specific
+   * and lives in the content).
+   */
+  | { type: 'tool_result'; toolUseId: string; content: unknown; isError?: boolean };

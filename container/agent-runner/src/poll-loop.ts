@@ -403,7 +403,7 @@ async function processQuery(
   return { continuation: queryContinuation };
 }
 
-function handleEvent(event: ProviderEvent, _routing: RoutingContext): void {
+function handleEvent(event: ProviderEvent, routing: RoutingContext): void {
   switch (event.type) {
     case 'init':
       log(`Session: ${event.continuation}`);
@@ -422,7 +422,43 @@ function handleEvent(event: ProviderEvent, _routing: RoutingContext): void {
     case 'compacted':
       log(`Compacted: ${event.text}`);
       break;
+    case 'tool_use':
+    case 'tool_result':
+      emitTraceToPlayground(event, routing);
+      break;
   }
+}
+
+/**
+ * Push a trace event toward the playground SSE stream — but only when
+ * the originating message came from a playground channel. Without a
+ * playground watching, the trace write would be dead weight in
+ * messages_out and would also surface as garbage on non-playground
+ * adapters (which would then drop it, but better not to write at all).
+ *
+ * Host-side, `src/delivery.ts` intercepts `kind: 'trace'` rows before
+ * the standard channel handoff and routes them to playground's
+ * pushToDraft. Telegram/Slack/etc. never see them.
+ */
+function emitTraceToPlayground(
+  event: ProviderEvent & { type: 'tool_use' | 'tool_result' },
+  routing: RoutingContext,
+): void {
+  if (routing.channelType !== 'playground' || !routing.platformId) return;
+
+  const payload =
+    event.type === 'tool_use'
+      ? { type: 'tool_use', toolUseId: event.toolUseId, toolName: event.toolName, input: event.input }
+      : { type: 'tool_result', toolUseId: event.toolUseId, content: event.content, isError: event.isError };
+
+  writeMessageOut({
+    id: generateId(),
+    kind: 'trace',
+    platform_id: routing.platformId,
+    channel_type: 'playground',
+    thread_id: null,
+    content: JSON.stringify(payload),
+  });
 }
 
 /**

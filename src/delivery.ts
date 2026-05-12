@@ -257,6 +257,24 @@ async function deliverMessage(
     return;
   }
 
+  // Trace events — agent tool_use / tool_result blocks routed to the
+  // playground SSE only. Bypasses the messaging-group / agent_destinations
+  // permission checks because trace targets a non-persistent surface
+  // (in-memory SSE subscribers) and only ever lands on a `playground`
+  // channel_type. Dynamic import so trunk doesn't hard-link to playground.
+  if (msg.kind === 'trace') {
+    if (msg.channel_type !== 'playground' || !msg.platform_id) {
+      log.warn('trace message missing playground routing — dropping', { id: msg.id });
+      return;
+    }
+    const draftFolder = msg.platform_id.startsWith('playground:')
+      ? msg.platform_id.slice('playground:'.length)
+      : msg.platform_id;
+    const { pushToDraft } = await import('./channels/playground/sse.js');
+    pushToDraft(draftFolder, 'message', { kind: 'trace', content });
+    return;
+  }
+
   // Agent-to-agent — route to target session via the agent-to-agent module.
   // Guarded by the channel_type check. If the module isn't installed the
   // `agent_destinations` table won't exist and `routeAgentMessage`'s permission

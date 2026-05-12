@@ -62,24 +62,60 @@ function logChat(role, text) {
 
 // Trace panel: tool calls, system events, anything that isn't an agent
 // chat reply. Each entry shows a small "kind" label and a pre-wrap body.
+// When the body is a structured tool_use/tool_result envelope (emitted
+// by the agent-runner), pull out the recognized fields for legibility.
 function logTrace(kind, body) {
   const log = $('trace-log');
-  // Drop the placeholder on first real entry.
   const placeholder = log.querySelector('.trace-empty');
   if (placeholder) placeholder.remove();
+
+  // Recognize the tool envelopes emitted by container/agent-runner.
+  let label = kind || 'event';
+  let bodyText;
+  if (body && typeof body === 'object' && body.type === 'tool_use') {
+    label = `tool · ${body.toolName || 'unknown'}`;
+    bodyText = formatToolPayload(body.input);
+  } else if (body && typeof body === 'object' && body.type === 'tool_result') {
+    label = body.isError ? 'tool result · error' : 'tool result';
+    bodyText = formatToolPayload(body.content);
+  } else if (typeof body === 'string') {
+    bodyText = body;
+  } else {
+    bodyText = JSON.stringify(body, null, 2);
+  }
 
   const li = document.createElement('li');
   const kindEl = document.createElement('div');
   kindEl.className = 'trace-kind';
-  kindEl.textContent = kind || 'event';
+  kindEl.textContent = label;
   const bodyEl = document.createElement('div');
   bodyEl.className = 'trace-body';
-  bodyEl.textContent =
-    typeof body === 'string' ? body : JSON.stringify(body, null, 2);
+  bodyEl.textContent = bodyText;
   li.appendChild(kindEl);
   li.appendChild(bodyEl);
   log.appendChild(li);
   log.scrollTop = log.scrollHeight;
+}
+
+// Format a tool input/output payload for display. Truncates long
+// strings/arrays so a single trace entry doesn't blow up the panel,
+// and unwraps the common Claude tool-result shape (an array of
+// `{type:'text', text:'...'}` blocks) into its concatenated text.
+function formatToolPayload(payload) {
+  if (payload == null) return '';
+  if (typeof payload === 'string') return truncate(payload, 800);
+  if (Array.isArray(payload) && payload.every((b) => b && typeof b === 'object' && 'text' in b)) {
+    return truncate(payload.map((b) => b.text).join('\n'), 800);
+  }
+  try {
+    return truncate(JSON.stringify(payload, null, 2), 1200);
+  } catch {
+    return String(payload);
+  }
+}
+
+function truncate(s, max) {
+  return s.length <= max ? s : s.slice(0, max) + `\n… (${s.length - max} more chars)`;
 }
 
 function resetTracePanel() {
