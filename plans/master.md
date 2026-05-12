@@ -35,6 +35,8 @@ this file is the sequencing layer.
 | AI-coding-CLI neutralization — present Claude Code + Codex as a real operator choice in README, shared-classroom guide, architecture, setup-flow, setup-wiring | `main` (commit `602dc2c`) |
 | Phase 1 follow-up — ufw docker0 → 3007 documentation in `/add-gws-tool` step 9b | `main` (commit `42d0dfc`) |
 | Phase 1 follow-up — `/login` "Lost your link?" form + Resend integration | trunk hook + form: `main` (commit `b1a0346`); classroom-side recoverer + Resend send: `origin/classroom` (commit `25e0c41`) |
+| Playground UI redesign — A (theme unification, dark → light, lobster mascot), B (brand palette + favicon + topbar), D (mode-tabs as pills, agent-markdown rendering, multi-line chat + ⌘↵, file dirty indicator, themed scrollbars, mobile breakpoint), bug fixes (duplicate escapeHtml, #mode-chat specificity, no-cache headers, cache-bust) | `main` (commits `3d4cdd1`, `db51afe`, `702939d`, `60ab860`, `62df9aa`, `27eb5f4`) |
+| Playground trace panel — tool-call / tool-result surfacing via new ProviderEvents → messages_out kind=`trace` → playground SSE → right-side trace panel. Claude SDK provider only; Codex/OpenCode/Ollama follow-up. | `main` (commit `a83794d`) |
 
 **Phase 1 status: complete.** All 9 build-order items shipped; refactor merged; deploy guide written; two follow-ups shipped (ufw doc, lost-link form). Phase 2 unblocked.
 
@@ -261,6 +263,22 @@ Slot into Phase 2 or a small interleave when convenient.
   whether email is on roster or not. Three RESEND_* env vars in
   `.env` enable it (same vars as `/add-resend`); falls back to
   "contact instructor" message when unset. 3 new vitest cases.
+- **Trace surfacing for non-Claude providers** (Codex, OpenCode,
+  Ollama, …). The playground's trace panel renders tool calls / tool
+  results in real time (commit `a83794d`), but only the Claude SDK
+  provider currently emits the underlying `tool_use` / `tool_result`
+  ProviderEvents. Each non-default provider needs an equivalent scan
+  in its `translateEvents` (Codex's app-server protocol, OpenCode's
+  stream shape, etc.) — same envelope shape so the client renderer
+  doesn't need per-provider branches. **~30 min per provider**; do
+  when the operator's actual class agent provider lands somewhere
+  other than `claude`. Files to touch:
+  - `container/agent-runner/src/providers/codex.ts` (lives in trunk)
+  - `container/agent-runner/src/providers/opencode.ts` (`providers`
+    branch — needs porting via `/add-opencode` skill update too)
+  - any future provider's `translateEvents`
+  The `kind: 'trace'` route in `src/delivery.ts` and the client
+  renderer in `app.js` are provider-agnostic — provider work only.
 - **Codex ChatGPT-subscription OAuth refresh daemon** + **`/codex-auth`
   Telegram admin command.** Bundle: the admin command flips
   `~/.codex/auth.json` into chatgpt mode, and the daemon keeps it
