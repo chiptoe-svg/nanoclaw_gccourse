@@ -304,11 +304,11 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   color: var(--text);
 }
 
-#mode-chat {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-}
+/* Note: don't add a #mode-chat { display: flex } rule here. It would
+   beat .mode[hidden] { display: none } on specificity (id 100 vs
+   class+attr 11) and stop switchMode() from hiding chat when you
+   tab to Persona/Skills/Files/Diff. The base .mode rule already
+   sets display:flex. */
 
 /* Two-column chat: agent dialogue on the left, tool/system trace on the right */
 .chat-layout {
