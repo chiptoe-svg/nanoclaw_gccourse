@@ -1,13 +1,18 @@
 # Add Web Hosting to NanoClaw
 
-Your agent will be able to create and host websites on your VPS.
+Add a Caddy web server to your VPS so agents can publish static
+HTML/CSS/JS sites at `http://<your-vps-ip>/<site-name>/`. Works
+for personal-use installs and for [shared classroom](shared-classroom.md)
+deploys (in a classroom each student writes to their own
+subdirectory under `/var/www/sites/`, namespaced by their folder
+to avoid collisions).
 
 ## Step 1: Pull the Latest Changes
 
 ```bash
 cd nanoclaw
 git pull
-npm run build
+pnpm run build
 ```
 
 ## Step 2: Install Caddy (Web Server)
