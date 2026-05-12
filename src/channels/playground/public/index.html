@@ -55,12 +55,25 @@
 
     <section id="workspace" class="pane" hidden>
       <div id="mode-chat" class="mode active">
-        <ul id="chat-log" class="chat-log"></ul>
-        <form id="chat-form">
-          <textarea id="chat-input" rows="1" placeholder="Send a message to your draft agent…" autocomplete="off"></textarea>
-          <button type="submit" class="primary">Send</button>
-          <span class="send-hint"><kbd id="send-key">⌘↵</kbd> to send</span>
-        </form>
+        <div class="chat-layout">
+          <div class="chat-column">
+            <ul id="chat-log" class="chat-log"></ul>
+            <form id="chat-form">
+              <textarea id="chat-input" rows="1" placeholder="Send a message to your draft agent…" autocomplete="off"></textarea>
+              <button type="submit" class="primary">Send</button>
+              <span class="send-hint"><kbd id="send-key">⌘↵</kbd> to send</span>
+            </form>
+          </div>
+          <aside id="trace-panel" class="trace-panel">
+            <header class="trace-header">
+              <span class="label">Trace</span>
+              <button id="trace-clear-btn" class="ghost" type="button">Clear</button>
+            </header>
+            <ul id="trace-log" class="trace-log">
+              <li class="trace-empty">Tool calls, system events, and non-chat agent output will appear here as the agent works.</li>
+            </ul>
+          </aside>
+        </div>
       </div>
 
       <div id="mode-persona" class="mode" hidden>

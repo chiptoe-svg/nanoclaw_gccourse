@@ -310,6 +310,91 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   height: 100%;
 }
 
+/* Two-column chat: agent dialogue on the left, tool/system trace on the right */
+.chat-layout {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 1rem;
+  flex: 1;
+  min-height: 0;          /* let children scroll instead of growing the layout */
+}
+.chat-column {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.trace-panel {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.trace-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.trace-header .label {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-faint);
+}
+.trace-header button {
+  padding: 0.2rem 0.55rem;
+  font-size: 0.75rem;
+}
+
+.trace-log {
+  list-style: none;
+  margin: 0;
+  padding: 0.5rem;
+  flex: 1;
+  overflow-y: auto;
+}
+.trace-log li {
+  padding: 0.5rem 0.6rem;
+  margin-bottom: 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  word-break: break-word;
+}
+.trace-log li:last-child { margin-bottom: 0; }
+.trace-log .trace-kind {
+  display: inline-block;
+  font-weight: 600;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--brand-teal-hover);
+  margin-bottom: 0.25rem;
+}
+.trace-log .trace-body {
+  white-space: pre-wrap;
+  color: var(--text);
+}
+.trace-log .trace-empty {
+  border: none;
+  background: transparent;
+  color: var(--text-faint);
+  font-family: inherit;
+  font-size: 0.825rem;
+  text-align: center;
+  padding: 1.5rem 0.5rem;
+  line-height: 1.5;
+}
+
 /* Files mode (sidebar + editor) */
 .files-pane {
   display: grid;
@@ -624,6 +709,11 @@ kbd {
   .files-pane { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
   .skills-pane { grid-template-columns: 1fr; }
   .diff-pair { grid-template-columns: 1fr; }
+  .chat-layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr auto;     /* chat fills, trace under it */
+  }
+  .trace-panel { max-height: 35vh; }   /* don't dominate small screens */
 }
 
 /* Toasts (notifications) */

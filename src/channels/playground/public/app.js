@@ -60,6 +60,34 @@ function logChat(role, text) {
   $('chat-log').scrollTop = $('chat-log').scrollHeight;
 }
 
+// Trace panel: tool calls, system events, anything that isn't an agent
+// chat reply. Each entry shows a small "kind" label and a pre-wrap body.
+function logTrace(kind, body) {
+  const log = $('trace-log');
+  // Drop the placeholder on first real entry.
+  const placeholder = log.querySelector('.trace-empty');
+  if (placeholder) placeholder.remove();
+
+  const li = document.createElement('li');
+  const kindEl = document.createElement('div');
+  kindEl.className = 'trace-kind';
+  kindEl.textContent = kind || 'event';
+  const bodyEl = document.createElement('div');
+  bodyEl.className = 'trace-body';
+  bodyEl.textContent =
+    typeof body === 'string' ? body : JSON.stringify(body, null, 2);
+  li.appendChild(kindEl);
+  li.appendChild(bodyEl);
+  log.appendChild(li);
+  log.scrollTop = log.scrollHeight;
+}
+
+function resetTracePanel() {
+  const log = $('trace-log');
+  log.innerHTML =
+    '<li class="trace-empty">Tool calls, system events, and non-chat agent output will appear here as the agent works.</li>';
+}
+
 // ── Picker ────────────────────────────────────────────────────────────────
 
 async function refreshPicker() {
@@ -157,12 +185,12 @@ async function openDraft(folder) {
   await refreshProviderToggle();
 
   if (eventSource) eventSource.close();
+  resetTracePanel();
   eventSource = new EventSource(`/api/drafts/${folder}/stream`);
   eventSource.addEventListener('message', (ev) => {
     try {
       const data = JSON.parse(ev.data);
-      const text = extractText(data.content);
-      if (text) logChat('agent', text);
+      routeStreamEvent(data);
     } catch {
       logChat('error', ev.data);
     }
@@ -172,10 +200,29 @@ async function openDraft(folder) {
   });
 }
 
-function extractText(content) {
+/**
+ * Decide where a streamed event renders. Chat-kind messages whose
+ * content is a `{ text: ... }` envelope are user-facing agent replies →
+ * chat-log. Everything else (system events, tool calls, raw content
+ * shapes from non-text providers) → trace panel. Keeps the chat clean
+ * while still surfacing what the agent is doing under the hood.
+ */
+function routeStreamEvent(data) {
+  const { kind, content } = data;
+  const text = extractChatText(content);
+  if ((kind === 'chat' || kind === 'chat-sdk') && text !== null) {
+    logChat('agent', text);
+  } else {
+    logTrace(kind, content);
+  }
+}
+
+function extractChatText(content) {
   if (typeof content === 'string') return content;
-  if (content && typeof content === 'object' && 'text' in content) return content.text;
-  return JSON.stringify(content);
+  if (content && typeof content === 'object' && typeof content.text === 'string') {
+    return content.text;
+  }
+  return null;
 }
 
 async function endSession() {
@@ -578,6 +625,8 @@ $('chat-form').onsubmit = (ev) => {
   ev.preventDefault();
   void submitChat();
 };
+
+$('trace-clear-btn')?.addEventListener('click', resetTracePanel);
 
 $('chat-input').addEventListener('keydown', (ev) => {
   // Cmd+Enter on Mac, Ctrl+Enter elsewhere. Shift+Enter falls through to
