@@ -1,3 +1,10 @@
+> **Superseded by v3 (2026-05-13).** See
+> [`docs/superpowers/specs/2026-05-13-agent-playground-v3-design.html`](../docs/superpowers/specs/2026-05-13-agent-playground-v3-design.html)
+> for the v3 redesign spec and
+> [`docs/superpowers/plans/2026-05-13-agent-playground-v3.html`](../docs/superpowers/plans/2026-05-13-agent-playground-v3.html)
+> for the implementation plan.
+> This file remains as the historical record of the v2 ship.
+
 # Agent Playground — v2 rebuild plan
 
 ## Status: SHIPPED ✅
