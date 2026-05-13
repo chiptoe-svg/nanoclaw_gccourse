@@ -14,7 +14,25 @@ export function ensureSchema(dbPath: string, schema: 'inbound' | 'outbound'): vo
   const db = new Database(dbPath);
   db.pragma('journal_mode = DELETE');
   db.exec(schema === 'inbound' ? INBOUND_SCHEMA : OUTBOUND_SCHEMA);
+
+  // Idempotent column upgrades for outbound.db. CREATE TABLE IF NOT EXISTS
+  // above creates the columns for new files; this loop adds them to
+  // pre-existing files that predate Phase 4 of the playground v3 rebuild.
+  if (schema === 'outbound') {
+    addColumnIfMissing(db, 'messages_out', 'tokens_in', 'INTEGER');
+    addColumnIfMissing(db, 'messages_out', 'tokens_out', 'INTEGER');
+    addColumnIfMissing(db, 'messages_out', 'latency_ms', 'INTEGER');
+    addColumnIfMissing(db, 'messages_out', 'provider', 'TEXT');
+    addColumnIfMissing(db, 'messages_out', 'model', 'TEXT');
+  }
+
   db.close();
+}
+
+function addColumnIfMissing(db: Database.Database, table: string, column: string, type: string): void {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+  if (cols.some((c) => c.name === column)) return;
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
 }
 
 /** Open the inbound DB for a session (host reads/writes). */
