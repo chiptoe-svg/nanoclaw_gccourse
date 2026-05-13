@@ -23,6 +23,7 @@ export const MOUNT_ALLOWLIST_PATH = path.join(HOME_DIR, '.config', 'nanoclaw', '
 export const SENDER_ALLOWLIST_PATH = path.join(HOME_DIR, '.config', 'nanoclaw', 'sender-allowlist.json');
 export const STORE_DIR = path.resolve(PROJECT_ROOT, 'store');
 export const GROUPS_DIR = path.resolve(PROJECT_ROOT, 'groups');
+export const CONTAINER_DIR = path.resolve(PROJECT_ROOT, 'container');
 export const DATA_DIR = path.resolve(PROJECT_ROOT, 'data');
 
 // Per-checkout image tag so two installs on the same host don't share
