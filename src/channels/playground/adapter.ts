@@ -51,7 +51,14 @@ function createAdapter(): ChannelAdapter {
       const draftFolder = platformId.startsWith(PLATFORM_PREFIX)
         ? platformId.slice(PLATFORM_PREFIX.length)
         : platformId;
-      pushToDraft(draftFolder, 'message', { kind: message.kind, content: message.content });
+      pushToDraft(draftFolder, 'message', {
+        kind: message.kind,
+        content: message.content,
+        ...(message.meta?.tokens ? { tokens: message.meta.tokens } : {}),
+        ...(message.meta?.latencyMs != null ? { latencyMs: message.meta.latencyMs } : {}),
+        ...(message.meta?.provider ? { provider: message.meta.provider } : {}),
+        ...(message.meta?.model ? { model: message.meta.model } : {}),
+      });
       return undefined; // no platform message id
     },
   };

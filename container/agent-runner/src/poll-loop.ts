@@ -374,7 +374,14 @@ async function processQuery(
         // at all — either way the turn is finished.
         markCompleted(initialBatchIds);
         if (event.text) {
-          dispatchResultText(event.text, routing);
+          const cost: ResultCost = {
+            tokensIn: event.tokens?.input,
+            tokensOut: event.tokens?.output,
+            latencyMs: event.latencyMs,
+            provider: event.provider,
+            model: event.model,
+          };
+          dispatchResultText(event.text, routing, cost);
         }
       } else if (event.type === 'compacted') {
         // The SDK auto-compacted the conversation. After compaction the
@@ -461,6 +468,14 @@ function emitTraceToPlayground(
   });
 }
 
+interface ResultCost {
+  tokensIn?: number;
+  tokensOut?: number;
+  latencyMs?: number;
+  provider?: string;
+  model?: string;
+}
+
 /**
  * Parse the agent's final text for <message to="name">...</message> blocks
  * and dispatch each one to its resolved destination. Text outside of blocks
@@ -469,7 +484,7 @@ function emitTraceToPlayground(
  * The agent must always wrap output in <message to="name">...</message>
  * blocks, even with a single destination. Bare text is scratchpad only.
  */
-function dispatchResultText(text: string, routing: RoutingContext): void {
+function dispatchResultText(text: string, routing: RoutingContext, cost?: ResultCost): void {
   const MESSAGE_RE = /<message\s+to="([^"]+)"\s*>([\s\S]*?)<\/message>/g;
 
   let match: RegExpExecArray | null;
@@ -491,7 +506,7 @@ function dispatchResultText(text: string, routing: RoutingContext): void {
       scratchpadParts.push(`[dropped: unknown destination "${toName}"] ${body}`);
       continue;
     }
-    sendToDestination(dest, body, routing);
+    sendToDestination(dest, body, routing, cost);
     sent++;
   }
   if (lastIndex < text.length) {
@@ -509,7 +524,7 @@ function dispatchResultText(text: string, routing: RoutingContext): void {
   }
 }
 
-function sendToDestination(dest: DestinationEntry, body: string, routing: RoutingContext): void {
+function sendToDestination(dest: DestinationEntry, body: string, routing: RoutingContext, cost?: ResultCost): void {
   const platformId = dest.type === 'channel' ? dest.platformId! : dest.agentGroupId!;
   const channelType = dest.type === 'channel' ? dest.channelType! : 'agent';
   // Resolve thread_id per-destination from the most recent inbound message
@@ -525,6 +540,11 @@ function sendToDestination(dest: DestinationEntry, body: string, routing: Routin
     channel_type: channelType,
     thread_id: destRouting?.threadId ?? null,
     content: JSON.stringify({ text: body }),
+    tokens_in: cost?.tokensIn ?? null,
+    tokens_out: cost?.tokensOut ?? null,
+    latency_ms: cost?.latencyMs ?? null,
+    provider: cost?.provider ?? null,
+    model: cost?.model ?? null,
   });
 }
 

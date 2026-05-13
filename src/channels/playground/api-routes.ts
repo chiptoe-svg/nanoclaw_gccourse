@@ -19,11 +19,9 @@ import path from 'path';
 import {
   applyDraft,
   createDraft,
-  diffDraftAgainstTarget,
   discardDraft,
   ensureDraftMessagingGroup,
   ensureDraftWiring,
-  getDraftStatus,
   listAgentGroups,
   listDrafts,
 } from '../../agent-builder/core.js';
@@ -38,7 +36,11 @@ import { checkDraftMutation } from '../playground-gate-registry.js';
 import { getPlatformPrefix, getSetupConfig } from './adapter.js';
 import type { PlaygroundSession } from './auth-store.js';
 import { readJsonBody, send } from './http-helpers.js';
-import { getLibraryCacheStat, listLibrary } from './library.js';
+import { getLibraryCacheStat, listLibrary, listSkillFiles, readSkillFile } from './library.js';
+import { handlePersonaLayers } from './api/persona-layers.js';
+import { handleGetModels, handlePutModels } from './api/models.js';
+import { handleGetEntry, handleListLibrary, handleSaveMyEntry } from './api/library.js';
+import { handleGetMyAgent, handleLogout, handleLogoutAll } from './api/me.js';
 import { registerSseClient } from './sse.js';
 
 export async function route(
@@ -204,85 +206,49 @@ export async function route(
     }
   }
 
-  // GET /api/drafts/:folder/diff — diff vs target
-  const diffMatch = url.pathname.match(/^\/api\/drafts\/(draft_[A-Za-z0-9_-]+)\/diff$/);
-  if (method === 'GET' && diffMatch) {
-    const draftFolder = diffMatch[1]!;
-    try {
-      return send(res, 200, {
-        diff: diffDraftAgainstTarget(draftFolder),
-        status: getDraftStatus(draftFolder),
-      });
-    } catch (err) {
-      return send(res, 400, { error: (err as Error).message });
-    }
+  // GET /api/drafts/:folder/persona-layers — provider-uniform layered view
+  const personaLayersMatch = url.pathname.match(/^\/api\/drafts\/(draft_[A-Za-z0-9_-]+)\/persona-layers$/);
+  if (method === 'GET' && personaLayersMatch) {
+    const result = handlePersonaLayers(personaLayersMatch[1]!);
+    return send(res, result.status, result.body);
   }
 
-  // GET /api/drafts/:folder/files — list non-hidden files in the draft folder
-  const filesListMatch = url.pathname.match(/^\/api\/drafts\/(draft_[A-Za-z0-9_-]+)\/files$/);
-  if (method === 'GET' && filesListMatch) {
-    const draftFolder = filesListMatch[1]!;
-    try {
-      const draftDir = path.join(GROUPS_DIR, draftFolder);
-      if (!fs.existsSync(draftDir)) return send(res, 404, { error: 'draft folder missing' });
-      const files: Array<{ name: string; size: number; mtime: string }> = [];
-      const walk = (dir: string, rel: string): void => {
-        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-          if (entry.name.startsWith('.')) continue;
-          const full = path.join(dir, entry.name);
-          const subRel = rel ? `${rel}/${entry.name}` : entry.name;
-          if (entry.isDirectory()) walk(full, subRel);
-          else if (entry.isFile()) {
-            const st = fs.statSync(full);
-            files.push({ name: subRel, size: st.size, mtime: st.mtime.toISOString() });
-          }
-        }
-      };
-      walk(draftDir, '');
-      return send(res, 200, { files: files.sort((a, b) => a.name.localeCompare(b.name)) });
-    } catch (err) {
-      return send(res, 500, { error: (err as Error).message });
-    }
+  // GET /api/me/agent — agent group assigned to this user (with fallback)
+  if (method === 'GET' && url.pathname === '/api/me/agent') {
+    const r = handleGetMyAgent(session);
+    return send(res, r.status, r.body);
   }
 
-  // GET / PUT /api/drafts/:folder/files/:path — read / write a single file
-  const fileMatch = url.pathname.match(/^\/api\/drafts\/(draft_[A-Za-z0-9_-]+)\/files\/(.+)$/);
-  if (fileMatch && (method === 'GET' || method === 'PUT')) {
-    const draftFolder = fileMatch[1]!;
-    const relPath = decodeURIComponent(fileMatch[2]!);
-    // Mutation gates (file PUT only — GETs are always allowed). Class
-    // feature uses this to lock student drafts down to persona edits.
-    if (method === 'PUT') {
-      const decision = checkDraftMutation(draftFolder, 'file_put', session.userId);
-      if (!decision.allow) return send(res, 403, { error: decision.reason || 'Forbidden' });
-    }
-    // Path-traversal defense: reject .. or anything that resolves outside.
-    if (relPath.split('/').some((seg) => seg === '..' || seg.startsWith('.'))) {
-      return send(res, 400, { error: 'invalid path' });
-    }
-    const draftDir = path.join(GROUPS_DIR, draftFolder);
-    const filePath = path.join(draftDir, relPath);
-    if (!filePath.startsWith(draftDir + path.sep)) {
-      return send(res, 400, { error: 'invalid path' });
-    }
+  // POST /api/me/logout — revoke current session
+  if (method === 'POST' && url.pathname === '/api/me/logout') {
+    const r = handleLogout(session);
+    return send(res, r.status, r.body);
+  }
+
+  // POST /api/me/logout-all — revoke all sessions for this user
+  if (method === 'POST' && url.pathname === '/api/me/logout-all') {
+    const r = handleLogoutAll(session);
+    return send(res, r.status, r.body);
+  }
+
+  // GET /api/library — returns all three tiers
+  if (method === 'GET' && url.pathname === '/api/library') {
+    const r = handleListLibrary(session.userId ?? '');
+    return send(res, r.status, r.body);
+  }
+
+  // GET /api/library/:tier/:name — single entry
+  // POST /api/library/my/:name — save current draft as my-library entry
+  const entryMatch = url.pathname.match(/^\/api\/library\/(default|class|my)\/([A-Za-z0-9][A-Za-z0-9_-]*)$/);
+  if (entryMatch) {
     if (method === 'GET') {
-      try {
-        if (!fs.existsSync(filePath)) return send(res, 404, { error: 'not found' });
-        return send(res, 200, { text: fs.readFileSync(filePath, 'utf8') });
-      } catch (err) {
-        return send(res, 500, { error: (err as Error).message });
-      }
+      const r = handleGetEntry(entryMatch[1]!, entryMatch[2]!, session.userId ?? '');
+      return send(res, r.status, r.body);
     }
-    // PUT
-    const body = await readJsonBody(req);
-    const text = body.text;
-    if (typeof text !== 'string') return send(res, 400, { error: 'text (string) required' });
-    try {
-      fs.mkdirSync(path.dirname(filePath), { recursive: true });
-      fs.writeFileSync(filePath, text);
-      return send(res, 200, { ok: true, bytes: Buffer.byteLength(text) });
-    } catch (err) {
-      return send(res, 500, { error: (err as Error).message });
+    if (method === 'POST' && entryMatch[1] === 'my') {
+      const body = await readJsonBody(req);
+      const r = handleSaveMyEntry(session.userId ?? '', entryMatch[2]!, body as never);
+      return send(res, r.status, r.body);
     }
   }
 
@@ -303,6 +269,25 @@ export async function route(
     } catch (err) {
       return send(res, 500, { error: (err as Error).message });
     }
+  }
+
+  // GET /api/skills/library/:category/:name/files
+  const skillFilesMatch = url.pathname.match(
+    /^\/api\/skills\/library\/([A-Za-z0-9][A-Za-z0-9_.-]*)\/([A-Za-z0-9][A-Za-z0-9_.-]*)\/files$/,
+  );
+  if (method === 'GET' && skillFilesMatch) {
+    return send(res, 200, { files: listSkillFiles(skillFilesMatch[1]!, skillFilesMatch[2]!) });
+  }
+
+  // GET /api/skills/library/:category/:name/file?path=<relPath>
+  const skillFileMatch = url.pathname.match(
+    /^\/api\/skills\/library\/([A-Za-z0-9][A-Za-z0-9_.-]*)\/([A-Za-z0-9][A-Za-z0-9_.-]*)\/file$/,
+  );
+  if (method === 'GET' && skillFileMatch) {
+    const relPath = url.searchParams.get('path') || 'SKILL.md';
+    const text = readSkillFile(skillFileMatch[1]!, skillFileMatch[2]!, relPath);
+    if (text === undefined) return send(res, 404, { error: 'not found' });
+    return send(res, 200, { text });
   }
 
   // GET /api/drafts/:folder/skills — current draft's enabled skills
@@ -336,6 +321,24 @@ export async function route(
     } catch (err) {
       return send(res, 500, { error: (err as Error).message });
     }
+  }
+
+  // GET /api/drafts/:folder/models — catalog + current whitelist
+  // PUT /api/drafts/:folder/models — set allowedModels
+  const modelsMatch = url.pathname.match(/^\/api\/drafts\/(draft_[A-Za-z0-9_-]+)\/models$/);
+  if (method === 'GET' && modelsMatch) {
+    const r = handleGetModels(modelsMatch[1]!);
+    return send(res, r.status, r.body);
+  }
+  if (method === 'PUT' && modelsMatch) {
+    const draftFolder = modelsMatch[1]!;
+    {
+      const decision = checkDraftMutation(draftFolder, 'models_put', session.userId);
+      if (!decision.allow) return send(res, 403, { error: decision.reason || 'Forbidden' });
+    }
+    const body = await readJsonBody(req);
+    const r = handlePutModels(draftFolder, body);
+    return send(res, r.status, r.body);
   }
 
   // GET /api/drafts/:folder/stream — Server-Sent Events for outbound messages

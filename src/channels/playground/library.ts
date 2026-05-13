@@ -50,6 +50,10 @@ export interface LibraryEntry {
   name: string;
   description: string;
   compatibility: 'compatible' | 'partial' | 'incompatible';
+  /** Estimated tokens added per turn when this skill is enabled. Best-effort from SKILL.md frontmatter. */
+  costTokens?: number;
+  /** Estimated latency added per turn (ms). Best-effort from SKILL.md frontmatter. */
+  latencyMs?: number;
 }
 
 export interface LibraryPreview extends LibraryEntry {
@@ -130,7 +134,18 @@ export function listLibrary(refresh = false): LibraryEntry[] {
         const fm = parseFrontmatter(md);
         const description = fm.description || '';
         const { compatibility } = classifyTools(md);
-        out.push({ category, name, description, compatibility });
+        const costTokensRaw = fm['cost_tokens'];
+        const latencyMsRaw = fm['latency_ms'];
+        const costTokens = costTokensRaw && !isNaN(Number(costTokensRaw)) ? Number(costTokensRaw) : undefined;
+        const latencyMs = latencyMsRaw && !isNaN(Number(latencyMsRaw)) ? Number(latencyMsRaw) : undefined;
+        out.push({
+          category,
+          name,
+          description,
+          compatibility,
+          ...(costTokens !== undefined ? { costTokens } : {}),
+          ...(latencyMs !== undefined ? { latencyMs } : {}),
+        });
       }
     }
   };
@@ -143,4 +158,52 @@ export function listLibrary(refresh = false): LibraryEntry[] {
 export function getLibraryCacheStat(): { exists: boolean; mtime: string | null } {
   if (!fs.existsSync(LIBRARY_CACHE_DIR)) return { exists: false, mtime: null };
   return { exists: true, mtime: fs.statSync(LIBRARY_CACHE_DIR).mtime.toISOString() };
+}
+
+const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/;
+
+export interface SkillFileEntry {
+  /** Path relative to the skill directory, e.g. "SKILL.md", "examples/demo.md". */
+  path: string;
+  isDir: boolean;
+}
+
+/** Enumerate all non-hidden files inside a skill's directory. Recursive. */
+export function listSkillFiles(category: string, name: string): SkillFileEntry[] {
+  if (!NAME_RE.test(category) || !NAME_RE.test(name)) return [];
+  const skillDir = path.join(LIBRARY_CACHE_DIR, category, name);
+  if (!fs.existsSync(skillDir)) return [];
+  const out: SkillFileEntry[] = [];
+  const walk = (dir: string, rel: string): void => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name.startsWith('.')) continue;
+      const full = path.join(dir, entry.name);
+      const subRel = rel ? `${rel}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) {
+        out.push({ path: subRel, isDir: true });
+        walk(full, subRel);
+      } else if (entry.isFile()) {
+        out.push({ path: subRel, isDir: false });
+      }
+    }
+  };
+  walk(skillDir, '');
+  return out.sort((a, b) => a.path.localeCompare(b.path));
+}
+
+/** Read one file inside a skill directory. Returns undefined on missing/invalid. */
+export function readSkillFile(category: string, name: string, relPath: string): string | undefined {
+  if (!NAME_RE.test(category) || !NAME_RE.test(name)) return undefined;
+  // Reject traversal in the relPath.
+  if (relPath.split('/').some((seg) => seg === '..' || seg.startsWith('.'))) return undefined;
+  const full = path.join(LIBRARY_CACHE_DIR, category, name, relPath);
+  const skillDir = path.join(LIBRARY_CACHE_DIR, category, name);
+  // Defense-in-depth: ensure the resolved path stays inside the skill dir.
+  if (!path.resolve(full).startsWith(path.resolve(skillDir) + path.sep)) return undefined;
+  if (!fs.existsSync(full)) return undefined;
+  try {
+    return fs.readFileSync(full, 'utf-8');
+  } catch {
+    return undefined;
+  }
 }

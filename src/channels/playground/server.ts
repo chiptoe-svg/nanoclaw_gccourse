@@ -166,7 +166,7 @@ function handleAuthExchange(url: URL, res: http.ServerResponse): boolean {
     res.end('Invalid or expired magic link. Re-send /playground on Telegram.\n');
     return true;
   }
-  res.writeHead(302, { location: '/', 'set-cookie': formatSessionCookie(session.cookieValue) });
+  res.writeHead(302, { location: '/playground/', 'set-cookie': formatSessionCookie(session.cookieValue) });
   res.end();
   return true;
 }
@@ -187,7 +187,7 @@ function handleClassTokenRedemption(url: URL, res: http.ServerResponse): boolean
   if (!token) return false;
   const session = redeemClassToken(token);
   if (!session) return false; // not a class token — let normal auth flow handle the request
-  res.writeHead(302, { location: '/', 'set-cookie': formatSessionCookie(session.cookieValue) });
+  res.writeHead(302, { location: '/playground/', 'set-cookie': formatSessionCookie(session.cookieValue) });
   res.end();
   return true;
 }
@@ -292,29 +292,28 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
     return;
   }
 
-  // Home page (Phase 2 minimal landing).
-  if (method === 'GET' && (url.pathname === '/' || url.pathname === '/home.html')) {
-    return serveStatic(res, 'home.html', 'text/html; charset=utf-8');
-  }
-  if (method === 'GET' && url.pathname === '/home.js') {
-    return serveStatic(res, 'home.js', 'application/javascript; charset=utf-8');
-  }
-  if (method === 'GET' && url.pathname === '/home.css') {
-    return serveStatic(res, 'home.css', 'text/css; charset=utf-8');
-  }
-  if (method === 'GET' && url.pathname === '/api/home/me') {
-    return send(res, 200, { userId: session.userId });
+  // `/` → playground. The pre-v3 landing page is retired; the Home tab inside
+  // the playground is the new orientation surface.
+  if (method === 'GET' && url.pathname === '/') {
+    res.writeHead(302, { location: '/playground/' });
+    res.end();
+    return;
   }
 
-  // Workbench static UI moved under /playground/ (was /).
-  if (method === 'GET' && (url.pathname === '/playground/' || url.pathname === '/playground/index.html')) {
+  // Workbench static UI under /playground/. Serves index.html for the root path,
+  // any file under PUBLIC_DIR otherwise.
+  if (method === 'GET' && url.pathname === '/playground/') {
     return serveStatic(res, 'index.html', 'text/html; charset=utf-8');
   }
-  if (method === 'GET' && url.pathname === '/playground/app.js') {
-    return serveStatic(res, 'app.js', 'application/javascript; charset=utf-8');
-  }
-  if (method === 'GET' && url.pathname === '/playground/style.css') {
-    return serveStatic(res, 'style.css', 'text/css; charset=utf-8');
+  if (method === 'GET' && url.pathname.startsWith('/playground/')) {
+    const rel = url.pathname.slice('/playground/'.length);
+    // Path-traversal guard: reject .. or anything that resolves outside PUBLIC_DIR.
+    if (rel.includes('..') || rel.startsWith('/')) {
+      return send(res, 400, { error: 'invalid path' });
+    }
+    const ct = contentTypeFor(rel);
+    if (!ct) return send(res, 404, { error: `Not served: ${rel}` });
+    return serveStatic(res, rel, ct);
   }
 
   // API
@@ -322,6 +321,17 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
     log.error('Playground request error', { url: req.url, err });
     if (!res.headersSent) send(res, 500, { error: String(err) });
   });
+}
+
+function contentTypeFor(filename: string): string | null {
+  if (filename.endsWith('.html')) return 'text/html; charset=utf-8';
+  if (filename.endsWith('.js')) return 'application/javascript; charset=utf-8';
+  if (filename.endsWith('.css')) return 'text/css; charset=utf-8';
+  if (filename.endsWith('.png')) return 'image/png';
+  if (filename.endsWith('.jpg') || filename.endsWith('.jpeg')) return 'image/jpeg';
+  if (filename.endsWith('.svg')) return 'image/svg+xml';
+  if (filename.endsWith('.ico')) return 'image/x-icon';
+  return null; // unknown extension → not served (defense-in-depth)
 }
 
 function serveStatic(res: http.ServerResponse, filename: string, contentType: string): void {
