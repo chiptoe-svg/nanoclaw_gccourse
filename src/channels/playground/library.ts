@@ -50,6 +50,10 @@ export interface LibraryEntry {
   name: string;
   description: string;
   compatibility: 'compatible' | 'partial' | 'incompatible';
+  /** Estimated tokens added per turn when this skill is enabled. Best-effort from SKILL.md frontmatter. */
+  costTokens?: number;
+  /** Estimated latency added per turn (ms). Best-effort from SKILL.md frontmatter. */
+  latencyMs?: number;
 }
 
 export interface LibraryPreview extends LibraryEntry {
@@ -130,7 +134,18 @@ export function listLibrary(refresh = false): LibraryEntry[] {
         const fm = parseFrontmatter(md);
         const description = fm.description || '';
         const { compatibility } = classifyTools(md);
-        out.push({ category, name, description, compatibility });
+        const costTokensRaw = fm['cost_tokens'];
+        const latencyMsRaw = fm['latency_ms'];
+        const costTokens = costTokensRaw && !isNaN(Number(costTokensRaw)) ? Number(costTokensRaw) : undefined;
+        const latencyMs = latencyMsRaw && !isNaN(Number(latencyMsRaw)) ? Number(latencyMsRaw) : undefined;
+        out.push({
+          category,
+          name,
+          description,
+          compatibility,
+          ...(costTokens !== undefined ? { costTokens } : {}),
+          ...(latencyMs !== undefined ? { latencyMs } : {}),
+        });
       }
     }
   };
