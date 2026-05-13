@@ -41,6 +41,7 @@ import { readJsonBody, send } from './http-helpers.js';
 import { getLibraryCacheStat, listLibrary } from './library.js';
 import { handlePersonaLayers } from './api/persona-layers.js';
 import { handleGetModels, handlePutModels } from './api/models.js';
+import { handleGetEntry, handleListLibrary, handleSaveMyEntry } from './api/library.js';
 import { registerSseClient } from './sse.js';
 
 export async function route(
@@ -292,6 +293,29 @@ export async function route(
       return send(res, 200, { ok: true, bytes: Buffer.byteLength(text) });
     } catch (err) {
       return send(res, 500, { error: (err as Error).message });
+    }
+  }
+
+  // GET /api/library — returns all three tiers
+  if (method === 'GET' && url.pathname === '/api/library') {
+    const r = handleListLibrary(session.userId ?? '');
+    return send(res, r.status, r.body);
+  }
+
+  // GET /api/library/:tier/:name — single entry
+  // POST /api/library/my/:name — save current draft as my-library entry
+  const entryMatch = url.pathname.match(
+    /^\/api\/library\/(default|class|my)\/([A-Za-z0-9][A-Za-z0-9_-]*)$/,
+  );
+  if (entryMatch) {
+    if (method === 'GET') {
+      const r = handleGetEntry(entryMatch[1]!, entryMatch[2]!, session.userId ?? '');
+      return send(res, r.status, r.body);
+    }
+    if (method === 'POST' && entryMatch[1] === 'my') {
+      const body = await readJsonBody(req);
+      const r = handleSaveMyEntry(session.userId ?? '', entryMatch[2]!, body as never);
+      return send(res, r.status, r.body);
     }
   }
 
