@@ -49,6 +49,17 @@ const deliveryAttempts = new Map<string, number>();
  */
 const inflightDeliveries = new Set<string>();
 
+export interface ChannelDeliveryMeta {
+  /** Token usage from the provider (best-effort). */
+  tokens?: { input: number; output: number };
+  /** End-to-end turn latency in milliseconds. */
+  latencyMs?: number;
+  /** Provider id at completion ("claude" / "codex" / ...). */
+  provider?: string;
+  /** Model id used for the turn. */
+  model?: string;
+}
+
 export interface ChannelDeliveryAdapter {
   deliver(
     channelType: string,
@@ -57,6 +68,7 @@ export interface ChannelDeliveryAdapter {
     kind: string,
     content: string,
     files?: OutboundFile[],
+    meta?: ChannelDeliveryMeta,
   ): Promise<string | undefined>;
   setTyping?(channelType: string, platformId: string, threadId: string | null): Promise<void>;
 }
@@ -240,6 +252,11 @@ async function deliverMessage(
     thread_id: string | null;
     content: string;
     in_reply_to: string | null;
+    tokens_in: number | null;
+    tokens_out: number | null;
+    latency_ms: number | null;
+    provider: string | null;
+    model: string | null;
   },
   session: Session,
   inDb: Database.Database,
@@ -371,6 +388,18 @@ async function deliverMessage(
       ? readOutboxFiles(session.agent_group_id, session.id, msg.id, content.files as string[])
       : undefined;
 
+  const meta: ChannelDeliveryMeta | undefined =
+    msg.tokens_in != null || msg.tokens_out != null || msg.latency_ms != null || msg.provider != null || msg.model != null
+      ? {
+          ...(msg.tokens_in != null && msg.tokens_out != null
+            ? { tokens: { input: msg.tokens_in, output: msg.tokens_out } }
+            : {}),
+          ...(msg.latency_ms != null ? { latencyMs: msg.latency_ms } : {}),
+          ...(msg.provider != null ? { provider: msg.provider } : {}),
+          ...(msg.model != null ? { model: msg.model } : {}),
+        }
+      : undefined;
+
   const platformMsgId = await deliveryAdapter.deliver(
     msg.channel_type,
     msg.platform_id,
@@ -378,6 +407,7 @@ async function deliverMessage(
     msg.kind,
     msg.content,
     files,
+    meta,
   );
   log.info('Message delivered', {
     id: msg.id,

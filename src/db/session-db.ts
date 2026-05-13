@@ -265,6 +265,12 @@ export interface OutboundMessage {
   thread_id: string | null;
   content: string;
   in_reply_to: string | null;
+  // NEW — present on agent-reply rows; null on others. Task 4.2 added the columns; Task 4.3 wrote them.
+  tokens_in: number | null;
+  tokens_out: number | null;
+  latency_ms: number | null;
+  provider: string | null;
+  model: string | null;
 }
 
 export function getDueOutboundMessages(db: Database.Database): OutboundMessage[] {
