@@ -22,8 +22,7 @@ describe('library API', () => {
 
   it('GET /api/library/:tier/:name returns the entry', async () => {
     vi.doMock('../../../library/storage.js', () => ({
-      readEntry: (_t: unknown, n: string) =>
-        n === 'cw' ? { name: 'cw', description: 'd', persona: 'p' } : undefined,
+      readEntry: (_t: unknown, n: string) => (n === 'cw' ? { name: 'cw', description: 'd', persona: 'p' } : undefined),
     }));
     const { handleGetEntry } = await import('./library.js');
     expect(handleGetEntry('default', 'cw', 'telegram:42').status).toBe(200);

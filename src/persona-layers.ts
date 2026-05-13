@@ -28,9 +28,7 @@ export function getEffectivePersonaLayers(folder: string): PersonaLayers {
 
   const globalPath = path.join(GROUPS_DIR, 'global', 'CLAUDE.md');
   const globalRaw = readIfExists(globalPath);
-  const global = globalRaw
-    ? resolveClaudeImports(globalRaw, path.dirname(globalPath))
-    : undefined;
+  const global = globalRaw ? resolveClaudeImports(globalRaw, path.dirname(globalPath)) : undefined;
 
   return { myPersona, groupBase, containerBase, ...(global !== undefined ? { global } : {}) };
 }

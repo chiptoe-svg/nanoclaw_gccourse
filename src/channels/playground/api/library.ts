@@ -27,11 +27,7 @@ export function handleListLibrary(userId: string): ApiResult<AllTiers> {
   }
 }
 
-export function handleGetEntry(
-  tier: string,
-  name: string,
-  userId: string,
-): ApiResult<LibraryEntry> {
+export function handleGetEntry(tier: string, name: string, userId: string): ApiResult<LibraryEntry> {
   if (!VALID_TIERS.includes(tier as LibraryTier)) {
     return { status: 400, body: { error: 'invalid tier' } };
   }
@@ -40,11 +36,7 @@ export function handleGetEntry(
   return { status: 200, body: entry };
 }
 
-export function handleSaveMyEntry(
-  userId: string,
-  name: string,
-  entry: LibraryEntry,
-): ApiResult<{ ok: true }> {
+export function handleSaveMyEntry(userId: string, name: string, entry: LibraryEntry): ApiResult<{ ok: true }> {
   if (typeof entry?.persona !== 'string') {
     return { status: 400, body: { error: 'entry.persona (string) required' } };
   }

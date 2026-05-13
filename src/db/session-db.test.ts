@@ -173,9 +173,10 @@ describe('ensureSchema (outbound) — idempotent cost-column upgrades', () => {
     ensureSchema(dbPath, 'outbound');
 
     const db = new Database(dbPath, { readonly: true });
-    const row = db
-      .prepare('SELECT id, content FROM messages_out WHERE id = ?')
-      .get('m1') as { id: string; content: string };
+    const row = db.prepare('SELECT id, content FROM messages_out WHERE id = ?').get('m1') as {
+      id: string;
+      content: string;
+    };
     db.close();
     expect(row).toEqual({ id: 'm1', content: 'hello' });
   });

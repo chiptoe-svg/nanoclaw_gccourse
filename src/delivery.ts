@@ -389,7 +389,11 @@ async function deliverMessage(
       : undefined;
 
   const meta: ChannelDeliveryMeta | undefined =
-    msg.tokens_in != null || msg.tokens_out != null || msg.latency_ms != null || msg.provider != null || msg.model != null
+    msg.tokens_in != null ||
+    msg.tokens_out != null ||
+    msg.latency_ms != null ||
+    msg.provider != null ||
+    msg.model != null
       ? {
           ...(msg.tokens_in != null && msg.tokens_out != null
             ? { tokens: { input: msg.tokens_in, output: msg.tokens_out } }

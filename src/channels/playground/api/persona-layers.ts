@@ -5,9 +5,7 @@ export interface ApiResult<T> {
   body: T | { error: string };
 }
 
-export function handlePersonaLayers(
-  draftFolder: string,
-): ApiResult<ReturnType<typeof getEffectivePersonaLayers>> {
+export function handlePersonaLayers(draftFolder: string): ApiResult<ReturnType<typeof getEffectivePersonaLayers>> {
   try {
     return { status: 200, body: getEffectivePersonaLayers(draftFolder) };
   } catch (err) {

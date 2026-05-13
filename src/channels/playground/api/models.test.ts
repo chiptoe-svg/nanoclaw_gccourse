@@ -54,8 +54,8 @@ describe('models API', () => {
       writeContainerConfig: () => {},
     }));
     const { handlePutModels } = await import('./models.js');
-    expect(
-      handlePutModels('draft_demo', { allowedModels: [{ provider: 'claude' } as unknown as never] }).status,
-    ).toBe(400);
+    expect(handlePutModels('draft_demo', { allowedModels: [{ provider: 'claude' } as unknown as never] }).status).toBe(
+      400,
+    );
   });
 });

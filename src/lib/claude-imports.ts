@@ -12,11 +12,7 @@ import path from 'path';
  * `container/agent-runner/src/providers/codex.ts` — kept separate so the
  * host doesn't depend on the agent-runner build.
  */
-export function resolveClaudeImports(
-  content: string,
-  baseDir: string,
-  seen: Set<string> = new Set(),
-): string {
+export function resolveClaudeImports(content: string, baseDir: string, seen: Set<string> = new Set()): string {
   return content.replace(/^@(\S+)\s*$/gm, (_match, importPath: string) => {
     try {
       const resolved = path.resolve(baseDir, importPath);

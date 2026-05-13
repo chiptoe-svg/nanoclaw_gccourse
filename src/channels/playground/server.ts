@@ -331,12 +331,12 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
 
 function contentTypeFor(filename: string): string | null {
   if (filename.endsWith('.html')) return 'text/html; charset=utf-8';
-  if (filename.endsWith('.js'))   return 'application/javascript; charset=utf-8';
-  if (filename.endsWith('.css'))  return 'text/css; charset=utf-8';
-  if (filename.endsWith('.png'))  return 'image/png';
+  if (filename.endsWith('.js')) return 'application/javascript; charset=utf-8';
+  if (filename.endsWith('.css')) return 'text/css; charset=utf-8';
+  if (filename.endsWith('.png')) return 'image/png';
   if (filename.endsWith('.jpg') || filename.endsWith('.jpeg')) return 'image/jpeg';
-  if (filename.endsWith('.svg'))  return 'image/svg+xml';
-  if (filename.endsWith('.ico'))  return 'image/x-icon';
+  if (filename.endsWith('.svg')) return 'image/svg+xml';
+  if (filename.endsWith('.ico')) return 'image/x-icon';
   return null; // unknown extension → not served (defense-in-depth)
 }
 
