@@ -40,6 +40,7 @@ import { getLibraryCacheStat, listLibrary, listSkillFiles, readSkillFile } from 
 import { handlePersonaLayers } from './api/persona-layers.js';
 import { handleGetModels, handlePutModels } from './api/models.js';
 import { handleGetEntry, handleListLibrary, handleSaveMyEntry } from './api/library.js';
+import { handleGetMyAgent } from './api/me.js';
 import { registerSseClient } from './sse.js';
 
 export async function route(
@@ -210,6 +211,12 @@ export async function route(
   if (method === 'GET' && personaLayersMatch) {
     const result = handlePersonaLayers(personaLayersMatch[1]!);
     return send(res, result.status, result.body);
+  }
+
+  // GET /api/me/agent — agent group assigned to this user (with fallback)
+  if (method === 'GET' && url.pathname === '/api/me/agent') {
+    const r = handleGetMyAgent(session);
+    return send(res, r.status, r.body);
   }
 
   // GET /api/library — returns all three tiers

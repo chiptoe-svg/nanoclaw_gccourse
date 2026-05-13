@@ -20,8 +20,9 @@ function showTab(name) {
 }
 
 async function init() {
-  // /api/me/agent is wired in Task 6.2. Until then, fall back gracefully if it 404s.
-  let agent = { id: '?', name: '(no agent yet — Task 6.2)', folder: '?' };
+  // Resolve the agent group this user is assigned to (or the first non-draft
+  // group as a fallback for operators not formally membered).
+  let agent = { id: '?', name: '(no agent)', folder: '?' };
   let user = { id: '?', email: undefined };
   try {
     const r = await fetch('/api/me/agent', { credentials: 'same-origin' });
