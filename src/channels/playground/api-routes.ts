@@ -39,6 +39,7 @@ import { getPlatformPrefix, getSetupConfig } from './adapter.js';
 import type { PlaygroundSession } from './auth-store.js';
 import { readJsonBody, send } from './http-helpers.js';
 import { getLibraryCacheStat, listLibrary } from './library.js';
+import { handlePersonaLayers } from './api/persona-layers.js';
 import { registerSseClient } from './sse.js';
 
 export async function route(
@@ -202,6 +203,15 @@ export async function route(
     } catch (err) {
       return send(res, 500, { error: (err as Error).message });
     }
+  }
+
+  // GET /api/drafts/:folder/persona-layers — provider-uniform layered view
+  const personaLayersMatch = url.pathname.match(
+    /^\/api\/drafts\/(draft_[A-Za-z0-9_-]+)\/persona-layers$/,
+  );
+  if (method === 'GET' && personaLayersMatch) {
+    const result = handlePersonaLayers(personaLayersMatch[1]!);
+    return send(res, result.status, result.body);
   }
 
   // GET /api/drafts/:folder/diff — diff vs target
