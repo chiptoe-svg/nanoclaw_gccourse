@@ -425,3 +425,56 @@ html, body {
   padding: 0;
   overflow: hidden;
 }
+
+/* ── Modal (provider switch confirmation) ────────────────────────────── */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.modal {
+  background: #fff;
+  border-radius: 8px;
+  padding: 20px 24px;
+  max-width: 460px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+}
+.modal h3 {
+  margin: 0 0 10px 0;
+  color: #a44;
+}
+.modal p {
+  margin: 8px 0;
+  font-size: 13px;
+  color: #444;
+}
+.modal p.hint {
+  font-size: 12px;
+  color: #888;
+}
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+/* Inline note in chat log for model switches */
+.chat-note {
+  list-style: none;
+  color: #2a7;
+  font-style: italic;
+  font-size: 12px;
+  padding: 4px 14px;
+  text-align: center;
+}
+
+/* Brief outline on the model dropdown when it changes */
+select.model-changed {
+  outline: 2px solid #87a96b;
+  transition: outline 0.2s ease;
+}

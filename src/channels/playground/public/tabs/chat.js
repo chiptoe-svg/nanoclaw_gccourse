@@ -65,10 +65,47 @@ function loadModelDropdowns(el, folder) {
           modelSel.add(new Option(m.displayName || m.id, m.id));
         }
       };
-      provSel.addEventListener('change', renderModels);
+      // Track last-confirmed provider so a cancelled switch can revert the select.
+      let lastProvider = provSel.value;
+      provSel.addEventListener('change', async () => {
+        const newProvider = provSel.value;
+        if (newProvider === lastProvider) {
+          renderModels();
+          return;
+        }
+        const ok = await showProviderSwitchModal(lastProvider, newProvider);
+        if (!ok) {
+          provSel.value = lastProvider;
+          return;
+        }
+        try {
+          const r = await fetch(`/api/drafts/${folder}/provider`, {
+            method: 'PUT',
+            headers: { 'content-type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({ provider: newProvider }),
+          });
+          if (!r.ok) throw new Error(`status ${r.status}`);
+          lastProvider = newProvider;
+          renderModels();
+          // Fresh container = fresh conversation. Clear the chat log.
+          const log = el.querySelector('#chat-log');
+          if (log) log.innerHTML = '';
+          appendSystemNote(log, `— provider switched to ${newProvider}; container respawning —`);
+        } catch (err) {
+          appendSystemNote(el.querySelector('#chat-log'), `Provider switch failed: ${String(err)}`);
+          provSel.value = lastProvider;
+        }
+      });
       renderModels();
 
-      // Provider/model switch handlers wired by Task 6.4.
+      modelSel.addEventListener('change', () => {
+        const log = el.querySelector('#chat-log');
+        appendChatNote(log, `— model changed to ${modelSel.value}; next reply will use it —`);
+        // Pulse the dropdown briefly to signal the change.
+        modelSel.classList.add('model-changed');
+        setTimeout(() => modelSel.classList.remove('model-changed'), 1500);
+      });
     })
     .catch(() => {
       // Silently swallow — chat still functions without the dropdowns.
@@ -230,6 +267,36 @@ function appendSystemNote(log, text) {
   li.className = 'msg system';
   li.textContent = text;
   log.appendChild(li);
+}
+
+function showProviderSwitchModal(from, to) {
+  return new Promise((resolve) => {
+    const root = document.getElementById('modal-root');
+    root.innerHTML = `
+      <div class="modal-backdrop">
+        <div class="modal">
+          <h3>⚠ Switch provider?</h3>
+          <p>Switching from <strong>${escapeHtml(from)}</strong> to <strong>${escapeHtml(to)}</strong> will <strong>reset this chat</strong> — the running container will be killed and the agent will start a fresh conversation.</p>
+          <p class="hint">Your persona, skills, and library entries are not affected. Only the live conversation state is lost.</p>
+          <div class="modal-actions">
+            <button class="btn" id="modal-cancel">Cancel</button>
+            <button class="btn btn-danger" id="modal-ok">Switch &amp; reset chat</button>
+          </div>
+        </div>
+      </div>
+    `;
+    const cleanup = (result) => { root.innerHTML = ''; resolve(result); };
+    root.querySelector('#modal-cancel').addEventListener('click', () => cleanup(false));
+    root.querySelector('#modal-ok').addEventListener('click', () => cleanup(true));
+  });
+}
+
+function appendChatNote(log, text) {
+  const li = document.createElement('li');
+  li.className = 'chat-note';
+  li.textContent = text;
+  log.appendChild(li);
+  log.scrollTop = log.scrollHeight;
 }
 
 function escapeHtml(s) {
