@@ -309,6 +309,7 @@ export class ClaudeProvider implements AgentProvider {
     let aborted = false;
 
     async function* translateEvents(): AsyncGenerator<ProviderEvent> {
+      const startedAt = Date.now();
       let messageCount = 0;
       for await (const message of sdkResult) {
         if (aborted) return;
@@ -321,7 +322,22 @@ export class ClaudeProvider implements AgentProvider {
           yield { type: 'init', continuation: message.session_id };
         } else if (message.type === 'result') {
           const text = 'result' in message ? (message as { result?: string }).result ?? null : null;
-          yield { type: 'result', text };
+          const usage = (message as { usage?: { input_tokens?: number; output_tokens?: number } }).usage;
+          const tokens =
+            usage && typeof usage.input_tokens === 'number' && typeof usage.output_tokens === 'number'
+              ? { input: usage.input_tokens, output: usage.output_tokens }
+              : undefined;
+          // Derive model from modelUsage keys (first key is the primary model).
+          const modelUsage = (message as { modelUsage?: Record<string, unknown> }).modelUsage;
+          const model = modelUsage ? Object.keys(modelUsage)[0] : undefined;
+          yield {
+            type: 'result',
+            text,
+            ...(tokens ? { tokens } : {}),
+            latencyMs: Date.now() - startedAt,
+            provider: 'claude',
+            ...(model ? { model } : {}),
+          };
         } else if (message.type === 'system' && (message as { subtype?: string }).subtype === 'api_retry') {
           yield { type: 'error', message: 'API retry', retryable: true };
         } else if (message.type === 'system' && (message as { subtype?: string }).subtype === 'rate_limit_event') {

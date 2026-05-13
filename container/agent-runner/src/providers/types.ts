@@ -71,7 +71,18 @@ export interface AgentQuery {
 
 export type ProviderEvent =
   | { type: 'init'; continuation: string }
-  | { type: 'result'; text: string | null }
+  | {
+      type: 'result';
+      text: string | null;
+      /** Token usage as reported by the provider SDK (best-effort; absent if SDK doesn't expose). */
+      tokens?: { input: number; output: number };
+      /** End-to-end turn latency in milliseconds (query-start → result event timestamp). */
+      latencyMs?: number;
+      /** Provider id at the moment of completion ("claude" / "codex" / ...). */
+      provider?: string;
+      /** Model id used for this turn. */
+      model?: string;
+    }
   | { type: 'error'; message: string; retryable: boolean; classification?: string }
   | { type: 'progress'; message: string }
   /**

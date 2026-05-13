@@ -285,6 +285,7 @@ async function* runOneTurn(
   hasInit: () => boolean,
   markInit: () => void,
 ): AsyncGenerator<ProviderEvent> {
+  const startedAt = Date.now();
   // Mutable refs via object properties — TS can't track closure assignments
   // for narrowing, but property access keeps the declared type visible.
   const turnState: { error: Error | null } = { error: null };
@@ -389,7 +390,15 @@ async function* runOneTurn(
       return;
     }
 
-    yield { type: 'result', text: resultText || null };
+    yield {
+      type: 'result',
+      text: resultText || null,
+      // The Codex app-server protocol does not expose token usage in its
+      // turn/completed notification — tokens remain best-effort / absent.
+      latencyMs: Date.now() - startedAt,
+      provider: 'codex',
+      ...(model ? { model } : {}),
+    };
   } finally {
     clearTimeout(timer);
     const idx = server.notificationHandlers.indexOf(handler);
