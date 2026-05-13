@@ -180,12 +180,26 @@ cd ~/nanoclaw<button class="copy-btn" type="button" data-copy>Copy</button></div
 </div>
 
 <div class="step">
+  <div class="step-number">1.5</div>
+  <div class="step-body">
+    <h2>(Optional) Migrate your existing <code>.env</code></h2>
+    <p>If you already have a working install elsewhere with credentials configured (Anthropic / OpenAI key, Telegram bot token, Google OAuth, assistant name, etc.), copy that <code>.env</code> over <em>before</em> running step 2 — the bootstrap auto-detects existing values and skips those prompts.</p>
+    <p>From your Mac Studio, scp it from your other host (replace the <code>user@host</code> placeholder):</p>
+    <div class="code-block">scp user@your-other-host:~/nanoclaw/.env ~/nanoclaw/.env<button class="copy-btn" type="button" data-copy>Copy</button></div>
+    <p>For the Linux host this guide is served from:</p>
+    <div class="code-block">scp nano@45.55.64.148:~/nanoclaw/.env ~/nanoclaw/.env<button class="copy-btn" type="button" data-copy>Copy</button></div>
+    <p class="callout"><strong>Optional extras worth migrating:</strong> if you've authorized Google Workspace, also <code>scp -r nano@45.55.64.148:~/.config/gws ~/.config/</code>. If you use Claude Code subscription (vs API key), also <code>scp nano@45.55.64.148:~/.claude/.credentials.json ~/.claude/</code>. The bootstrap regenerates everything else.</p>
+  </div>
+</div>
+
+<div class="step">
   <div class="step-number">2</div>
   <div class="step-body">
     <h2>Run the bootstrap script</h2>
     <p><code>nanoclaw.sh</code> installs Node + pnpm + native modules, builds the agent container, walks you through credential and channel setup, and pairs your first messaging app. If a step fails it hands off to Claude Code to diagnose and resume from where it broke.</p>
     <div class="code-block">bash nanoclaw.sh<button class="copy-btn" type="button" data-copy>Copy</button></div>
-    <p>Expect ~5–15 minutes of mostly-automated work. You'll be prompted for: your display name, AI-coding-CLI (pick Claude Code), provider credentials, timezone, and which channel to pair first (Telegram is the smoothest).</p>
+    <p>If you did step 1.5, expect <strong>~2–5 minutes</strong> of mostly-automated work — Docker check, container build, service install. Prompts that would normally ask for credentials get skipped when the values are already in <code>.env</code>.</p>
+    <p>If you skipped step 1.5, expect <strong>~5–15 minutes</strong> — you'll be prompted for: display name, AI-coding-CLI (pick Claude Code), provider credentials, timezone, and which channel to pair first (Telegram is smoothest).</p>
   </div>
 </div>
 
