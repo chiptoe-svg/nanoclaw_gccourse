@@ -38,7 +38,7 @@ import { checkDraftMutation } from '../playground-gate-registry.js';
 import { getPlatformPrefix, getSetupConfig } from './adapter.js';
 import type { PlaygroundSession } from './auth-store.js';
 import { readJsonBody, send } from './http-helpers.js';
-import { getLibraryCacheStat, listLibrary } from './library.js';
+import { getLibraryCacheStat, listLibrary, listSkillFiles, readSkillFile } from './library.js';
 import { handlePersonaLayers } from './api/persona-layers.js';
 import { handleGetModels, handlePutModels } from './api/models.js';
 import { handleGetEntry, handleListLibrary, handleSaveMyEntry } from './api/library.js';
@@ -304,9 +304,7 @@ export async function route(
 
   // GET /api/library/:tier/:name — single entry
   // POST /api/library/my/:name — save current draft as my-library entry
-  const entryMatch = url.pathname.match(
-    /^\/api\/library\/(default|class|my)\/([A-Za-z0-9][A-Za-z0-9_-]*)$/,
-  );
+  const entryMatch = url.pathname.match(/^\/api\/library\/(default|class|my)\/([A-Za-z0-9][A-Za-z0-9_-]*)$/);
   if (entryMatch) {
     if (method === 'GET') {
       const r = handleGetEntry(entryMatch[1]!, entryMatch[2]!, session.userId ?? '');
@@ -336,6 +334,25 @@ export async function route(
     } catch (err) {
       return send(res, 500, { error: (err as Error).message });
     }
+  }
+
+  // GET /api/skills/library/:category/:name/files
+  const skillFilesMatch = url.pathname.match(
+    /^\/api\/skills\/library\/([A-Za-z0-9][A-Za-z0-9_.-]*)\/([A-Za-z0-9][A-Za-z0-9_.-]*)\/files$/,
+  );
+  if (method === 'GET' && skillFilesMatch) {
+    return send(res, 200, { files: listSkillFiles(skillFilesMatch[1]!, skillFilesMatch[2]!) });
+  }
+
+  // GET /api/skills/library/:category/:name/file?path=<relPath>
+  const skillFileMatch = url.pathname.match(
+    /^\/api\/skills\/library\/([A-Za-z0-9][A-Za-z0-9_.-]*)\/([A-Za-z0-9][A-Za-z0-9_.-]*)\/file$/,
+  );
+  if (method === 'GET' && skillFileMatch) {
+    const relPath = url.searchParams.get('path') || 'SKILL.md';
+    const text = readSkillFile(skillFileMatch[1]!, skillFileMatch[2]!, relPath);
+    if (text === undefined) return send(res, 404, { error: 'not found' });
+    return send(res, 200, { text });
   }
 
   // GET /api/drafts/:folder/skills — current draft's enabled skills

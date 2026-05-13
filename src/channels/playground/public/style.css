@@ -631,3 +631,96 @@ select.model-changed {
   color: #555;
 }
 .active-footer select { font-size: 12px; }
+
+/* ── Skills tab ───────────────────────────────────────────────────────── */
+#tab-skills { display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+.skills-layout {
+  display: flex;
+  flex: 1;
+  gap: 8px;
+  padding: 8px;
+  min-height: 0;
+}
+.skills-layout .library-panel #skills-list { flex: 1; overflow-y: auto; }
+.skill-entry.skill-incompatible { color: #a44; }
+.skill-entry.skill-partial { color: #b88; }
+.preview-footer {
+  padding: 6px 10px;
+  border-top: 1px solid #eee;
+  background: #fafafa;
+}
+.file-pane {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.file-tree {
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  width: 140px;
+  background: #fafafa;
+  border-right: 1px solid #e0e0e0;
+  overflow-y: auto;
+  font-size: 11px;
+}
+.file-entry {
+  padding: 2px 4px;
+  cursor: pointer;
+  border-radius: 3px;
+}
+.file-entry:hover { background: #f0f0f0; }
+.file-entry.selected { background: #e6f0ff; }
+.file-body {
+  flex: 1;
+  margin: 0;
+  padding: 8px 10px;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  overflow: auto;
+  white-space: pre-wrap;
+  background: #fff;
+}
+.skills-active h3 { margin: 0; padding: 8px 10px; font-size: 12px; border-bottom: 1px solid #eee; }
+.active-skills {
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  overflow-y: auto;
+  flex: 1;
+  font-size: 12px;
+}
+.active-entry {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  margin-bottom: 4px;
+  background: #fff;
+}
+.active-cost { margin-left: auto; color: #888; font-size: 11px; }
+.active-remove {
+  background: none;
+  border: none;
+  color: #a44;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+}
+.active-empty,
+.active-all {
+  font-style: italic;
+  color: #888;
+  padding: 6px;
+}
+.cost-rollup {
+  padding: 8px 10px;
+  border-top: 1px solid #eee;
+  background: #fafafa;
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
