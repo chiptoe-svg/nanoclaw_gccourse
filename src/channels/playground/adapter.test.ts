@@ -12,7 +12,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 let lastPushArgs: { folder: string; eventName: string; data: unknown } | undefined;
 
 // Capture the registered adapter factory.
-let registeredFactory: (() => import('./adapter.js').default extends never ? any : any) | undefined;
+let registeredFactory: (() => unknown) | undefined;
 
 vi.mock('./sse.js', () => ({
   pushToDraft: (folder: string, eventName: string, data: unknown) => {
@@ -31,7 +31,9 @@ vi.mock('../channel-registry.js', () => ({
 await import('./adapter.js');
 
 describe('playground adapter deliver — meta forwarding', () => {
-  let adapter: { deliver: (platformId: string, threadId: null, message: Record<string, unknown>) => Promise<string | undefined> };
+  let adapter: {
+    deliver: (platformId: string, threadId: null, message: Record<string, unknown>) => Promise<string | undefined>;
+  };
 
   beforeEach(() => {
     lastPushArgs = undefined;
