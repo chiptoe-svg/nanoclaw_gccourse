@@ -40,6 +40,7 @@ import type { PlaygroundSession } from './auth-store.js';
 import { readJsonBody, send } from './http-helpers.js';
 import { getLibraryCacheStat, listLibrary } from './library.js';
 import { handlePersonaLayers } from './api/persona-layers.js';
+import { handleGetModels, handlePutModels } from './api/models.js';
 import { registerSseClient } from './sse.js';
 
 export async function route(
@@ -206,9 +207,7 @@ export async function route(
   }
 
   // GET /api/drafts/:folder/persona-layers — provider-uniform layered view
-  const personaLayersMatch = url.pathname.match(
-    /^\/api\/drafts\/(draft_[A-Za-z0-9_-]+)\/persona-layers$/,
-  );
+  const personaLayersMatch = url.pathname.match(/^\/api\/drafts\/(draft_[A-Za-z0-9_-]+)\/persona-layers$/);
   if (method === 'GET' && personaLayersMatch) {
     const result = handlePersonaLayers(personaLayersMatch[1]!);
     return send(res, result.status, result.body);
@@ -346,6 +345,24 @@ export async function route(
     } catch (err) {
       return send(res, 500, { error: (err as Error).message });
     }
+  }
+
+  // GET /api/drafts/:folder/models — catalog + current whitelist
+  // PUT /api/drafts/:folder/models — set allowedModels
+  const modelsMatch = url.pathname.match(/^\/api\/drafts\/(draft_[A-Za-z0-9_-]+)\/models$/);
+  if (method === 'GET' && modelsMatch) {
+    const r = handleGetModels(modelsMatch[1]!);
+    return send(res, r.status, r.body);
+  }
+  if (method === 'PUT' && modelsMatch) {
+    const draftFolder = modelsMatch[1]!;
+    {
+      const decision = checkDraftMutation(draftFolder, 'models_put', session.userId);
+      if (!decision.allow) return send(res, 403, { error: decision.reason || 'Forbidden' });
+    }
+    const body = await readJsonBody(req);
+    const r = handlePutModels(draftFolder, body);
+    return send(res, r.status, r.body);
   }
 
   // GET /api/drafts/:folder/stream — Server-Sent Events for outbound messages
