@@ -40,7 +40,7 @@ import { getLibraryCacheStat, listLibrary, listSkillFiles, readSkillFile } from 
 import { handlePersonaLayers } from './api/persona-layers.js';
 import { handleGetModels, handlePutModels } from './api/models.js';
 import { handleGetEntry, handleListLibrary, handleSaveMyEntry } from './api/library.js';
-import { handleGetMyAgent } from './api/me.js';
+import { handleGetMyAgent, handleLogout, handleLogoutAll } from './api/me.js';
 import { registerSseClient } from './sse.js';
 
 export async function route(
@@ -216,6 +216,18 @@ export async function route(
   // GET /api/me/agent — agent group assigned to this user (with fallback)
   if (method === 'GET' && url.pathname === '/api/me/agent') {
     const r = handleGetMyAgent(session);
+    return send(res, r.status, r.body);
+  }
+
+  // POST /api/me/logout — revoke current session
+  if (method === 'POST' && url.pathname === '/api/me/logout') {
+    const r = handleLogout(session);
+    return send(res, r.status, r.body);
+  }
+
+  // POST /api/me/logout-all — revoke all sessions for this user
+  if (method === 'POST' && url.pathname === '/api/me/logout-all') {
+    const r = handleLogoutAll(session);
     return send(res, r.status, r.body);
   }
 

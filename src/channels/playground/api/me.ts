@@ -1,4 +1,5 @@
 import { getPlaygroundAgentForUser } from '../../../db/agent-groups.js';
+import { revokeSession, revokeSessionsForUser } from '../auth-store.js';
 import type { PlaygroundSession } from '../auth-store.js';
 
 export interface ApiResult<T> {
@@ -21,4 +22,18 @@ export function handleGetMyAgent(session: PlaygroundSession): ApiResult<MyAgentR
       agent: { id: agent.id, name: agent.name, folder: agent.folder },
     },
   };
+}
+
+export function handleLogout(session: PlaygroundSession): ApiResult<{ ok: true }> {
+  revokeSession(session.cookieValue, 'user-logout');
+  return { status: 200, body: { ok: true } };
+}
+
+export function handleLogoutAll(session: PlaygroundSession): ApiResult<{ ok: true; revoked: number }> {
+  if (!session.userId) {
+    revokeSession(session.cookieValue, 'user-logout');
+    return { status: 200, body: { ok: true, revoked: 1 } };
+  }
+  const revoked = revokeSessionsForUser(session.userId);
+  return { status: 200, body: { ok: true, revoked } };
 }

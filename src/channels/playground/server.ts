@@ -166,7 +166,7 @@ function handleAuthExchange(url: URL, res: http.ServerResponse): boolean {
     res.end('Invalid or expired magic link. Re-send /playground on Telegram.\n');
     return true;
   }
-  res.writeHead(302, { location: '/', 'set-cookie': formatSessionCookie(session.cookieValue) });
+  res.writeHead(302, { location: '/playground/', 'set-cookie': formatSessionCookie(session.cookieValue) });
   res.end();
   return true;
 }
@@ -187,7 +187,7 @@ function handleClassTokenRedemption(url: URL, res: http.ServerResponse): boolean
   if (!token) return false;
   const session = redeemClassToken(token);
   if (!session) return false; // not a class token — let normal auth flow handle the request
-  res.writeHead(302, { location: '/', 'set-cookie': formatSessionCookie(session.cookieValue) });
+  res.writeHead(302, { location: '/playground/', 'set-cookie': formatSessionCookie(session.cookieValue) });
   res.end();
   return true;
 }
@@ -292,18 +292,12 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
     return;
   }
 
-  // Home page (Phase 2 minimal landing).
-  if (method === 'GET' && (url.pathname === '/' || url.pathname === '/home.html')) {
-    return serveStatic(res, 'home.html', 'text/html; charset=utf-8');
-  }
-  if (method === 'GET' && url.pathname === '/home.js') {
-    return serveStatic(res, 'home.js', 'application/javascript; charset=utf-8');
-  }
-  if (method === 'GET' && url.pathname === '/home.css') {
-    return serveStatic(res, 'home.css', 'text/css; charset=utf-8');
-  }
-  if (method === 'GET' && url.pathname === '/api/home/me') {
-    return send(res, 200, { userId: session.userId });
+  // `/` → playground. The pre-v3 landing page is retired; the Home tab inside
+  // the playground is the new orientation surface.
+  if (method === 'GET' && url.pathname === '/') {
+    res.writeHead(302, { location: '/playground/' });
+    res.end();
+    return;
   }
 
   // Workbench static UI under /playground/. Serves index.html for the root path,

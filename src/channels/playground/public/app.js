@@ -1,11 +1,12 @@
+import { mountHome } from './tabs/home.js';
 import { mountChat } from './tabs/chat.js';
 import { mountPersona } from './tabs/persona.js';
 import { mountSkills } from './tabs/skills.js';
 import { mountModels } from './tabs/models.js';
 import { initDraftBanner } from './draft-banner.js';
 
-const TABS = ['chat', 'persona', 'skills', 'models'];
-const mounters = { chat: mountChat, persona: mountPersona, skills: mountSkills, models: mountModels };
+const TABS = ['home', 'chat', 'persona', 'skills', 'models'];
+const mounters = { home: mountHome, chat: mountChat, persona: mountPersona, skills: mountSkills, models: mountModels };
 const mounted = {};
 
 function showTab(name) {
@@ -43,7 +44,7 @@ async function init() {
   for (const t of TABS) {
     document.querySelector(`[data-tab="${t}"]`).addEventListener('click', () => showTab(t));
   }
-  showTab('chat');
+  showTab('home');
 }
 
 init();
