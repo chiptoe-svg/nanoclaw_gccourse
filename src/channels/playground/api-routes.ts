@@ -19,11 +19,9 @@ import path from 'path';
 import {
   applyDraft,
   createDraft,
-  diffDraftAgainstTarget,
   discardDraft,
   ensureDraftMessagingGroup,
   ensureDraftWiring,
-  getDraftStatus,
   listAgentGroups,
   listDrafts,
 } from '../../agent-builder/core.js';
@@ -212,88 +210,6 @@ export async function route(
   if (method === 'GET' && personaLayersMatch) {
     const result = handlePersonaLayers(personaLayersMatch[1]!);
     return send(res, result.status, result.body);
-  }
-
-  // GET /api/drafts/:folder/diff — diff vs target
-  const diffMatch = url.pathname.match(/^\/api\/drafts\/(draft_[A-Za-z0-9_-]+)\/diff$/);
-  if (method === 'GET' && diffMatch) {
-    const draftFolder = diffMatch[1]!;
-    try {
-      return send(res, 200, {
-        diff: diffDraftAgainstTarget(draftFolder),
-        status: getDraftStatus(draftFolder),
-      });
-    } catch (err) {
-      return send(res, 400, { error: (err as Error).message });
-    }
-  }
-
-  // GET /api/drafts/:folder/files — list non-hidden files in the draft folder
-  const filesListMatch = url.pathname.match(/^\/api\/drafts\/(draft_[A-Za-z0-9_-]+)\/files$/);
-  if (method === 'GET' && filesListMatch) {
-    const draftFolder = filesListMatch[1]!;
-    try {
-      const draftDir = path.join(GROUPS_DIR, draftFolder);
-      if (!fs.existsSync(draftDir)) return send(res, 404, { error: 'draft folder missing' });
-      const files: Array<{ name: string; size: number; mtime: string }> = [];
-      const walk = (dir: string, rel: string): void => {
-        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-          if (entry.name.startsWith('.')) continue;
-          const full = path.join(dir, entry.name);
-          const subRel = rel ? `${rel}/${entry.name}` : entry.name;
-          if (entry.isDirectory()) walk(full, subRel);
-          else if (entry.isFile()) {
-            const st = fs.statSync(full);
-            files.push({ name: subRel, size: st.size, mtime: st.mtime.toISOString() });
-          }
-        }
-      };
-      walk(draftDir, '');
-      return send(res, 200, { files: files.sort((a, b) => a.name.localeCompare(b.name)) });
-    } catch (err) {
-      return send(res, 500, { error: (err as Error).message });
-    }
-  }
-
-  // GET / PUT /api/drafts/:folder/files/:path — read / write a single file
-  const fileMatch = url.pathname.match(/^\/api\/drafts\/(draft_[A-Za-z0-9_-]+)\/files\/(.+)$/);
-  if (fileMatch && (method === 'GET' || method === 'PUT')) {
-    const draftFolder = fileMatch[1]!;
-    const relPath = decodeURIComponent(fileMatch[2]!);
-    // Mutation gates (file PUT only — GETs are always allowed). Class
-    // feature uses this to lock student drafts down to persona edits.
-    if (method === 'PUT') {
-      const decision = checkDraftMutation(draftFolder, 'file_put', session.userId);
-      if (!decision.allow) return send(res, 403, { error: decision.reason || 'Forbidden' });
-    }
-    // Path-traversal defense: reject .. or anything that resolves outside.
-    if (relPath.split('/').some((seg) => seg === '..' || seg.startsWith('.'))) {
-      return send(res, 400, { error: 'invalid path' });
-    }
-    const draftDir = path.join(GROUPS_DIR, draftFolder);
-    const filePath = path.join(draftDir, relPath);
-    if (!filePath.startsWith(draftDir + path.sep)) {
-      return send(res, 400, { error: 'invalid path' });
-    }
-    if (method === 'GET') {
-      try {
-        if (!fs.existsSync(filePath)) return send(res, 404, { error: 'not found' });
-        return send(res, 200, { text: fs.readFileSync(filePath, 'utf8') });
-      } catch (err) {
-        return send(res, 500, { error: (err as Error).message });
-      }
-    }
-    // PUT
-    const body = await readJsonBody(req);
-    const text = body.text;
-    if (typeof text !== 'string') return send(res, 400, { error: 'text (string) required' });
-    try {
-      fs.mkdirSync(path.dirname(filePath), { recursive: true });
-      fs.writeFileSync(filePath, text);
-      return send(res, 200, { ok: true, bytes: Buffer.byteLength(text) });
-    } catch (err) {
-      return send(res, 500, { error: (err as Error).message });
-    }
   }
 
   // GET /api/library — returns all three tiers
