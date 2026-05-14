@@ -34,7 +34,7 @@ export interface ModelEntry {
   bestFor?: string;
 }
 
-const CLOUD_ENTRIES: ModelEntry[] = [
+const BUILTIN_ENTRIES: ModelEntry[] = [
   {
     id: 'claude-haiku-4-5',
     provider: 'claude',
@@ -71,6 +71,22 @@ const CLOUD_ENTRIES: ModelEntry[] = [
     chips: ['⚡ fast', '$ cheap', '☁ OpenAI'],
     bestFor: 'Quick, broad-knowledge tasks.',
   },
+  {
+    id: 'Qwen3.6-35B-A3B-UD-MLX-4bit',
+    provider: 'local',
+    displayName: 'Qwen 3.6 (35B, MLX 4-bit)',
+    origin: 'local',
+    costPer1kTokensUsd: 0,
+    avgLatencySec: 8,
+    paramCount: '35B',
+    modalities: ['text'],
+    notes: 'Runs on the host Mac. Free, no quota — but slower than cloud.',
+    host: 'http://localhost:8000',
+    contextSize: 32768,
+    quantization: 'MLX 4-bit',
+    chips: ['🆓 free', '💻 mlx local', '🐢 slower'],
+    bestFor: 'Comparing local vs cloud cost/latency tradeoffs.',
+  },
 ];
 
 function readLocalEntries(): ModelEntry[] {
@@ -86,5 +102,5 @@ function readLocalEntries(): ModelEntry[] {
 }
 
 export function getModelCatalog(): ModelEntry[] {
-  return [...CLOUD_ENTRIES, ...readLocalEntries()];
+  return [...BUILTIN_ENTRIES, ...readLocalEntries()];
 }
