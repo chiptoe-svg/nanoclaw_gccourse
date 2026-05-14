@@ -350,10 +350,18 @@ export async function startCodexTurn(server: AppServer, params: TurnParams): Pro
   if (resp.error) throw new Error(`turn/start failed: ${resp.error.message}`);
 }
 
-// ── MCP config.toml ─────────────────────────────────────────────────────────
-// Codex discovers MCP servers by reading ~/.codex/config.toml at startup.
-// We rewrite it on every spawn from whatever mcpServers the agent-runner
-// passes in, so the container's config reflects the current host wiring.
+// ── Codex config.toml ───────────────────────────────────────────────────────
+// Codex reads ~/.codex/config.toml at startup. We rewrite it on every spawn
+// to reflect (a) the MCP servers the agent-runner needs and (b) the active
+// model_providers block routing codex's outbound HTTP through the credential
+// proxy. The two responsibilities share one file, so they're written together
+// to avoid the "second writer clobbers the first" trap.
+//
+// Why `wire_api = "chat"`: the default `responses` wire protocol opens a
+// WebSocket to the provider, which mlx-omni-server (and any other local
+// OpenAI-compat server that only implements REST) rejects with 401. Forcing
+// the chat-completions transport keeps the codex container compatible with
+// every OpenAI-shaped backend.
 
 export interface CodexMcpServer {
   command: string;
@@ -361,13 +369,49 @@ export interface CodexMcpServer {
   env?: Record<string, string>;
 }
 
-export function writeCodexMcpConfigToml(servers: Record<string, CodexMcpServer>): void {
+export interface CodexConfigTomlInput {
+  /** MCP servers to emit as `[mcp_servers.<name>]` blocks. */
+  mcpServers: Record<string, CodexMcpServer>;
+  /**
+   * Active provider — `codex` (cloud OpenAI via proxy /openai/v1) or `local`
+   * (mlx-omni-server via proxy /omlx/v1). Other values fall through to
+   * `codex` so unknown providers default to the safer cloud path.
+   */
+  activeProvider: 'codex' | 'local' | string;
+  /** Top-level `model = ...`. Omitted from output when undefined. */
+  model: string | undefined;
+  /**
+   * Credential-proxy base URL (e.g. `http://host.docker.internal:3001`).
+   * The `/openai/v1` or `/omlx/v1` suffix is appended based on activeProvider.
+   */
+  proxyBaseUrl: string;
+}
+
+interface ProviderBlockSpec {
+  /** TOML table name and codex's `model_provider = "..."` value. */
+  name: 'openai' | 'omlx';
+  /** Path suffix added to the proxy base URL. */
+  proxyPathSuffix: string;
+  /** Container env var carrying the placeholder bearer token. */
+  envKey: 'OPENAI_API_KEY' | 'OMLX_API_KEY';
+}
+
+function providerBlockSpec(activeProvider: string): ProviderBlockSpec {
+  if (activeProvider === 'local') {
+    return { name: 'omlx', proxyPathSuffix: '/omlx/v1', envKey: 'OMLX_API_KEY' };
+  }
+  return { name: 'openai', proxyPathSuffix: '/openai/v1', envKey: 'OPENAI_API_KEY' };
+}
+
+export function writeCodexConfigToml(input: CodexConfigTomlInput): void {
   const codexConfigDir = path.join(process.env.HOME || '/home/node', '.codex');
   fs.mkdirSync(codexConfigDir, { recursive: true });
   const configTomlPath = path.join(codexConfigDir, 'config.toml');
 
   const lines: string[] = [];
-  for (const [name, config] of Object.entries(servers)) {
+
+  // 1. MCP servers (preserve existing behavior verbatim).
+  for (const [name, config] of Object.entries(input.mcpServers)) {
     lines.push(`[mcp_servers.${name}]`);
     lines.push('type = "stdio"');
     lines.push(`command = ${tomlBasicString(config.command)}`);
@@ -384,8 +428,40 @@ export function writeCodexMcpConfigToml(servers: Record<string, CodexMcpServer>)
     lines.push('');
   }
 
+  // 2. Active model_providers block — only the one for activeProvider.
+  const spec = providerBlockSpec(input.activeProvider);
+  const baseUrl = `${input.proxyBaseUrl.replace(/\/+$/, '')}${spec.proxyPathSuffix}`;
+  lines.push(`[model_providers.${spec.name}]`);
+  lines.push(`name = ${tomlBasicString(spec.name)}`);
+  lines.push(`base_url = ${tomlBasicString(baseUrl)}`);
+  lines.push('wire_api = "chat"');
+  lines.push(`env_key = ${tomlBasicString(spec.envKey)}`);
+  lines.push('');
+
+  // 3. Top-level model + model_provider routing.
+  if (input.model) {
+    lines.push(`model = ${tomlBasicString(input.model)}`);
+  }
+  lines.push(`model_provider = ${tomlBasicString(spec.name)}`);
+  lines.push('');
+
   fs.writeFileSync(configTomlPath, lines.join('\n'));
-  log(`Wrote MCP config.toml (${Object.keys(servers).length} server(s))`);
+  log(
+    `Wrote codex config.toml (${Object.keys(input.mcpServers).length} mcp server(s), ` +
+      `provider=${spec.name}, model=${input.model ?? '(default)'})`,
+  );
+}
+
+/** @deprecated — use writeCodexConfigToml. Kept temporarily so any future
+ *  out-of-tree caller doesn't break silently. Will be removed once trunk
+ *  callers are updated. */
+export function writeCodexMcpConfigToml(servers: Record<string, CodexMcpServer>): void {
+  writeCodexConfigToml({
+    mcpServers: servers,
+    activeProvider: 'codex',
+    model: undefined,
+    proxyBaseUrl: 'http://host.docker.internal:3001',
+  });
 }
 
 export function createCodexConfigOverrides(): string[] {

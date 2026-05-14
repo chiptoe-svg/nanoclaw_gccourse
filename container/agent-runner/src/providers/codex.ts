@@ -29,7 +29,7 @@ import {
   spawnCodexAppServer,
   startCodexTurn,
   startOrResumeCodexThread,
-  writeCodexMcpConfigToml,
+  writeCodexConfigToml,
 } from './codex-app-server.js';
 
 /** Hard ceiling for a single turn. Guards against app-server wedging. */
@@ -194,7 +194,22 @@ export class CodexProvider implements AgentProvider {
       // One app-server per query invocation. The poll-loop keeps a single
       // query active per batch of pending messages and ends it on idle, so
       // spawn-per-query matches that cadence naturally.
-      writeCodexMcpConfigToml(self.mcpServers);
+      // Read the per-spawn provider + model from container.json so the
+      // config.toml we write reflects whatever /provider or the Models tab
+      // last set. Falls back to 'codex' + this.model if container.json is
+      // missing or partial.
+      const containerJsonPath = '/workspace/agent/container.json';
+      const containerJson = fs.existsSync(containerJsonPath)
+        ? (JSON.parse(fs.readFileSync(containerJsonPath, 'utf-8')) as { provider?: string; model?: string })
+        : {};
+      const proxyBaseUrl = (process.env.OPENAI_BASE_URL ?? 'http://host.docker.internal:3001/openai/v1')
+        .replace(/\/(openai|omlx)\/v1$/, '');
+      writeCodexConfigToml({
+        mcpServers: self.mcpServers,
+        activeProvider: containerJson.provider ?? 'codex',
+        model: containerJson.model ?? self.model,
+        proxyBaseUrl,
+      });
       const server = spawnCodexAppServer(createCodexConfigOverrides());
       attachCodexAutoApproval(server);
 
