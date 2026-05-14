@@ -45,7 +45,7 @@ function isClassFolder(folder: string): boolean {
 
 function writeClassAuthJson(apiKey: string): void {
   const auth = {
-    auth_mode: 'api_key',
+    auth_mode: 'apikey',
     OPENAI_API_KEY: apiKey,
     tokens: null,
     last_refresh: null,
