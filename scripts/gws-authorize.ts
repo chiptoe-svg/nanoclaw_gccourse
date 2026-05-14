@@ -170,9 +170,9 @@ async function main(): Promise<void> {
     redirectUri,
   });
 
-  const path = writeCredentialsJson({ tokens });
+  const credsPath = writeCredentialsJson({ tokens });
   console.log('');
-  console.log(`✓ Credentials written to ${path}`);
+  console.log(`✓ Credentials written to ${credsPath}`);
   console.log(`  refresh_token: present`);
   console.log(`  expires_in: ${tokens.expires_in}s`);
   console.log(`  scope: ${tokens.scope}`);
