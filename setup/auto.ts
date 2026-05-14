@@ -627,6 +627,21 @@ async function main(): Promise<void> {
     // renders with a visible box, cyan-bold the directive line, and put it
     // as the last thing before outro.
     note(`${brandBold('→')} ${k.bold(`Check your ${dmTarget} — your assistant is saying hi.`)}`, 'Go say hi');
+  }
+
+  // Sidecar playbook detection — if this fork ships a `setup_classroom.md`
+  // at the repo root, print a pointer so the operator knows about the
+  // classroom-deploy follow-up. Generic single-agent installs don't ship
+  // the file and see no noise.
+  if (fs.existsSync(path.join(process.cwd(), 'setup_classroom.md'))) {
+    note(
+      `${brandBold('📚')} ${k.bold('Classroom playbook detected:')} ${k.cyan('setup_classroom.md')}\n` +
+        `   Run ${k.cyan('claude')} and ask it to "follow setup_classroom.md" to provision a class.`,
+      'Optional next step',
+    );
+  }
+
+  if (dmTarget) {
     p.outro(k.green("You're set."));
   } else {
     p.outro(k.green("You're ready! Chat with `pnpm run chat hi`."));
