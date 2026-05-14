@@ -843,31 +843,33 @@ async function runNativeAuthStep(): Promise<void> {
     return;
   }
 
+  // Pre-flight probe: detect which methods are available right now so the
+  // menu can hint accurately and pre-focus the most likely option. Catches
+  // platform-specific gaps (e.g. Claude Code creds in macOS Keychain vs
+  // Linux file) before the user picks an option that would fail.
+  const subscriptionAvailable = extractClaudeCodeOAuthToken() !== null;
+  const subscriptionHint = subscriptionAvailable
+    ? '✓ found in ' + (process.platform === 'darwin' ? 'macOS Keychain' : '~/.claude/.credentials.json')
+    : `✗ not detected — sign in to Claude Code first (\`claude\`), or use a different method below`;
+
   const method = ensureAnswer(
     await brightSelect({
       message: 'How would you like to connect to Claude?',
-      options: [
-        {
-          value: 'subscription',
-          label: 'Use my Claude Code subscription',
-          hint: 'extracts the OAuth token from Claude Code (Keychain on macOS, file on Linux)',
-        },
-        {
-          value: 'oauth',
-          label: 'Paste an OAuth token I already have',
-          hint: 'sk-ant-oat…',
-        },
-        {
-          value: 'api',
-          label: 'Paste an Anthropic API key',
-          hint: 'pay-per-use via console.anthropic.com',
-        },
-        {
-          value: 'skip',
-          label: "Skip — I'll add it to .env later",
-          hint: 'agent containers will fail until you add the key',
-        },
-      ],
+      // Order: available subscription first (the happy path); else lead with paste-OAuth.
+      options: subscriptionAvailable
+        ? [
+            { value: 'subscription', label: 'Use my Claude Code subscription', hint: subscriptionHint },
+            { value: 'oauth', label: 'Paste an OAuth token I already have', hint: 'sk-ant-oat…' },
+            { value: 'api', label: 'Paste an Anthropic API key', hint: 'pay-per-use via console.anthropic.com' },
+            { value: 'skip', label: "Skip — I'll add it to .env later", hint: 'agent containers will fail until you add the key' },
+          ]
+        : [
+            { value: 'oauth', label: 'Paste an OAuth token I already have', hint: 'sk-ant-oat…' },
+            { value: 'api', label: 'Paste an Anthropic API key', hint: 'pay-per-use via console.anthropic.com' },
+            { value: 'subscription', label: 'Use my Claude Code subscription', hint: subscriptionHint },
+            { value: 'skip', label: "Skip — I'll add it to .env later", hint: 'agent containers will fail until you add the key' },
+          ],
+      initialValue: subscriptionAvailable ? 'subscription' : 'oauth',
     }),
   ) as 'subscription' | 'oauth' | 'api' | 'skip';
   setupLog.userInput('auth_method', method);
