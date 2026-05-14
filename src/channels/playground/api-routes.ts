@@ -100,8 +100,13 @@ export async function route(
     }
   }
 
-  // POST /api/drafts/:folder/messages — body: { text } → forward to router
-  const messagesMatch = url.pathname.match(/^\/api\/drafts\/(draft_[A-Za-z0-9_-]+)\/messages$/);
+  // POST /api/drafts/:folder/messages — body: { text } → forward to router.
+  // Accepts draft_* (instructor drafts), student_* / ta_* / instructor_*
+  // (classroom roles) — anything that's a valid agent_group folder. The
+  // route is still gated by playground auth (the session check above);
+  // for classroom folders the user must be a member of the agent_group,
+  // which is enforced in getPlaygroundAgentForUser at sign-in time.
+  const messagesMatch = url.pathname.match(/^\/api\/drafts\/([A-Za-z0-9_-]+)\/messages$/);
   if (method === 'POST' && messagesMatch) {
     const draftFolder = messagesMatch[1]!;
     const body = await readJsonBody(req);
@@ -143,7 +148,7 @@ export async function route(
   // the active session's agent_provider so the next container spawn picks
   // it up. Kills any running container so the change applies on the next
   // message immediately.
-  const providerMatch = url.pathname.match(/^\/api\/drafts\/(draft_[A-Za-z0-9_-]+)\/provider$/);
+  const providerMatch = url.pathname.match(/^\/api\/drafts\/([A-Za-z0-9_-]+)\/provider$/);
   if (method === 'PUT' && providerMatch) {
     const draftFolder = providerMatch[1]!;
     {
@@ -178,7 +183,7 @@ export async function route(
   }
 
   // GET /api/drafts/:folder/persona — read CLAUDE.local.md
-  const personaGet = url.pathname.match(/^\/api\/drafts\/(draft_[A-Za-z0-9_-]+)\/persona$/);
+  const personaGet = url.pathname.match(/^\/api\/drafts\/([A-Za-z0-9_-]+)\/persona$/);
   if (method === 'GET' && personaGet) {
     const draftFolder = personaGet[1]!;
     try {
@@ -207,7 +212,7 @@ export async function route(
   }
 
   // GET /api/drafts/:folder/persona-layers — provider-uniform layered view
-  const personaLayersMatch = url.pathname.match(/^\/api\/drafts\/(draft_[A-Za-z0-9_-]+)\/persona-layers$/);
+  const personaLayersMatch = url.pathname.match(/^\/api\/drafts\/([A-Za-z0-9_-]+)\/persona-layers$/);
   if (method === 'GET' && personaLayersMatch) {
     const result = handlePersonaLayers(personaLayersMatch[1]!);
     return send(res, result.status, result.body);
@@ -305,7 +310,7 @@ export async function route(
 
   // GET /api/drafts/:folder/skills — current draft's enabled skills
   // PUT /api/drafts/:folder/skills — set enabled skills (array | 'all')
-  const skillsMatch = url.pathname.match(/^\/api\/drafts\/(draft_[A-Za-z0-9_-]+)\/skills$/);
+  const skillsMatch = url.pathname.match(/^\/api\/drafts\/([A-Za-z0-9_-]+)\/skills$/);
   if (method === 'GET' && skillsMatch) {
     const draftFolder = skillsMatch[1]!;
     try {
@@ -338,7 +343,7 @@ export async function route(
 
   // GET /api/drafts/:folder/models — catalog + current whitelist
   // PUT /api/drafts/:folder/models — set allowedModels
-  const modelsMatch = url.pathname.match(/^\/api\/drafts\/(draft_[A-Za-z0-9_-]+)\/models$/);
+  const modelsMatch = url.pathname.match(/^\/api\/drafts\/([A-Za-z0-9_-]+)\/models$/);
   if (method === 'GET' && modelsMatch) {
     const r = handleGetModels(modelsMatch[1]!);
     return send(res, r.status, r.body);
@@ -354,8 +359,10 @@ export async function route(
     return send(res, r.status, r.body);
   }
 
-  // GET /api/drafts/:folder/stream — Server-Sent Events for outbound messages
-  const streamMatch = url.pathname.match(/^\/api\/drafts\/(draft_[A-Za-z0-9_-]+)\/stream$/);
+  // GET /api/drafts/:folder/stream — Server-Sent Events for outbound messages.
+  // Same folder-name loosening as the messages POST above so classroom
+  // students get a live stream from their student_NN agent.
+  const streamMatch = url.pathname.match(/^\/api\/drafts\/([A-Za-z0-9_-]+)\/stream$/);
   if (method === 'GET' && streamMatch) {
     const draftFolder = streamMatch[1]!;
     res.writeHead(200, {

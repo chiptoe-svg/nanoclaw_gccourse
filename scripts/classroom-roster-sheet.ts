@@ -33,6 +33,8 @@ import { runMigrations } from '../src/db/migrations/index.js';
 import { DATA_DIR, GROUPS_DIR } from '../src/config.js';
 import { createAgentGroup, getAgentGroupByFolder } from '../src/db/agent-groups.js';
 import { upsertRosterEntry } from '../src/db/classroom-roster.js';
+import { upsertUser } from '../src/modules/permissions/db/users.js';
+import { addMember, hasMembershipRow } from '../src/modules/permissions/db/agent-group-members.js';
 import { issueClassLoginToken, rotateClassLoginToken } from '../src/class-login-tokens.js';
 import { sendGmailMessage } from '../src/gmail-send.js';
 import { getInstructorGoogleAccessToken } from '../src/gws-token.js';
@@ -293,9 +295,16 @@ async function main(): Promise<void> {
       // 2. Provision agent group + on-disk dir.
       const group = provisionAgentGroup(folder, row.name);
 
-      // 3. Upsert classroom_roster.
+      // 3. Upsert user + classroom_roster + agent_group_members. Without
+      //    the membership row, getPlaygroundAgentForUser falls back to the
+      //    first non-draft agent group on login, so the student sees the
+      //    wrong agent on the Home tab and the chat post 404s.
       const userId = userIdForFolder(folder);
+      upsertUser({ id: userId, kind: 'class', display_name: row.email, created_at: nowIso() });
       upsertRosterEntry({ email: row.email, user_id: userId, agent_group_id: group.id });
+      if (!hasMembershipRow(userId, group.id)) {
+        addMember({ user_id: userId, agent_group_id: group.id, added_by: null, added_at: nowIso() });
+      }
 
       // 4. Mint or rotate the class-token URL.
       const token =
