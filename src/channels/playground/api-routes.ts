@@ -38,7 +38,7 @@ import type { PlaygroundSession } from './auth-store.js';
 import { readJsonBody, send } from './http-helpers.js';
 import { getLibraryCacheStat, listLibrary, listSkillFiles, readSkillFile } from './library.js';
 import { handlePersonaLayers } from './api/persona-layers.js';
-import { handleGetModels, handlePutModels } from './api/models.js';
+import { handleGetModels, handlePutActiveModel, handlePutModels } from './api/models.js';
 import { handleGetEntry, handleListLibrary, handleSaveMyEntry } from './api/library.js';
 import { handleGetMyAgent, handleLogout, handleLogoutAll } from './api/me.js';
 import { registerSseClient } from './sse.js';
@@ -356,6 +356,14 @@ export async function route(
     }
     const body = await readJsonBody(req);
     const r = handlePutModels(draftFolder, body);
+    return send(res, r.status, r.body);
+  }
+
+  // PUT /api/drafts/:folder/active-model — set provider + model atomically
+  const activeModelMatch = url.pathname.match(/^\/api\/drafts\/([A-Za-z0-9_-]+)\/active-model$/);
+  if (method === 'PUT' && activeModelMatch) {
+    const body = await readJsonBody(req);
+    const r = handlePutActiveModel(activeModelMatch[1]!, body);
     return send(res, r.status, r.body);
   }
 

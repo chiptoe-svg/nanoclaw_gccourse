@@ -16,6 +16,7 @@ export interface ModelsResponse {
   catalog: ModelEntry[];
   allowedModels: { provider: string; model: string }[];
   discovered: DiscoveredModel[];
+  activeModel: { provider: string; model: string } | null;
 }
 
 export async function handleGetModels(draftFolder: string): Promise<ApiResult<ModelsResponse>> {
@@ -41,12 +42,15 @@ export async function handleGetModels(draftFolder: string): Promise<ApiResult<Mo
       if (!catalogIds.has(`local:${h.id}`)) discovered.push({ provider: 'local', id: h.id });
     }
 
+    const activeModel = cfg.provider && cfg.model ? { provider: cfg.provider, model: cfg.model } : null;
+
     return {
       status: 200,
       body: {
         catalog,
         allowedModels: cfg.allowedModels ?? [],
         discovered,
+        activeModel,
       },
     };
   } catch (err) {
@@ -73,6 +77,26 @@ export function handlePutModels(
     cfg.allowedModels = allowedModels;
     writeContainerConfig(draftFolder, cfg);
     return { status: 200, body: { ok: true, allowedModels } };
+  } catch (err) {
+    return { status: 500, body: { error: (err as Error).message } };
+  }
+}
+
+export function handlePutActiveModel(
+  draftFolder: string,
+  body: { provider?: unknown; model?: unknown },
+): ApiResult<{ ok: true; activeModel: { provider: string; model: string } }> {
+  if (typeof body.provider !== 'string' || typeof body.model !== 'string') {
+    return { status: 400, body: { error: 'provider and model are required strings' } };
+  }
+  const provider = body.provider;
+  const model = body.model;
+  try {
+    const cfg = readContainerConfig(draftFolder);
+    cfg.provider = provider;
+    cfg.model = model;
+    writeContainerConfig(draftFolder, cfg);
+    return { status: 200, body: { ok: true, activeModel: { provider, model } } };
   } catch (err) {
     return { status: 500, body: { error: (err as Error).message } };
   }

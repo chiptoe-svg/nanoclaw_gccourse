@@ -796,6 +796,24 @@ select.model-changed {
 .status-online { color: #2a7; font-weight: 600; }
 .status-offline { color: #888; }
 .status-unknown { color: #888; }
+.model-section { margin-bottom: 24px; }
+.model-section-header { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.model-section-status { font-size: 13px; padding: 2px 8px; border-radius: 4px; }
+.model-section-status.status-online { color: #1a7a1a; background: #e6f5e6; }
+.model-section-status.status-offline { color: #8a4b00; background: #fff3e0; }
+.model-card.active { box-shadow: 0 0 0 2px #1a7a1a; }
+.active-badge { margin-left: auto; font-size: 12px; color: #1a7a1a; font-weight: 600; }
+.use-now-btn {
+  margin-top: 8px;
+  font-size: 13px;
+  padding: 4px 10px;
+  border: 1px solid #1a7a1a;
+  background: #fff;
+  color: #1a7a1a;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.use-now-btn:hover { background: #e6f5e6; }
 .notes {
   margin-top: 6px;
   padding: 6px 8px;
