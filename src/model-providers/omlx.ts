@@ -29,12 +29,12 @@ function getAuth(): AuthHeader | null {
   return { name: 'authorization', value: `Bearer ${key}` };
 }
 
-function parseId(id: string): ParsedModel {
+function parseId(id: string): ParsedModel | null {
   return { id, alias: id, rank: [] };
 }
 
 function pickTop(parsed: ParsedModel[], maxCount: number): ParsedModel[] {
-  return [...parsed].sort((a, b) => a.id.localeCompare(b.id)).slice(0, maxCount);
+  return [...parsed].sort((a, b) => a.alias.localeCompare(b.alias)).slice(0, maxCount);
 }
 
 const adapter: ModelProviderAdapter = {
