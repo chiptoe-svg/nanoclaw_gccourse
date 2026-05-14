@@ -345,7 +345,7 @@ export async function route(
   // PUT /api/drafts/:folder/models — set allowedModels
   const modelsMatch = url.pathname.match(/^\/api\/drafts\/([A-Za-z0-9_-]+)\/models$/);
   if (method === 'GET' && modelsMatch) {
-    const r = handleGetModels(modelsMatch[1]!);
+    const r = await handleGetModels(modelsMatch[1]!);
     return send(res, r.status, r.body);
   }
   if (method === 'PUT' && modelsMatch) {
