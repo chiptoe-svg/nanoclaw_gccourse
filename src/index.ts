@@ -59,6 +59,13 @@ import './modules/index.js';
 // Each skill appends its own imports here for the registries it
 // registers against (codex auth resolver, container env contributor,
 // playground draft gate, pair consumer, telegram command).
+import './class-pair-greeting.js';
+import './class-pair-instructor.js';
+import './class-pair-ta.js';
+import './class-playground-gate.js';
+import './class-container-env.js';
+import './class-codex-auth.js';
+import './class-login-tokens.js';
 
 // CLI command barrel — populates the `ncl` registry before the CLI server
 // accepts connections.
