@@ -68,6 +68,7 @@ import './class-playground-gate.js';
 import './class-container-env.js';
 import './class-codex-auth.js';
 import './class-login-tokens.js';
+import './class-telegram-pair.js';
 
 // CLI command barrel — populates the `ncl` registry before the CLI server
 // accepts connections.

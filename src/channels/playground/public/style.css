@@ -418,8 +418,10 @@ html, body {
   font-size: 12px;
 }
 
-/* The chat tab-body needs flex layout so chat-layout can fill vertically */
-#tab-chat {
+/* Tab-body overrides need :not([hidden]) so the flex display doesn't beat
+   [hidden]'s display:none — #id specificity (100) > .class[attr] (20). All
+   five tabs (chat, persona, skills, models, home) need this same guard. */
+#tab-chat:not([hidden]) {
   display: flex;
   flex-direction: column;
   padding: 0;
@@ -480,7 +482,7 @@ select.model-changed {
 }
 
 /* ── Persona tab ──────────────────────────────────────────────────────── */
-#tab-persona { display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+#tab-persona:not([hidden]) { display: flex; flex-direction: column; padding: 0; overflow: hidden; }
 
 .persona-layout {
   display: flex;
@@ -633,7 +635,7 @@ select.model-changed {
 .active-footer select { font-size: 12px; }
 
 /* ── Skills tab ───────────────────────────────────────────────────────── */
-#tab-skills { display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+#tab-skills:not([hidden]) { display: flex; flex-direction: column; padding: 0; overflow: hidden; }
 .skills-layout {
   display: flex;
   flex: 1;
@@ -726,7 +728,7 @@ select.model-changed {
 }
 
 /* ── Models tab ───────────────────────────────────────────────────────── */
-#tab-models { display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+#tab-models:not([hidden]) { display: flex; flex-direction: column; padding: 0; overflow: hidden; }
 .models-layout {
   flex: 1;
   overflow-y: auto;
@@ -803,7 +805,7 @@ select.model-changed {
 }
 
 /* ── Home tab ─────────────────────────────────────────────────────────── */
-#tab-home { display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+#tab-home:not([hidden]) { display: flex; flex-direction: column; padding: 0; overflow: hidden; }
 .home-layout {
   flex: 1;
   overflow-y: auto;

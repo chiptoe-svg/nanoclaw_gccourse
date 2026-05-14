@@ -231,6 +231,19 @@ export async function route(
     return send(res, r.status, r.body);
   }
 
+  // GET /api/me/telegram — pairing status + bot handle for the Settings UI.
+  if (method === 'GET' && url.pathname === '/api/me/telegram') {
+    const { handleGetTelegramStatus } = await import('./api/telegram-pair.js');
+    const r = await handleGetTelegramStatus(session);
+    return send(res, r.status, r.body);
+  }
+  // POST /api/me/telegram/pair-code — issue a fresh code for this session's user.
+  if (method === 'POST' && url.pathname === '/api/me/telegram/pair-code') {
+    const { handleIssuePairCode } = await import('./api/telegram-pair.js');
+    const r = handleIssuePairCode(session);
+    return send(res, r.status, r.body);
+  }
+
   // GET /api/library — returns all three tiers
   if (method === 'GET' && url.pathname === '/api/library') {
     const r = handleListLibrary(session.userId ?? '');
