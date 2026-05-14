@@ -49,6 +49,5 @@ src/model-switch.ts
 src/model-discovery.ts
 src/model-discovery.test.ts
 src/model-providers/
-src/provider-switch.ts
 src/provider-switch.test.ts
 scripts/switch-provider.ts
