@@ -5,6 +5,8 @@
  *
  * Routes by URL path prefix:
  *   /openai/*      → OpenAI API (strip prefix, inject Authorization)
+ *   /omlx/*        → Local OpenAI-compatible server (mlx-omni, Ollama, etc.)
+ *                    (strip prefix, inject Bearer OMLX_API_KEY)
  *   /googleapis/*  → Google APIs (strip prefix, inject OAuth Bearer
  *                    refreshed from ~/.config/gws/credentials.json)
  *   everything else → Anthropic API (default)
@@ -289,6 +291,8 @@ export function startCredentialProxy(port: number, host = '127.0.0.1'): Promise<
     'ANTHROPIC_BASE_URL',
     'OPENAI_API_KEY',
     'OPENAI_BASE_URL',
+    'OMLX_API_KEY',
+    'OMLX_BASE_URL',
   ]);
 
   const authMode: AuthMode = secrets.ANTHROPIC_API_KEY ? 'api-key' : 'oauth';
@@ -297,6 +301,10 @@ export function startCredentialProxy(port: number, host = '127.0.0.1'): Promise<
   const anthropicUpstream = new URL(secrets.ANTHROPIC_BASE_URL || 'https://api.anthropic.com');
   const openaiUpstream = new URL(secrets.OPENAI_BASE_URL || 'https://api.openai.com');
   const googleUpstream = new URL('https://www.googleapis.com');
+  // Local OpenAI-compatible server (mlx-omni-server, Ollama, LM Studio).
+  // Routed via the /omlx/* prefix so agents on the `local` provider send
+  // codex traffic here while `codex` agents still hit cloud OpenAI.
+  const omlxUpstream = new URL(secrets.OMLX_BASE_URL || 'http://localhost:8000');
 
   const requestFor = (isHttps: boolean) => (isHttps ? httpsRequest : httpRequest);
 
@@ -313,6 +321,7 @@ export function startCredentialProxy(port: number, host = '127.0.0.1'): Promise<
         //   everything else → Anthropic (existing behaviour)
         const rawUrl = req.url || '/';
         const isOpenAI = rawUrl.startsWith('/openai/') || rawUrl === '/openai';
+        const isOmlx = rawUrl.startsWith('/omlx/') || rawUrl === '/omlx';
         const isGoogle = rawUrl.startsWith('/googleapis/') || rawUrl === '/googleapis';
 
         // Per-call attribution: which agent group is calling? Used by the
@@ -323,12 +332,20 @@ export function startCredentialProxy(port: number, host = '127.0.0.1'): Promise<
         const rawAgentGroup = req.headers[AGENT_GROUP_HEADER];
         const agentGroupId = typeof rawAgentGroup === 'string' && rawAgentGroup.length > 0 ? rawAgentGroup : null;
 
-        const upstreamUrl = isGoogle ? googleUpstream : isOpenAI ? openaiUpstream : anthropicUpstream;
+        const upstreamUrl = isGoogle
+          ? googleUpstream
+          : isOpenAI
+            ? openaiUpstream
+            : isOmlx
+              ? omlxUpstream
+              : anthropicUpstream;
         const upstreamPath = isGoogle
           ? rawUrl.replace(/^\/googleapis/, '') || '/'
           : isOpenAI
             ? rawUrl.replace(/^\/openai/, '') || '/'
-            : rawUrl;
+            : isOmlx
+              ? rawUrl.replace(/^\/omlx/, '') || '/'
+              : rawUrl;
         const isHttps = upstreamUrl.protocol === 'https:';
         const makeRequest = requestFor(isHttps);
 
@@ -386,6 +403,14 @@ export function startCredentialProxy(port: number, host = '127.0.0.1'): Promise<
           delete headers['authorization'];
           delete headers['x-api-key'];
           headers['authorization'] = `Bearer ${secrets.OPENAI_API_KEY}`;
+        } else if (isOmlx) {
+          // Local OpenAI-compatible server. Container sends OPENAI_API_KEY=placeholder
+          // or OMLX_API_KEY=placeholder; we replace with OMLX_API_KEY here. Defaults
+          // to literal "local" if unset, since many local servers ignore auth entirely
+          // but the SDK still sends a header.
+          delete headers['authorization'];
+          delete headers['x-api-key'];
+          headers['authorization'] = `Bearer ${secrets.OMLX_API_KEY || 'local'}`;
         } else if (authMode === 'api-key') {
           // Anthropic API key mode: inject x-api-key on every request
           delete headers['x-api-key'];
@@ -423,7 +448,7 @@ export function startCredentialProxy(port: number, host = '127.0.0.1'): Promise<
           log.error('Credential proxy upstream error', {
             err,
             url: req.url,
-            route: isGoogle ? 'google' : isOpenAI ? 'openai' : 'anthropic',
+            route: isGoogle ? 'google' : isOpenAI ? 'openai' : isOmlx ? 'omlx' : 'anthropic',
           });
           if (!res.headersSent) {
             res.writeHead(502);

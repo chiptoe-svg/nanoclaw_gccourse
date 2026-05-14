@@ -518,6 +518,10 @@ async function buildContainerArgs(
   // SDK's env check; the proxy substitutes the real key in the
   // Authorization header before forwarding.
   args.push('-e', 'OPENAI_API_KEY=placeholder');
+  // OMLX_API_KEY — needed when provider=local so codex's config.toml
+  // env_key resolves; harmless on codex/claude containers since they
+  // don't read it. Proxy substitutes the real bearer on /omlx requests.
+  args.push('-e', 'OMLX_API_KEY=placeholder');
 
   // Provider-contributed env vars (e.g. XDG_DATA_HOME, OPENCODE_*, NO_PROXY).
   if (providerContribution.env) {

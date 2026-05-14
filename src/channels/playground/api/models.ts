@@ -1,6 +1,7 @@
 import { readContainerConfig, writeContainerConfig } from '../../../container-config.js';
 import { type ModelEntry, getModelCatalog } from '../../../model-catalog.js';
 import { listAllForProvider } from '../../../model-discovery.js';
+import { setProvider } from '../../../provider-switch.js';
 
 export interface ApiResult<T> {
   status: number;
@@ -92,10 +93,21 @@ export function handlePutActiveModel(
   const provider = body.provider;
   const model = body.model;
   try {
+    // Read current provider — if it's changing, route through setProvider
+    // so sessions + agent_groups + running containers stay in sync. If
+    // only the model is changing, just update container.json.
     const cfg = readContainerConfig(draftFolder);
-    cfg.provider = provider;
-    cfg.model = model;
-    writeContainerConfig(draftFolder, cfg);
+    const currentProvider = cfg.provider ?? 'claude';
+    if (currentProvider !== provider) {
+      const result = setProvider(draftFolder, provider);
+      if (!result.ok && result.reason !== 'no-change') {
+        return { status: 500, body: { error: `provider switch failed: ${result.reason}` } };
+      }
+    }
+    // Re-read after potential setProvider write, then update model.
+    const updated = readContainerConfig(draftFolder);
+    updated.model = model;
+    writeContainerConfig(draftFolder, updated);
     return { status: 200, body: { ok: true, activeModel: { provider, model } } };
   } catch (err) {
     return { status: 500, body: { error: (err as Error).message } };
