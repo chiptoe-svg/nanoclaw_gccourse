@@ -274,24 +274,15 @@ function buildMounts(
   // Agent group folder at /workspace/agent (RW for working files + CLAUDE.local.md)
   mounts.push({ hostPath: groupDir, containerPath: '/workspace/agent', readonly: false });
 
-  // container.json — nested RO mount on top of RW group dir so the agent
-  // can read its config but cannot modify it.
-  const containerJsonPath = path.join(groupDir, 'container.json');
-  if (fs.existsSync(containerJsonPath)) {
-    mounts.push({ hostPath: containerJsonPath, containerPath: '/workspace/agent/container.json', readonly: true });
-  }
+  // Apple Container only supports directory bind mounts, not file mounts.
+  // The previously-nested RO file mounts (container.json, composed CLAUDE.md)
+  // are accessible to the agent via the parent /workspace/agent dir mount
+  // (it's RW for CLAUDE.local.md). The RO protection is lost: an agent could
+  // overwrite its own container.json or composed CLAUDE.md, though the
+  // composed CLAUDE.md is regenerated from the shared base + fragments on
+  // every spawn so any agent writes are clobbered immediately. This is a
+  // regression vs the Docker setup — tracked in memory.
 
-  // Composer-managed CLAUDE.md artifacts — nested RO mounts. These are
-  // regenerated from the shared base + fragments on every spawn; any
-  // agent-side writes would be clobbered, so enforce read-only. Only
-  // CLAUDE.local.md (per-group memory) remains RW via the group-dir mount.
-  // `.claude-shared.md` is a symlink whose target (`/app/CLAUDE.md`) is
-  // already RO-mounted, so writes through it fail regardless — no need for
-  // a nested mount there.
-  const composedClaudeMd = path.join(groupDir, 'CLAUDE.md');
-  if (fs.existsSync(composedClaudeMd)) {
-    mounts.push({ hostPath: composedClaudeMd, containerPath: '/workspace/agent/CLAUDE.md', readonly: true });
-  }
   const fragmentsDir = path.join(groupDir, '.claude-fragments');
   if (fs.existsSync(fragmentsDir)) {
     mounts.push({ hostPath: fragmentsDir, containerPath: '/workspace/agent/.claude-fragments', readonly: true });
@@ -303,11 +294,15 @@ function buildMounts(
     mounts.push({ hostPath: globalDir, containerPath: '/workspace/global', readonly: true });
   }
 
-  // Shared CLAUDE.md — read-only, imported by the composed entry point via
-  // the `.claude-shared.md` symlink inside the group dir.
+  // Shared CLAUDE.md — stage into the session dir at spawn time so it can be
+  // exposed via a directory mount (Apple Container can't do file mounts).
+  // The session dir is already mounted RW at /workspace; the agent's
+  // `.claude-shared.md` symlink target is /workspace/.shared/CLAUDE.md.
   const sharedClaudeMd = path.join(process.cwd(), 'container', 'CLAUDE.md');
   if (fs.existsSync(sharedClaudeMd)) {
-    mounts.push({ hostPath: sharedClaudeMd, containerPath: '/app/CLAUDE.md', readonly: true });
+    const stagedSharedDir = path.join(sessDir, '.shared');
+    fs.mkdirSync(stagedSharedDir, { recursive: true });
+    fs.copyFileSync(sharedClaudeMd, path.join(stagedSharedDir, 'CLAUDE.md'));
   }
 
   // Per-group .claude-shared at /home/node/.claude (Claude state, settings,

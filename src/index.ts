@@ -95,9 +95,7 @@ async function main(): Promise<void> {
   // (bridge100 only exists while a container is running), so PROXY_BIND_HOST
   // must be explicitly set in .env via /convert-to-apple-container.
   if (!PROXY_BIND_HOST) {
-    throw new Error(
-      'CREDENTIAL_PROXY_HOST is not set in .env. Run /convert-to-apple-container to configure.',
-    );
+    throw new Error('CREDENTIAL_PROXY_HOST is not set in .env. Run /convert-to-apple-container to configure.');
   }
   proxyServer = await startCredentialProxy(CREDENTIAL_PROXY_PORT, PROXY_BIND_HOST);
 

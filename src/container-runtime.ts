@@ -113,11 +113,7 @@ export function cleanupOrphans(): void {
     };
     const containers: ContainerListEntry[] = JSON.parse(output || '[]');
     const orphans = containers
-      .filter(
-        (c) =>
-          c.status === 'running' &&
-          c.configuration.labels?.['nanoclaw-install'] === INSTALL_SLUG,
-      )
+      .filter((c) => c.status === 'running' && c.configuration.labels?.['nanoclaw-install'] === INSTALL_SLUG)
       .map((c) => c.configuration.id);
     for (const name of orphans) {
       try {
