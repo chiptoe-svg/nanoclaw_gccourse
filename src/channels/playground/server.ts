@@ -29,6 +29,7 @@ import {
   formatSessionCookie,
   getSessionByCookie,
   hasLostLinkRecoverer,
+  isPinRequiredForClassToken,
   mintMagicToken,
   type PlaygroundSession,
   recoverLostLink,
@@ -37,6 +38,7 @@ import {
   startIdleSweep,
   stopIdleSweep,
 } from './auth-store.js';
+import { handleIssue as handleLoginPinIssue, handleVerify as handleLoginPinVerify } from './api/login-pin.js';
 import { handleOAuthCallback, handleOAuthStart } from './google-oauth.js';
 import { parseCookie, readJsonBody, send } from './http-helpers.js';
 
@@ -185,6 +187,15 @@ function handleClassTokenRedemption(url: URL, res: http.ServerResponse): boolean
   if (url.pathname !== '/') return false;
   const token = url.searchParams.get('token');
   if (!token) return false;
+  // >>> classroom-pin:redirect START — installed by /add-classroom-pin
+  // When PIN-2FA is wired, defer cookie minting to /login/pin (the PIN
+  // verify endpoint mints the session after the student enters the code).
+  if (isPinRequiredForClassToken()) {
+    res.writeHead(302, { location: `/login/pin?token=${encodeURIComponent(token)}` });
+    res.end();
+    return true;
+  }
+  // <<< classroom-pin:redirect END
   const session = redeemClassToken(token);
   if (!session) return false; // not a class token — let normal auth flow handle the request
   res.writeHead(302, { location: '/playground/', 'set-cookie': formatSessionCookie(session.cookieValue) });
@@ -279,6 +290,39 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
     });
     return;
   }
+
+  // >>> classroom-pin:routes START — installed by /add-classroom-pin
+  if (method === 'GET' && url.pathname === '/login/pin') {
+    return serveStatic(res, 'login-pin.html', 'text/html; charset=utf-8');
+  }
+  if (method === 'POST' && url.pathname === '/login/pin/issue') {
+    void (async () => {
+      try {
+        const body = (await readJsonBody(req)) as { token?: unknown };
+        const result = await handleLoginPinIssue(body);
+        send(res, result.status, result.body);
+      } catch (err) {
+        log.error('login-pin issue error', { err });
+        if (!res.headersSent) send(res, 500, { ok: false });
+      }
+    })();
+    return;
+  }
+  if (method === 'POST' && url.pathname === '/login/pin/verify') {
+    void (async () => {
+      try {
+        const body = (await readJsonBody(req)) as { pendingId?: unknown; pin?: unknown };
+        const result = handleLoginPinVerify(body);
+        if (result.setCookie) res.setHeader('set-cookie', result.setCookie);
+        send(res, result.status, result.body);
+      } catch (err) {
+        log.error('login-pin verify error', { err });
+        if (!res.headersSent) send(res, 500, { ok: false });
+      }
+    })();
+    return;
+  }
+  // <<< classroom-pin:routes END
 
   const session = authenticate(req);
   if (!session) {

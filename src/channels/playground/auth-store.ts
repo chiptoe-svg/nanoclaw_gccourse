@@ -258,6 +258,22 @@ export function _resetClassTokenRedeemerForTest(): void {
   classTokenRedeemer = null;
 }
 
+// >>> classroom-pin:hook START — installed by /add-classroom-pin
+/**
+ * When true, the class-token redeemer in server.ts redirects to
+ * /login/pin?token=... instead of minting a cookie immediately, gating
+ * first-device sign-in behind an email-delivered 6-digit PIN.
+ * Toggled at host startup by the classroom module's bootstrap.
+ */
+let pinRequiredForClassToken = false;
+export function setPinRequiredForClassToken(required: boolean): void {
+  pinRequiredForClassToken = required;
+}
+export function isPinRequiredForClassToken(): boolean {
+  return pinRequiredForClassToken;
+}
+// <<< classroom-pin:hook END
+
 /**
  * Lost-link recovery — extension hook. When a student forgets their
  * bookmarked `?token=...` URL, they enter their email on the /login

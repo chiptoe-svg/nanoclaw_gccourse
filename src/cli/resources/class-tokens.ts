@@ -6,6 +6,7 @@ import {
   rotateClassLoginToken,
 } from '../../class-login-tokens.js';
 import { registerResource } from '../crud.js';
+import { readEnvFile } from '../../env.js';
 
 function resolveUserIdByEmail(email: string): string | null {
   const row = getDb().prepare('SELECT user_id FROM classroom_roster WHERE email = ?').get(email) as
@@ -15,11 +16,8 @@ function resolveUserIdByEmail(email: string): string | null {
 }
 
 function publicPlaygroundBaseUrl(): string {
-  // Instructor sets PUBLIC_PLAYGROUND_URL in .env to the externally-
-  // reachable host:port for their playground (e.g. http://192.168.1.50:3002).
-  // Falls back to a localhost default that won't help students reach
-  // the server but gives the instructor a sane URL to edit.
-  return (process.env.PUBLIC_PLAYGROUND_URL || 'http://localhost:3002').replace(/\/+$/, '');
+  const url = process.env.PUBLIC_PLAYGROUND_URL || readEnvFile(['PUBLIC_PLAYGROUND_URL']).PUBLIC_PLAYGROUND_URL;
+  return (url || 'http://localhost:3002').replace(/\/+$/, '');
 }
 
 function urlFor(token: string): string {

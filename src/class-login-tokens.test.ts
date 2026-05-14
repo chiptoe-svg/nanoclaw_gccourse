@@ -20,6 +20,17 @@ vi.mock('./channels/playground/auth-store.js', () => ({
   }),
   registerClassTokenRedeemer: vi.fn(),
   registerLostLinkRecoverer: vi.fn(),
+  // /add-classroom-pin wiring — registered at module load.
+  setPinRequiredForClassToken: vi.fn(),
+}));
+
+vi.mock('./channels/playground/api/login-pin.js', () => ({
+  registerPinSender: vi.fn(),
+  registerTokenLookup: vi.fn(),
+}));
+
+vi.mock('./gmail-send.js', () => ({
+  sendGmailMessage: vi.fn(async () => ({ messageId: 'mock' })),
 }));
 
 vi.mock('./db/connection.js', () => ({

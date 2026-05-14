@@ -29,8 +29,11 @@ import {
   mintSessionForUser,
   registerClassTokenRedeemer,
   registerLostLinkRecoverer,
+  setPinRequiredForClassToken,
   type PlaygroundSession,
 } from './channels/playground/auth-store.js';
+import { registerPinSender, registerTokenLookup } from './channels/playground/api/login-pin.js';
+import { sendGmailMessage } from './gmail-send.js';
 
 const TOKEN_BYTES = 24; // 24 bytes → 48 hex chars; ample entropy.
 
@@ -144,9 +147,11 @@ function resolveUserIdByEmail(email: string): string | null {
 }
 
 function publicPlaygroundBaseUrl(): string {
-  // Mirrors src/cli/resources/class-tokens.ts — instructor sets
-  // PUBLIC_PLAYGROUND_URL in .env to the externally-reachable host.
-  return (process.env.PUBLIC_PLAYGROUND_URL || 'http://localhost:3002').replace(/\/+$/, '');
+  // Read fresh on every call: process.env first, then .env (the launchd
+  // service spawns without inheriting shell .env, so the readEnvFile path
+  // is what makes the value available to the running host).
+  const url = process.env.PUBLIC_PLAYGROUND_URL || readEnvFile(['PUBLIC_PLAYGROUND_URL']).PUBLIC_PLAYGROUND_URL;
+  return (url || 'http://localhost:3002').replace(/\/+$/, '');
 }
 
 async function sendLostLinkEmail(toEmail: string, loginUrl: string): Promise<void> {
@@ -198,3 +203,30 @@ export async function recoverLostLinkForEmail(email: string): Promise<void> {
 }
 
 registerLostLinkRecoverer(recoverLostLinkForEmail);
+
+// --- /add-classroom-pin wiring ---
+// PIN-2FA gates first-device class-token sign-ins behind an email-delivered
+// 6-digit code. Token → email lookup uses the same classroom_roster join the
+// lost-link recoverer uses; PIN delivery goes through the host Gmail adapter
+// (src/gmail-send.ts) using the instructor's GWS account.
+registerTokenLookup((token) => {
+  const row = getDb()
+    .prepare(
+      `SELECT t.user_id, r.email
+       FROM class_login_tokens t
+       INNER JOIN classroom_roster r ON r.user_id = t.user_id
+       WHERE t.token = ? AND t.revoked_at IS NULL`,
+    )
+    .get(token) as { user_id: string; email: string } | undefined;
+  return row ? { userId: row.user_id, email: row.email } : null;
+});
+
+registerPinSender(async (email, pin) => {
+  await sendGmailMessage({
+    to: email,
+    subject: 'Your sign-in code',
+    body: `Your sign-in code is: ${pin}\n\nIt expires in 10 minutes. Do not share this code.`,
+  });
+});
+
+setPinRequiredForClassToken(true);
