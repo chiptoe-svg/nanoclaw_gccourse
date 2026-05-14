@@ -199,7 +199,8 @@ cd ~/nanoclaw<button class="copy-btn" type="button" data-copy>Copy</button></div
     <p><code>nanoclaw.sh</code> installs Node + pnpm + native modules, builds the agent container, walks you through credential and channel setup, and pairs your first messaging app. If a step fails it hands off to Claude Code to diagnose and resume from where it broke.</p>
     <div class="code-block">bash nanoclaw.sh<button class="copy-btn" type="button" data-copy>Copy</button></div>
     <p>If you did step 1.5, expect <strong>~2–5 minutes</strong> of mostly-automated work — Docker check, container build, service install. Prompts that would normally ask for credentials get skipped when the values are already in <code>.env</code>.</p>
-    <p>If you skipped step 1.5, expect <strong>~5–15 minutes</strong> — you'll be prompted for: display name, AI-coding-CLI (pick Claude Code), provider credentials, timezone, and which channel to pair first (Telegram is smoothest).</p>
+    <p>If you skipped step 1.5, expect <strong>~5–15 minutes</strong> — you'll be prompted for: display name, AI-coding-CLI (pick Claude Code), <strong>credential mode (defaults to native credential proxy)</strong>, provider credentials, timezone, and which channel to pair first (Telegram is smoothest).</p>
+    <p class="callout"><strong>Credential mode:</strong> this fork defaults to the <em>native credential proxy</em> — keys live in <code>.env</code>, no separate gateway service. The setup script asks once and persists the choice as <code>NANOCLAW_CREDENTIAL_MODE</code>. Pick <em>OneCLI vault</em> only if you want centralized credential vaulting / per-user OAuth tokens (Phase 2 classroom territory).</p>
   </div>
 </div>
 

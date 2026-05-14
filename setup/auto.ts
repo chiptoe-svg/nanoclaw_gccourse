@@ -50,7 +50,7 @@ import {
 } from './lib/setup-config-parse.js';
 import { runAdvancedScreen } from './lib/setup-config-screen.js';
 import { runWindowedStep } from './lib/windowed-runner.js';
-import { detectRegisteredGroups, detectExistingDisplayName } from './environment.js';
+import { detectRegisteredGroups, detectExistingDisplayName, readEnvKey } from './environment.js';
 import { pollHealth } from './onecli.js';
 import { getLaunchdLabel, getSystemdUnit } from '../src/install-slug.js';
 import { resolveTimezoneViaCli, aiCodingCliAvailable } from './lib/tz-from-cli.js';
@@ -198,7 +198,43 @@ async function main(): Promise<void> {
     maybeReexecUnderSg();
   }
 
-  if (!skip.has('onecli')) {
+  // Credential-mode choice: default to native credential proxy (this fork's
+  // preferred path — simpler, .env-based, no separate gateway). OneCLI is
+  // available for users who want centralized credential vaulting / per-call
+  // attribution / per-user OAuth tokens (Phase 2 master plan territory).
+  // The choice is persisted to .env as NANOCLAW_CREDENTIAL_MODE so re-runs
+  // skip the prompt.
+  let credentialMode: 'native' | 'onecli' =
+    (process.env.NANOCLAW_CREDENTIAL_MODE as 'native' | 'onecli' | undefined) ??
+    (readEnvKey('NANOCLAW_CREDENTIAL_MODE') as 'native' | 'onecli' | null) ??
+    'native';
+  if (!skip.has('credential-mode') && !process.env.NANOCLAW_CREDENTIAL_MODE && !readEnvKey('NANOCLAW_CREDENTIAL_MODE')) {
+    credentialMode = ensureAnswer(
+      await brightSelect<'native' | 'onecli'>({
+        message: 'How would you like to manage credentials?',
+        options: [
+          {
+            value: 'native',
+            label: 'Native credential proxy (recommended)',
+            hint: 'Simpler — keys live in .env, an HTTP proxy injects them at request time',
+          },
+          {
+            value: 'onecli',
+            label: 'OneCLI vault',
+            hint: 'Advanced — separate gateway service with centralized vaulting',
+          },
+        ],
+      }),
+    );
+    setupLog.userInput('credential_mode', credentialMode);
+    appendEnvLine(`NANOCLAW_CREDENTIAL_MODE=${credentialMode}`);
+  }
+
+  if (credentialMode === 'native') {
+    if (!skip.has('auth')) {
+      await runNativeAuthStep();
+    }
+  } else if (!skip.has('onecli')) {
     p.log.message(
       brandBody(
         dimWrap(
@@ -300,7 +336,7 @@ async function main(): Promise<void> {
     }
   }
 
-  if (!skip.has('auth')) {
+  if (credentialMode === 'onecli' && !skip.has('auth')) {
     await runAuthStep();
   }
 
@@ -723,6 +759,102 @@ function sendChatMessage(message: string): Promise<void> {
     child.on('close', () => resolve());
     child.on('error', () => resolve());
   });
+}
+
+// ─── env-write helper (native credential mode) ─────────────────────────
+
+function appendEnvLine(line: string): void {
+  const envPath = path.join(process.cwd(), '.env');
+  const existing = fs.existsSync(envPath) ? fs.readFileSync(envPath, 'utf-8') : '';
+  const key = line.split('=')[0]!;
+  // Idempotent: skip if any line for this key already exists.
+  if (new RegExp(`^${key}=`, 'm').test(existing)) return;
+  const sep = existing.length === 0 || existing.endsWith('\n') ? '' : '\n';
+  fs.appendFileSync(envPath, `${sep}${line}\n`);
+}
+
+// ─── native auth step (writes credential to .env) ───────────────────────
+// For users on the native credential proxy path (NANOCLAW_CREDENTIAL_MODE=native).
+// Mirrors the OneCLI auth step's UX (subscription / OAuth / API key / skip)
+// but writes the credential to .env where the credential proxy reads it
+// at runtime, instead of storing in OneCLI's vault.
+async function runNativeAuthStep(): Promise<void> {
+  // Already-configured short-circuit.
+  if (readEnvKey('ANTHROPIC_API_KEY') || readEnvKey('CLAUDE_CODE_OAUTH_TOKEN') || readEnvKey('ANTHROPIC_AUTH_TOKEN')) {
+    p.log.success(brandBody('Your Claude credential is already in .env.'));
+    setupLog.step('auth', 'skipped', 0, { REASON: 'env-already-present' });
+    return;
+  }
+
+  const method = ensureAnswer(
+    await brightSelect({
+      message: 'How would you like to connect to Claude?',
+      options: [
+        {
+          value: 'subscription',
+          label: 'Use my Claude Code subscription',
+          hint: 'reads OAuth token from ~/.claude/.credentials.json',
+        },
+        {
+          value: 'oauth',
+          label: 'Paste an OAuth token I already have',
+          hint: 'sk-ant-oat…',
+        },
+        {
+          value: 'api',
+          label: 'Paste an Anthropic API key',
+          hint: 'pay-per-use via console.anthropic.com',
+        },
+        {
+          value: 'skip',
+          label: "Skip — I'll add it to .env later",
+          hint: 'agent containers will fail until you add the key',
+        },
+      ],
+    }),
+  ) as 'subscription' | 'oauth' | 'api' | 'skip';
+  setupLog.userInput('auth_method', method);
+  phEmit('auth_method_chosen', { method });
+
+  if (method === 'skip') {
+    p.log.message(brandBody(dimWrap('OK — add ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN to .env when you have it. Then restart nanoclaw.', 4)));
+    setupLog.step('auth', 'skipped', 0, { REASON: 'user-skipped' });
+    return;
+  }
+
+  if (method === 'subscription') {
+    const credPath = path.join(os.homedir(), '.claude', '.credentials.json');
+    if (!fs.existsSync(credPath)) {
+      p.log.warn(brandBody(`No file at ${credPath}. Sign in to Claude Code first (run \`claude\` in another terminal), then re-run setup.`));
+      setupLog.step('auth', 'failed', 0, { ERROR: 'no-claude-credentials' });
+      return runNativeAuthStep();
+    }
+    try {
+      const creds = JSON.parse(fs.readFileSync(credPath, 'utf-8'));
+      const token = creds.claudeAiOauth?.accessToken;
+      if (!token) throw new Error('No accessToken in credentials.json');
+      appendEnvLine(`CLAUDE_CODE_OAUTH_TOKEN=${token}`);
+      p.log.success(brandBody('Wrote CLAUDE_CODE_OAUTH_TOKEN to .env from your Claude Code subscription.'));
+      setupLog.step('auth', 'ok', 0, { METHOD: 'subscription' });
+    } catch (err) {
+      p.log.warn(brandBody(`Couldn't extract OAuth token: ${String(err)}`));
+      setupLog.step('auth', 'failed', 0, { ERROR: String(err) });
+      return runNativeAuthStep();
+    }
+    return;
+  }
+
+  const promptLabel = method === 'oauth' ? 'Paste your OAuth token (sk-ant-oat…):' : 'Paste your Anthropic API key (sk-ant-api…):';
+  const envKey = method === 'oauth' ? 'CLAUDE_CODE_OAUTH_TOKEN' : 'ANTHROPIC_API_KEY';
+  const value = ensureAnswer(
+    await p.password({
+      message: promptLabel,
+      validate: (v) => (v && v.trim().length > 10 ? undefined : 'Looks too short.'),
+    }),
+  );
+  appendEnvLine(`${envKey}=${value.trim()}`);
+  p.log.success(brandBody(`Wrote ${envKey} to .env.`));
+  setupLog.step('auth', 'ok', 0, { METHOD: method });
 }
 
 // ─── auth step (select → branch) ────────────────────────────────────────
