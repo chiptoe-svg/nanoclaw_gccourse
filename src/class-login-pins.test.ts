@@ -28,9 +28,12 @@ describe('class-login-pins', () => {
   });
 
   function seedToken(token: string, userId: string, revoked = false): void {
-    db.prepare(
-      'INSERT INTO class_login_tokens (token, user_id, created_at, revoked_at) VALUES (?, ?, ?, ?)',
-    ).run(token, userId, new Date().toISOString(), revoked ? new Date().toISOString() : null);
+    db.prepare('INSERT INTO class_login_tokens (token, user_id, created_at, revoked_at) VALUES (?, ?, ?, ?)').run(
+      token,
+      userId,
+      new Date().toISOString(),
+      revoked ? new Date().toISOString() : null,
+    );
   }
 
   it('issuePin mints a 6-digit PIN and persists hash+salt', async () => {

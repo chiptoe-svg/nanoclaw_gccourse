@@ -78,9 +78,7 @@ export async function handleIssue(body: { token?: unknown }): Promise<ApiResult<
   return { status: 200, body: { ok: true, pendingId: result.pendingId } };
 }
 
-export function handleVerify(
-  body: { pendingId?: unknown; pin?: unknown },
-): ApiResult<{ ok: true; redirect: string }> {
+export function handleVerify(body: { pendingId?: unknown; pin?: unknown }): ApiResult<{ ok: true; redirect: string }> {
   const pendingId = typeof body.pendingId === 'string' ? body.pendingId : '';
   const pin = typeof body.pin === 'string' ? body.pin : '';
   if (!pendingId || !pin) {

@@ -45,10 +45,14 @@ describe('playground multi-user session store', () => {
     expect(sessionB!.userId).toBe('telegram:2');
   });
 
-  it('rejects a magic token after first use', () => {
+  it('accepts a magic token multiple times within its TTL window (each call mints a fresh session)', () => {
     const token = mintMagicToken('telegram:1');
-    expect(createSessionFromMagicToken(token)).not.toBeNull();
-    expect(createSessionFromMagicToken(token)).toBeNull();
+    const a = createSessionFromMagicToken(token);
+    const b = createSessionFromMagicToken(token);
+    expect(a).not.toBeNull();
+    expect(b).not.toBeNull();
+    // Distinct sessions — re-using the magic link doesn't share a cookie.
+    expect(a!.cookieValue).not.toBe(b!.cookieValue);
   });
 
   it('rejects an unknown magic token', () => {

@@ -44,6 +44,23 @@ export class TtlMap<K, V> {
   }
 
   /**
+   * Repeatable read: returns the value if present and not expired,
+   * leaves the entry in place so subsequent reads still succeed
+   * until the TTL elapses. Drops stale entries on a hit. Used by
+   * magic-link auth so a user can re-open the same link within
+   * its TTL window.
+   */
+  peek(key: K): V | undefined {
+    const entry = this.entries.get(key);
+    if (!entry) return undefined;
+    if (Date.now() > entry.expiresAt) {
+      this.entries.delete(key);
+      return undefined;
+    }
+    return entry.value;
+  }
+
+  /**
    * Drop all expired entries. Returns the number dropped. Cheap O(n);
    * call from a periodic sweep timer to bound memory in the face of
    * mint-without-consume traffic.

@@ -25,7 +25,14 @@ import { log } from '../../log.js';
 import { TtlMap } from './ttl-map.js';
 
 export const COOKIE_NAME = 'nc_playground';
-const MAGIC_TOKEN_TTL_MS = 5 * 60 * 1000;
+/**
+ * Magic-link tokens stay valid for 1 hour after mint and are reusable
+ * within that window — the user can re-open or share the link with
+ * themselves on another device without going back to /playground for
+ * a fresh one. Each consumption still mints a *new* session cookie,
+ * so revoking one device doesn't kick the others.
+ */
+const MAGIC_TOKEN_TTL_MS = 60 * 60 * 1000;
 const IDLE_SWEEP_INTERVAL_MS = 60 * 1000;
 const SESSION_COOKIE_MAX_AGE_S = 7 * 24 * 60 * 60;
 
@@ -92,7 +99,9 @@ export function mintMagicToken(userId: string | null = null): string {
 }
 
 export function createSessionFromMagicToken(token: string): PlaygroundSession | null {
-  const entry = pendingMagicTokens.take(token);
+  // peek (not take) so the same magic link can mint a fresh session
+  // every time within its TTL window. Each call yields a new cookie.
+  const entry = pendingMagicTokens.peek(token);
   if (!entry) return null;
   return mintSessionForUser(entry.userId);
 }

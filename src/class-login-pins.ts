@@ -85,9 +85,9 @@ function nowIso(): string {
 export function issuePin(token: string, userId: string, email: string): IssuePinResult {
   const db = getDb();
   // Verify token is active (not revoked).
-  const tokenRow = db
-    .prepare('SELECT user_id, revoked_at FROM class_login_tokens WHERE token = ?')
-    .get(token) as { user_id: string; revoked_at: string | null } | undefined;
+  const tokenRow = db.prepare('SELECT user_id, revoked_at FROM class_login_tokens WHERE token = ?').get(token) as
+    | { user_id: string; revoked_at: string | null }
+    | undefined;
   if (!tokenRow) return { ok: false, reason: 'unknown-token' };
   if (tokenRow.revoked_at !== null) return { ok: false, reason: 'token-revoked' };
 
@@ -151,9 +151,9 @@ export function verifyPin(pendingId: string, candidatePin: string): VerifyPinRes
  */
 export function getPending(pendingId: string): { email: string; userId: string; token: string } | null {
   const db = getDb();
-  const row = db
-    .prepare('SELECT email, user_id, token FROM class_login_pins WHERE id = ?')
-    .get(pendingId) as { email: string; user_id: string; token: string } | undefined;
+  const row = db.prepare('SELECT email, user_id, token FROM class_login_pins WHERE id = ?').get(pendingId) as
+    | { email: string; user_id: string; token: string }
+    | undefined;
   if (!row) return null;
   return { email: row.email, userId: row.user_id, token: row.token };
 }
