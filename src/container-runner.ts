@@ -137,6 +137,7 @@ async function spawnContainer(session: Session): Promise<void> {
   ensureRuntimeFields(containerConfig, agentGroup, provider);
 
   const mounts = buildMounts(agentGroup, session, containerConfig, contribution);
+  assertDirectoryMounts(mounts);
   const containerName = `nanoclaw-v2-${agentGroup.folder}-${Date.now()}`;
   // OneCLI agent identifier is always the agent group id — stable across
   // sessions and reversible via getAgentGroup() for approval routing.
@@ -192,6 +193,27 @@ async function spawnContainer(session: Session): Promise<void> {
     stopTypingRefresh(session.id);
     log.error('Container spawn error', { sessionId: session.id, err });
   });
+}
+
+/**
+ * Apple Container can only do directory bind mounts. Throws if any mount
+ * source is an existing file — catches accidental reintroduction of nested
+ * file mounts (the Docker-era pattern that silently broke spawn under Apple
+ * Container with "path is not a directory"). Sources that don't exist yet
+ * are not flagged: those are legitimate staging slots that the spawn flow
+ * creates before the mount fires.
+ */
+export function assertDirectoryMounts(mounts: VolumeMount[]): void {
+  for (const m of mounts) {
+    if (!fs.existsSync(m.hostPath)) continue;
+    if (fs.statSync(m.hostPath).isFile()) {
+      throw new Error(
+        `Mount source is a file, not a directory: ${m.hostPath} → ${m.containerPath}. ` +
+          `Apple Container only supports directory bind mounts. ` +
+          `Stage the file into a directory and mount the directory instead.`,
+      );
+    }
+  }
 }
 
 /** Kill a container for a session. */
