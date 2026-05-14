@@ -53,9 +53,7 @@ describe('assertDirectoryMounts', () => {
   });
 
   it('accepts directory sources', () => {
-    expect(() =>
-      assertDirectoryMounts([{ hostPath: dir, containerPath: '/x', readonly: false }]),
-    ).not.toThrow();
+    expect(() => assertDirectoryMounts([{ hostPath: dir, containerPath: '/x', readonly: false }])).not.toThrow();
   });
 
   it('throws when any source is a file (the regression we keep catching)', () => {
@@ -69,8 +67,6 @@ describe('assertDirectoryMounts', () => {
 
   it('ignores non-existent paths (legitimate staging slots created at spawn)', () => {
     const ghost = path.join(tmp, 'does-not-exist');
-    expect(() =>
-      assertDirectoryMounts([{ hostPath: ghost, containerPath: '/x', readonly: false }]),
-    ).not.toThrow();
+    expect(() => assertDirectoryMounts([{ hostPath: ghost, containerPath: '/x', readonly: false }])).not.toThrow();
   });
 });

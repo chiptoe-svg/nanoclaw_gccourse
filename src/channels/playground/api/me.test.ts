@@ -48,7 +48,9 @@ describe('POST /api/me/logout', () => {
   it('handleLogout revokes the current session', async () => {
     let revoked: string | undefined;
     vi.doMock('../auth-store.js', () => ({
-      revokeSession: (cookie: string) => { revoked = cookie; },
+      revokeSession: (cookie: string) => {
+        revoked = cookie;
+      },
       revokeSessionsForUser: () => 0,
     }));
     vi.doMock('../../../db/agent-groups.js', () => ({
@@ -70,7 +72,10 @@ describe('POST /api/me/logout-all', () => {
     let revokedUser: string | undefined;
     vi.doMock('../auth-store.js', () => ({
       revokeSession: () => {},
-      revokeSessionsForUser: (userId: string) => { revokedUser = userId; return 3; },
+      revokeSessionsForUser: (userId: string) => {
+        revokedUser = userId;
+        return 3;
+      },
     }));
     vi.doMock('../../../db/agent-groups.js', () => ({
       getPlaygroundAgentForUser: () => null,
@@ -85,7 +90,9 @@ describe('POST /api/me/logout-all', () => {
   it('handleLogoutAll falls back to single-session revoke when userId is null', async () => {
     let revokedCookie: string | undefined;
     vi.doMock('../auth-store.js', () => ({
-      revokeSession: (cookie: string) => { revokedCookie = cookie; },
+      revokeSession: (cookie: string) => {
+        revokedCookie = cookie;
+      },
       revokeSessionsForUser: () => 0,
     }));
     vi.doMock('../../../db/agent-groups.js', () => ({
