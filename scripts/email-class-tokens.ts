@@ -1,17 +1,20 @@
 #!/usr/bin/env tsx
 /**
- * Bulk-email class-token URLs to students using Resend.
+ * Bulk-email class-token URLs to students using the Gmail API.
  *
  * For a fresh classroom deploy: after `class-skeleton.ts` provisions the
  * roster and `ncl class-tokens issue` mints per-student URLs, this script
- * loops the roster and emails each student their bookmarkable URL.
+ * loops the roster and emails each student their bookmarkable URL — sent
+ * from the instructor's own Google Workspace account.
  *
  * Idempotent: run twice and it just re-issues / re-sends (each call mints a
  * fresh token via `ncl class-tokens issue --rotate`, so the previous token
  * is revoked — useful for "I lost my email" recovery).
  *
  * Requires:
- *   - .env: RESEND_API_KEY, RESEND_FROM_ADDRESS, (optional) RESEND_FROM_NAME
+ *   - ~/.config/gws/credentials.json with the `gmail.modify` scope (the
+ *     default GWS scope set requests it; re-authorize via the GWS OAuth
+ *     flow if missing — see setup_classroom.md for the prerequisites).
  *   - .env: NANOCLAW_PUBLIC_URL (the URL students will hit; e.g. http://192.168.1.42:3002)
  *   - Roster CSV with at least `name,email` columns
  *   - The `ncl` CLI on PATH (built and pnpm-linked)
@@ -20,7 +23,7 @@
  *   pnpm exec tsx scripts/email-class-tokens.ts --roster ./roster.csv [--dry-run] [--rotate]
  *
  *   --roster <path>   CSV file with name,email header row
- *   --dry-run         Print what would be emailed; don't call Resend
+ *   --dry-run         Print what would be emailed; don't call Gmail
  *   --rotate          Rotate (mint a fresh) token for each student before emailing
  *                     (use this for re-sends; without it, re-runs reuse the
  *                     existing token if one is already minted)
@@ -28,7 +31,8 @@
  */
 import { execFileSync } from 'child_process';
 import fs from 'fs';
-import path from 'path';
+
+import { sendGmailMessage } from '../src/gmail-send.js';
 
 interface RosterRow {
   name: string;
@@ -119,50 +123,8 @@ function mintToken(email: string, rotate: boolean): string {
   return urlMatch[0]!;
 }
 
-interface ResendConfig {
-  apiKey: string;
-  fromAddress: string;
-  fromName?: string;
-}
-
-function readResendConfig(): ResendConfig {
-  const envPath = path.join(process.cwd(), '.env');
-  if (!fs.existsSync(envPath)) throw new Error('.env not found');
-  const env = Object.fromEntries(
-    fs.readFileSync(envPath, 'utf-8')
-      .split('\n')
-      .filter((l) => l.includes('=') && !l.startsWith('#'))
-      .map((l) => {
-        const eq = l.indexOf('=');
-        return [l.slice(0, eq).trim(), l.slice(eq + 1).trim().replace(/^["']|["']$/g, '')];
-      }),
-  );
-  const apiKey = env['RESEND_API_KEY'];
-  const fromAddress = env['RESEND_FROM_ADDRESS'];
-  if (!apiKey) throw new Error('RESEND_API_KEY missing from .env (run /add-resend first)');
-  if (!fromAddress) throw new Error('RESEND_FROM_ADDRESS missing from .env');
-  return { apiKey, fromAddress, fromName: env['RESEND_FROM_NAME'] };
-}
-
-async function sendEmail(
-  cfg: ResendConfig,
-  to: string,
-  subject: string,
-  text: string,
-): Promise<void> {
-  const from = cfg.fromName ? `${cfg.fromName} <${cfg.fromAddress}>` : cfg.fromAddress;
-  const res = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${cfg.apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ from, to, subject, text }),
-  });
-  if (!res.ok) {
-    const body = await res.text().catch(() => '<no body>');
-    throw new Error(`Resend failed: ${res.status} ${body.slice(0, 300)}`);
-  }
+async function sendEmail(to: string, subject: string, text: string): Promise<void> {
+  await sendGmailMessage({ to, subject, body: text });
 }
 
 function buildEmail(name: string, url: string, course: string): { subject: string; text: string } {
@@ -188,7 +150,6 @@ function buildEmail(name: string, url: string, course: string): { subject: strin
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
-  const cfg = args.dryRun ? null : readResendConfig();
   const roster = readRoster(args.rosterPath);
 
   console.log(`Found ${roster.length} student rows in ${args.rosterPath}.`);
@@ -203,7 +164,7 @@ async function main(): Promise<void> {
       if (args.dryRun) {
         console.log(`  [DRY] would send to ${row.email} (${row.name}): ${url}`);
       } else {
-        await sendEmail(cfg!, row.email, subject, text);
+        await sendEmail(row.email, subject, text);
         console.log(`  ✓ sent to ${row.email} (${row.name})`);
       }
       ok++;

@@ -22,9 +22,23 @@ Before starting this playbook, you should have:
 
 - [ ] A working NanoClaw install (`bash nanoclaw.sh` completed; playground reachable at `http://<host>:3002/`)
 - [ ] Credentials chosen — **native credential proxy** is the default and what we want here (hit Enter at the setup prompt). OneCLI is the wrong choice unless you have a specific reason.
-- [ ] Resend account + verified sender. You'll need `RESEND_API_KEY` and `RESEND_FROM_ADDRESS` in `.env`. Free tier is fine for class-sized cohorts.
+- [ ] **Google Workspace OAuth set up.** Used to send class-token URLs and login PINs from your own GWS account via the Gmail API. The instructor's `~/.config/gws/credentials.json` must exist with the `gmail.modify` scope (included in the default GWS scope set). If you don't have it yet, or the stored refresh token has been revoked, run:
+
+  ```bash
+  pnpm exec tsx scripts/gws-authorize.ts
+  ```
+
+  Verify it works (must print `✓ GWS OAuth OK`):
+
+  ```bash
+  pnpm exec tsx -e 'import("./src/gws-token.js").then(m => m.getInstructorGoogleAccessToken().then(t => console.log(t ? "✓ GWS OAuth OK" : "✗ GWS OAuth not configured")))'
+  ```
+
+  If you see `Token has been expired or revoked` in the host logs, re-run `gws-authorize.ts` to mint a fresh refresh token.
 - [ ] Roster CSV ready (or be ready to type names + emails). Format: header row `name,email`, one student per row.
-- [ ] **(Optional)** Google Workspace OAuth credentials at `~/.config/gws/credentials.json` if you want students' agents to read/write Google Docs.
+- [ ] **(Optional)** Google Drive integration via `/add-classroom-gws` if you want each student to have an auto-provisioned Drive folder.
+
+**Why GWS for email?** PIN delivery and class-token URLs go through the Gmail API using your own GWS account (host helper at `src/gmail-send.ts`). Students see emails coming from your real instructor address — better deliverability and no third-party email service to sign up for. The legacy Resend-based path is still supported (see Troubleshooting → "Falling back to Resend") but is not the default for this fork.
 
 ## Step 1 — Install the classroom skill stack
 
@@ -32,8 +46,34 @@ Run these inside `claude` from the repo dir. Each is idempotent (safe to re-run)
 
 ```
 /add-classroom         # base classroom: per-student agent groups, role tiers
-/add-resend            # email channel + Resend integration (skip if already installed)
 /add-classroom-pin     # email-PIN 2FA on class-token URLs (closes URL-forwarding gap)
+```
+
+When `/add-classroom-pin` prompts you for the PIN-sender wiring, **register a Gmail sender** instead of the Resend example in its SKILL.md. The right snippet for this fork:
+
+```typescript
+// In your classroom module bootstrap (where class_login_tokens lives):
+import { registerPinSender, registerTokenLookup } from './channels/playground/api/login-pin.js';
+import { sendGmailMessage } from './gmail-send.js';
+import { getDb } from './db/connection.js';
+
+registerTokenLookup((token) => {
+  const row = getDb()
+    .prepare(`SELECT t.user_id, r.email
+              FROM class_login_tokens t
+              INNER JOIN classroom_roster r ON r.user_id = t.user_id
+              WHERE t.token = ? AND t.revoked_at IS NULL`)
+    .get(token) as { user_id: string; email: string } | undefined;
+  return row ? { userId: row.user_id, email: row.email } : null;
+});
+
+registerPinSender(async (email, pin) => {
+  await sendGmailMessage({
+    to: email,
+    subject: 'Your sign-in code',
+    body: `Your sign-in code is: ${pin}\n\nIt expires in 10 minutes. Do not share this code.`,
+  });
+});
 ```
 
 Optional layered skills:
@@ -42,6 +82,8 @@ Optional layered skills:
 /add-classroom-gws     # Google Workspace folder per student (instructor OAuth)
 /add-classroom-auth    # per-student ChatGPT subscription (Phase 2, advanced)
 ```
+
+`/add-resend` is **not** needed for this fork's default path — `src/gmail-send.ts` covers all transactional email via your existing GWS account. Skip the install unless you want Resend as a backup channel for some other reason.
 
 After each install, the agent should remind you to restart the service:
 
@@ -66,6 +108,10 @@ curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:3002/login/pin    # 20
 # Classroom migrations applied?
 pnpm exec tsx scripts/q.ts data/v2.db "SELECT name FROM schema_version WHERE name LIKE '%class%' OR name LIKE '%room%'"
 # Should list: class-login-tokens, class-login-pins, classroom-roster, ...
+
+# GWS Gmail send actually works? (smoke: live-send to yourself)
+pnpm exec tsx -e 'import("./src/gmail-send.js").then(m => m.sendGmailMessage({ to: process.env.USER + "@local", subject: "classroom setup smoke", body: "if you got this, gmail send works" }).then(r => console.log("sent:", r.messageId), e => console.error("FAIL:", e.message)))'
+# Replace USER@local with your actual email. ✓ = "sent: <id>". ✗ = re-run scripts/gws-authorize.ts.
 ```
 
 If any of those fail, run `/debug` in Claude Code and have it diagnose.
@@ -118,7 +164,7 @@ done < roster-emails.csv
 
 ## Step 5 — Mint + email login URLs
 
-The `scripts/email-class-tokens.ts` script loops the roster, mints a per-student class-token URL via `ncl class-tokens issue`, and emails each student via Resend.
+The `scripts/email-class-tokens.ts` script loops the roster, mints a per-student class-token URL via `ncl class-tokens issue`, and emails each student via the Gmail API using your GWS account (`src/gmail-send.ts`).
 
 Create `roster.csv` (just `name,email`):
 
@@ -215,11 +261,32 @@ This file is safe to re-run — each step is idempotent. After the first cohort,
 
 | Symptom | Try |
 |---|---|
-| Student says "PIN never arrived" | Check `logs/nanoclaw.log` for `class-login-pins: PIN sender threw`. Verify `RESEND_API_KEY` + Resend sender domain verification. |
+| `Token has been expired or revoked` in logs / email failures | The stored GWS refresh token is dead. Re-run `pnpm exec tsx scripts/gws-authorize.ts` to mint a fresh one. Verify with the one-liner from Prerequisites. |
+| `Gmail send: no GWS access token available` | `~/.config/gws/credentials.json` is missing or unreadable. Run `pnpm exec tsx scripts/gws-authorize.ts` to create it. |
+| `Gmail send failed: 403` with `insufficientPermissions` | Your existing GWS OAuth scope is too narrow. Re-run `gws-authorize.ts` — it requests the default scope set including `gmail.modify`. |
+| Student says "PIN never arrived" | Check `logs/nanoclaw.log` for `class-login-pins: PIN sender threw`. If the message mentions Gmail, run the GWS verification one-liner from Prerequisites. |
 | PIN page shows "could not start sign-in" | `registerTokenLookup` wasn't wired during install — re-run `/add-classroom-pin` or check the bootstrap code added by step 4 of its SKILL.md. |
 | Setup script asked me for OneCLI vault | You picked the wrong option at the credential-mode prompt. Abort with Ctrl-C, rerun `bash nanoclaw.sh`, accept the default (native) by hitting Enter. |
 | Students see other students' agents | The v3 playground assigns each student to their own agent via `agent_group_members`. If this is misconfigured, `pnpm exec tsx scripts/q.ts data/v2.db "SELECT * FROM agent_group_members"` shows the wiring. |
 | "ncl: command not found" when running `email-class-tokens.ts` | `pnpm install` linked `ncl` to `node_modules/.bin/ncl`. Use the full path or activate the bin: `export PATH="$PWD/node_modules/.bin:$PATH"`. |
+
+### Falling back to Resend
+
+If you'd rather use Resend instead of Gmail (e.g. you don't want emails to come from your personal GWS address):
+
+1. Install the channel: `/add-resend`.
+2. Set `RESEND_API_KEY` and `RESEND_FROM_ADDRESS` in `.env`.
+3. In your classroom module bootstrap, register the Resend sender instead of the Gmail one shown in Step 1:
+
+   ```typescript
+   import { registerPinSender } from './channels/playground/api/login-pin.js';
+   import { sendEmail } from './your-resend-wrapper.js';
+   registerPinSender(async (email, pin) => {
+     await sendEmail({ to: email, subject: 'Your sign-in code', text: `Your sign-in code is: ${pin}\n\nIt expires in 10 minutes. Do not share this code.` });
+   });
+   ```
+
+4. For class-token distribution, use the previous Resend-based version of `scripts/email-class-tokens.ts` from git history (`git log --oneline scripts/email-class-tokens.ts` and check out an earlier rev), or write a small Resend wrapper.
 
 ---
 
