@@ -778,6 +778,48 @@ function sendChatMessage(message: string): Promise<void> {
 
 // ─── env-write helper (native credential mode) ─────────────────────────
 
+/**
+ * Extract the Claude Code subscription OAuth token, cross-platform.
+ *
+ *   macOS:  reads from the Keychain (`security find-generic-password`)
+ *   Linux:  reads from ~/.claude/.credentials.json
+ *
+ * Returns the access token string on success, null on any failure (no
+ * Keychain entry, no file, malformed JSON, missing field, exec failed).
+ *
+ * Both platforms store the same JSON shape — `{ claudeAiOauth: { accessToken, ... } }`.
+ * The Keychain entry's password value IS that JSON; macOS just persists it
+ * encrypted at rest via the system keyring instead of as a plain file.
+ */
+function extractClaudeCodeOAuthToken(): string | null {
+  // 1. macOS Keychain (preferred when available — newer Claude Code uses this).
+  if (process.platform === 'darwin') {
+    try {
+      const result = spawnSync('security', ['find-generic-password', '-s', 'Claude Code-credentials', '-w'], {
+        encoding: 'utf-8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      if (result.status === 0 && result.stdout) {
+        const creds = JSON.parse(result.stdout.trim());
+        const token = creds?.claudeAiOauth?.accessToken;
+        if (typeof token === 'string' && token.length > 0) return token;
+      }
+    } catch {
+      /* fall through to file path */
+    }
+  }
+  // 2. File path (Linux, or macOS installs that pre-date Keychain storage).
+  const credPath = path.join(os.homedir(), '.claude', '.credentials.json');
+  if (!fs.existsSync(credPath)) return null;
+  try {
+    const creds = JSON.parse(fs.readFileSync(credPath, 'utf-8'));
+    const token = creds?.claudeAiOauth?.accessToken;
+    return typeof token === 'string' && token.length > 0 ? token : null;
+  } catch {
+    return null;
+  }
+}
+
 function appendEnvLine(line: string): void {
   const envPath = path.join(process.cwd(), '.env');
   const existing = fs.existsSync(envPath) ? fs.readFileSync(envPath, 'utf-8') : '';
@@ -808,7 +850,7 @@ async function runNativeAuthStep(): Promise<void> {
         {
           value: 'subscription',
           label: 'Use my Claude Code subscription',
-          hint: 'reads OAuth token from ~/.claude/.credentials.json',
+          hint: 'extracts the OAuth token from Claude Code (Keychain on macOS, file on Linux)',
         },
         {
           value: 'oauth',
@@ -838,24 +880,19 @@ async function runNativeAuthStep(): Promise<void> {
   }
 
   if (method === 'subscription') {
-    const credPath = path.join(os.homedir(), '.claude', '.credentials.json');
-    if (!fs.existsSync(credPath)) {
-      p.log.warn(brandBody(`No file at ${credPath}. Sign in to Claude Code first (run \`claude\` in another terminal), then re-run setup.`));
+    const token = extractClaudeCodeOAuthToken();
+    if (!token) {
+      p.log.warn(
+        brandBody(
+          "Couldn't find a Claude Code OAuth token. Make sure you've signed in to Claude Code (run `claude` in another terminal). On macOS, credentials live in the Keychain; on Linux, in ~/.claude/.credentials.json. If `security find-generic-password -s 'Claude Code-credentials' -w` (macOS) or `cat ~/.claude/.credentials.json` (Linux) fails, finish signing in and re-run setup.",
+        ),
+      );
       setupLog.step('auth', 'failed', 0, { ERROR: 'no-claude-credentials' });
       return runNativeAuthStep();
     }
-    try {
-      const creds = JSON.parse(fs.readFileSync(credPath, 'utf-8'));
-      const token = creds.claudeAiOauth?.accessToken;
-      if (!token) throw new Error('No accessToken in credentials.json');
-      appendEnvLine(`CLAUDE_CODE_OAUTH_TOKEN=${token}`);
-      p.log.success(brandBody('Wrote CLAUDE_CODE_OAUTH_TOKEN to .env from your Claude Code subscription.'));
-      setupLog.step('auth', 'ok', 0, { METHOD: 'subscription' });
-    } catch (err) {
-      p.log.warn(brandBody(`Couldn't extract OAuth token: ${String(err)}`));
-      setupLog.step('auth', 'failed', 0, { ERROR: String(err) });
-      return runNativeAuthStep();
-    }
+    appendEnvLine(`CLAUDE_CODE_OAUTH_TOKEN=${token}`);
+    p.log.success(brandBody('Wrote CLAUDE_CODE_OAUTH_TOKEN to .env from your Claude Code subscription.'));
+    setupLog.step('auth', 'ok', 0, { METHOD: 'subscription' });
     return;
   }
 
