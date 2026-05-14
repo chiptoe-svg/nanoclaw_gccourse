@@ -86,25 +86,142 @@ commits when first run on a fresh install.
 
 ### Upstream PR
 
-- [ ] Branch off `upstream/main` (not this fork's `main`, which has
-      classroom + admin tools).
-- [ ] Cherry-pick the ai-coding-cli-picker commits cleanly. Commits to
-      include:
-      - framework + adapters (`bb26617`)
-      - Phase A: tz-from-cli (`7719770`)
-      - Phase B: cli-handoff (`d6765a2`)
-      - Phase C: cli-assist (`09ce248`)
-      - Phase D: picker (`234de14`)
-      - Phase E: README (`599cf35`)
-      - Phase F: --reconfigure-cli (`48ed9ad`)
-      - OpenCode adapter wiring (`3bad076`) — **optional in
-        upstream PR**: the adapter ships in this fork's
-        `origin/providers`; upstream may want it bundled into their
-        own providers branch instead. Coordinate.
-- [ ] PR description: link to plan, list verified smoke matrix from
-      above, note the registry-typo fix (`adapter` → `cli` in
-      `setup/lib/ai-coding-cli/index.ts:58`).
+**Status: ✅ opened 2026-05-14 — https://github.com/nanocoai/nanoclaw/pull/2474**
+(Upstream renamed from `qwibitai/nanoclaw` → `nanocoai/nanoclaw`; the
+old org name still works as an HTTP redirect.)
+
+- [x] Branch off `upstream/main` (worktree at
+      `.claude/worktrees/upstream-ai-coding-cli`,
+      branch `chip/ai-coding-cli` → pushed to `chiptoe-fork`).
+- [x] Cherry-picked: framework `bb26617`, Phase A–F commits, rename
+      `5991a1a`, Phase G test `0f1f2f5`.
+- [x] **Excluded** OpenCode adapter (`3bad076`) — depends on
+      `opencodeCli` symbol that upstream `providers` branch doesn't
+      yet have. Follow-up PR once upstream's providers branch picks
+      it up; the registry already accommodates it.
+- [x] Dropped fork-only files during cherry-pick: `plans/*.md`,
+      `setup/migrate.ts` (deleted in upstream).
+- [x] Resolved `setup/lib/ai-coding-cli/index.ts` 3-way conflict
+      (rename × opencode-add interleave): kept renamed `AiCodingCli`
+      types, dropped `opencodeCli` import.
+- [x] Adapted `resolve.test.ts` to drop opencode references → 22
+      tests still pass; removes-3-not-applicable-tests, keeps the
+      claude/codex matrix complete.
+- [x] Verified: `pnpm typecheck` clean; `pnpm test` 345/345.
 - [ ] Address review comments.
+- [ ] Once merged: rebase fork's `main` against upstream to drop
+      these commits cleanly.
+
+---
+
+## 1.5. Codex provider — skills + persona surfacing (commit `2317a1f`)
+
+Code state: **✅ shipped on this fork's `main`**.
+
+Surfaces the agent's `skills/` directory to Codex agents the same way
+Claude Code surfaces them — reads `SKILL.md` frontmatter (name +
+description), emits a markdown discovery list as part of
+`baseInstructions`. Without this, switching an agent group's provider
+from claude → codex loses the skill catalog (only persona transfers),
+making provider switching a content rewrite rather than a config
+change.
+
+**Upstream path:** PR to `upstream/providers` (NOT main — the codex
+provider lives on the providers branch in upstream's structure, copied
+in by `/add-codex` skill).
+
+### Upstream PR
+
+**Status: ✅ opened 2026-05-14 — https://github.com/nanocoai/nanoclaw/pull/2475**
+
+- [x] Branch off `upstream/providers` (same worktree as PR #2474,
+      different branch — `chip/codex-skills-surfacing`).
+- [x] Single cherry-pick of `2317a1f` (clean — auto-merge in
+      `codex.ts`, no manual conflict resolution).
+- [x] Verified: container `bun run typecheck` clean,
+      `bun test` 86/86.
+- [ ] Address review comments. Trivial diff (132 ins / 2 del across
+      2 files) so review should land fast.
+
+### Tests covered (already in the cherry-pick)
+
+`container/agent-runner/src/providers/codex.factory.test.ts`:
+
+- Frontmatter parsing — name + description present (happy path)
+- Frontmatter parsing — missing description (skill included with
+  name-only entry)
+- Frontmatter parsing — missing `name` field (skill excluded)
+- Frontmatter parsing — no frontmatter at all (skill excluded)
+- Determinism — entries alphabetically sorted by name
+- Empty `/app/skills` dir → empty section, not crash
+- All-eligible-skills excluded → empty section
+
+### Net effect post-merge
+
+Persona, `CLAUDE.local.md`, AND skill catalog all work the same on
+Claude or Codex. Switching providers is a config change, not a content
+rewrite. Mirrors the lazy-load-full-body approach Claude Code uses
+internally — surfaces 1-line description per skill, agent fetches the
+body when description matches a need.
+
+---
+
+## 1.6. Codex provider — pending follow-ups (NOT yet PR'd)
+
+Three additional codex-related commits exist on this fork's `main`
+that look upstream-worthy but need rework before submission. Captured
+here so they don't get forgotten.
+
+### `0e79ab5` — stop passing real `OPENAI_API_KEY` into container env
+
+Code state: ✅ shipped on this fork's `main`. **Fork-specific as
+written** — narrows env passthrough because this fork has a native
+credential proxy that the container is supposed to route through.
+
+**Upstream blocker:** Upstream's `src/container-runner.ts` has NO
+`OPENAI_*` env injection — OneCLI handles credentials. So the
+passthrough is the *only* mechanism by which an OpenAI API key reaches
+the container for direct-API-key codex users (no ChatGPT subscription,
+no OneCLI gateway intercepting). Applying this fix as-is would break
+those users.
+
+**Upstream-portable reframe options** (pick one before submission):
+
+1. **Conditional** — only narrow the passthrough when a credential
+   injection layer is detected (proxy URL set, OneCLI configured, or
+   `auth.json` present). Preserves all existing flows.
+2. **Opt-in flag** — `CODEX_HOST_ENV_PASSTHROUGH=false` defaults to
+   `true` (current behavior); operators using a proxy set it to false.
+3. **Reframe as harden-against-host-env-overriding-container-set
+   values** — only skip passthrough for keys already set by the
+   container-runner. Cleanest articulation; upstream-friendly because
+   it's an additive constraint.
+
+Recommendation: **option 3**. Smallest behavior delta for upstream's
+existing users.
+
+### `2317a1f` — codex skills surfacing — **DONE, see §1.5**
+
+### `b09abb4` — "fix codex provider contracts"
+
+Code state: ✅ shipped on this fork's `main`. Multi-file polish (7
+files, 200/82 ins/del) — agent-runner-side tests + small contract
+fixes + a doc rewrite of `agent-runner-details.md`.
+
+**Upstream blocker:** touches `.claude/skills/add-codex/SKILL.md`
+which upstream has separately evolved (commits `0ec56b7`, `e5a7a33`,
+`ce28e7f`, `52f8661`). Cherry-pick will conflict; the SKILL.md edit
+needs a fresh upstream-style rewrite.
+
+**Approach for the eventual PR:** split `b09abb4` —
+- Drop the SKILL.md edit (re-derive against upstream's current
+  version if any concept is still relevant).
+- Drop `docs/agent-runner-details.md` (likely fork-only doc).
+- Cherry-pick the runtime + test fixes against `upstream/providers`
+  (same base branch as PR #2475).
+
+Lower priority than §1.5 — wait until that lands so we know what
+upstream's review style looks like.
 
 ---
 
