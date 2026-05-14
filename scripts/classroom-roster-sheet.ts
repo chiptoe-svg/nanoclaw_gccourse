@@ -44,21 +44,39 @@ interface Args {
   rotate: boolean;
   course: string;
   sheetName: string;
+  /** Comma-separated allowlist of student emails the script will actually
+   * email. Other rows are still provisioned (agent group + roster entry +
+   * token rotation) and written back to the sheet, but the Gmail send is
+   * skipped. Use during smoke iterations to avoid blasting the full
+   * roster while debugging. */
+  onlyEmails: string[] | null;
 }
 
 const HEADER = ['name', 'email', 'folder', 'role', 'class_token_url', 'provisioned_at'];
 
 function parseArgs(argv: string[]): Args {
-  const args: Args = { sheetId: '', rotate: false, course: 'your class', sheetName: 'Roster' };
+  const args: Args = {
+    sheetId: '',
+    rotate: false,
+    course: 'your class',
+    sheetName: 'Roster',
+    onlyEmails: null,
+  };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === '--sheet') args.sheetId = argv[++i]!;
     else if (a === '--rotate') args.rotate = true;
     else if (a === '--course') args.course = argv[++i]!;
     else if (a === '--sheet-name') args.sheetName = argv[++i]!;
-    else if (a === '--help' || a === '-h') {
+    else if (a === '--only-emails') {
+      const raw = argv[++i]!;
+      args.onlyEmails = raw
+        .split(',')
+        .map((e) => e.trim().toLowerCase())
+        .filter(Boolean);
+    } else if (a === '--help' || a === '-h') {
       console.log(
-        'Usage: pnpm exec tsx scripts/classroom-roster-sheet.ts --sheet <SHEET_ID> [--rotate] [--course "<name>"] [--sheet-name "<tab>"]',
+        'Usage: pnpm exec tsx scripts/classroom-roster-sheet.ts --sheet <SHEET_ID> [--rotate] [--course "<name>"] [--sheet-name "<tab>"] [--only-emails "a@x,b@y"]',
       );
       process.exit(0);
     } else {
@@ -284,14 +302,22 @@ async function main(): Promise<void> {
         args.rotate || !row.classTokenUrl ? rotateClassLoginToken(userId) : extractTokenFromUrl(row.classTokenUrl);
       const url = `${baseUrl}/?token=${token}`;
 
-      // 5. Email it.
-      const { subject, body } = buildEmail(row.name, url, args.course);
-      await sendGmailMessage({ to: row.email, subject, body });
+      // 5. Email it — unless --only-emails filters this row out (provision
+      //    + token + write-back still happen so the row is "ready", just
+      //    no email is sent during a debug iteration).
+      const allow = args.onlyEmails === null || args.onlyEmails.includes(row.email.toLowerCase());
+      if (allow) {
+        const { subject, body } = buildEmail(row.name, url, args.course);
+        await sendGmailMessage({ to: row.email, subject, body });
+      } else {
+        console.log(`  [no-email] row ${row.rowIndex} (${row.email}) — filtered by --only-emails`);
+      }
 
       // 6. Write back to the sheet.
       await writeBackRow(args.sheetId, args.sheetName, await getFreshToken(), row.rowIndex, folder, url, nowIso());
 
-      console.log(`  ✓ row ${row.rowIndex} (${row.email} → ${folder}) emailed`);
+      const verb = allow ? 'emailed' : 'provisioned (no email)';
+      console.log(`  ✓ row ${row.rowIndex} (${row.email} → ${folder}) ${verb}`);
       ok++;
     } catch (err) {
       console.error(`  ✗ row ${row.rowIndex} (${row.email}): ${(err as Error).message}`);

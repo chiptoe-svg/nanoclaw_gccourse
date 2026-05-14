@@ -230,3 +230,27 @@ registerPinSender(async (email, pin) => {
 });
 
 setPinRequiredForClassToken(true);
+
+// Eagerly bind the playground HTTP server at host startup so students can
+// click their class-token URLs without the instructor first nudging via
+// /playground on Telegram. Without this, every service restart leaves
+// port 3002 unbound until manual /playground, which doesn't fit the
+// classroom UX. PLAYGROUND_ENABLED still gates the call.
+//
+// The playground.js import is dynamic (deferred until the onHostReady
+// callback fires) so we don't pull the playground module chain into
+// module-init — that would force every test that mocks auth-store to
+// also mock onSessionRevoked / onAllSessionsCleared / sse internals.
+import { onHostReady } from './response-registry.js';
+import { PLAYGROUND_ENABLED } from './config.js';
+
+onHostReady(async () => {
+  if (!PLAYGROUND_ENABLED) return;
+  try {
+    const { startPlaygroundServer } = await import('./channels/playground.js');
+    await startPlaygroundServer();
+    log.info('Classroom auto-started playground server');
+  } catch (err) {
+    log.error('Classroom failed to auto-start playground', { err });
+  }
+});

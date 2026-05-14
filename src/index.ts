@@ -28,10 +28,12 @@ import {
   getResponseHandlers,
   onShutdown,
   getShutdownCallbacks,
+  onHostReady,
+  getHostReadyCallbacks,
   type ResponsePayload,
   type ResponseHandler,
 } from './response-registry.js';
-export { registerResponseHandler, onShutdown };
+export { registerResponseHandler, onShutdown, onHostReady };
 export type { ResponsePayload, ResponseHandler };
 
 async function dispatchResponse(payload: ResponsePayload): Promise<void> {
@@ -199,6 +201,17 @@ async function main(): Promise<void> {
   await startCliServer();
 
   log.info('NanoClaw running');
+
+  // 8. Fire onHostReady callbacks (e.g. classroom auto-starting the
+  //    playground HTTP server). Best-effort: errors are logged but don't
+  //    take the host down — the rest of the stack is already running.
+  for (const cb of getHostReadyCallbacks()) {
+    try {
+      await cb();
+    } catch (err) {
+      log.error('Host-ready callback threw', { err });
+    }
+  }
 }
 
 /** Graceful shutdown. */
