@@ -106,12 +106,16 @@ Order matches `plans/master.md` §"Phase 2 — Full classroom capability".
   on the connection state — they just route differently based
   on what's available.
 
-  **Tier A — Foundation (no agent-runner behavior change yet;
-  this tier wires the credential writer + UI + resolver but
-  doesn't introduce the gate. The gate lands per-tool in
-  Tier B/C/D so each tool ships with its own policy enforcement
-  test):**
-    - [ ] `src/student-google-auth.ts` — writer side: store
+  **Tier A — Foundation (SHIPPED 2026-05-15, commits `ab90d0b`..`bd479c6`).
+  Wires the credential writer + UI + resolver. The gate behavior
+  lands per-tool in Tier B/C/D so each tool ships with its own
+  policy enforcement test. Tier A introduces no agent-runner
+  behavior change — connected students don't see anything different
+  until Tier C/D tools ship. The `/gauth` Telegram command (one of
+  the six originally-planned sub-tasks) is DEFERRED — it lives in
+  the gitignored `src/admin-handlers/` tree and is per-install
+  opt-in via `/add-admintools`, not part of trunk Phase 14.**
+    - [x] `src/student-google-auth.ts` — writer side: store
           per-student credentials at
           `data/student-google-auth/<sanitized_user_id>/credentials.json`.
           Reader side already exists at `src/student-creds-paths.ts`
@@ -120,7 +124,7 @@ Order matches `plans/master.md` §"Phase 2 — Full classroom capability".
           `hasStudentCredentials(userId)`,
           `loadStudentCredentials(userId): GwsTokens | null`,
           `clearStudentCredentials(userId)` (for revoke flow).
-    - [ ] `src/gws-token.ts` — extend `getGoogleAccessTokenForAgentGroup`
+    - [x] `src/gws-token.ts` — extend `getGoogleAccessTokenForAgentGroup`
           with an `options.requirePersonal: boolean` flag. When
           true, resolve user_id from `classroom_roster` by
           agent_group_id, try per-student credentials, return
@@ -133,7 +137,7 @@ Order matches `plans/master.md` §"Phase 2 — Full classroom capability".
           `"instructor"`, or `null` accordingly so per-call
           attribution surfaces correctly in proxy logs and usage
           aggregation.
-    - [ ] `src/channels/playground/api/google-auth.ts` — new
+    - [x] `src/channels/playground/api/google-auth.ts` — new
           handler module with two HTTP routes:
           `GET /google-auth/start` — verify session cookie,
           mint a state token bound to the user_id, build
@@ -143,10 +147,10 @@ Order matches `plans/master.md` §"Phase 2 — Full classroom capability".
           authorization code via `gws-auth.ts:exchangeCodeForTokens`,
           call `writeStudentCredentials(userId, tokens)`,
           redirect back to home tab with `?google_connected=1`.
-    - [ ] `src/channels/playground/server.ts` — register the two
+    - [x] `src/channels/playground/server.ts` — register the two
           new routes (alongside the existing `/oauth/google/*`
           PIN-flow routes which serve a different purpose).
-    - [ ] `src/channels/playground/public/tabs/home.js` — new
+    - [x] `src/channels/playground/public/tabs/home.js` — new
           "Google" card mirroring `renderTelegramCard`. States:
           *not connected* → "Connect Google" button; *connected*
           → "Connected as `<email>` · Disconnect". Wire button
