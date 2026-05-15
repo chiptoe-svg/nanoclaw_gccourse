@@ -20,6 +20,7 @@ async function handleModelCommand(token: string, platformId: string, text: strin
   const { getMessagingGroupByPlatform, getMessagingGroupAgents } = await import('../db/messaging-groups.js');
   const { getAgentGroup } = await import('../db/agent-groups.js');
   const { expandAlias, hintsForProvider, resolveEffectiveModel, setModel } = await import('../model-switch.js');
+  const { listAllForProvider } = await import('../model-discovery.js');
   const { isContainerRunning, killContainer } = await import('../container-runner.js');
   const { getActiveSessions } = await import('../db/sessions.js');
 
@@ -65,8 +66,36 @@ async function handleModelCommand(token: string, platformId: string, text: strin
       `\n` +
       `Use /model <alias|full-id> to switch. Aliases above (e.g. "${hints[0]?.alias ?? 'opus'}") expand to the full id.`;
   } else {
-    const newModel = arg === 'reset' || arg === 'default' ? null : await expandAlias(group.agent_provider, arg);
-    const ok = setModel(group.folder, newModel);
+    const isReset = arg === 'reset' || arg === 'default';
+    const expanded = isReset ? null : await expandAlias(group.agent_provider, arg);
+
+    // Validate against the live model list before persisting. Without this
+    // a typo (`/model gemma-4` when only `gemma-4-31B-it-MLX-4bit` is
+    // loaded) used to silently set an unreachable model name and break
+    // every subsequent reply with no obvious cause.
+    if (!isReset && expanded) {
+      const live = await listAllForProvider(group.agent_provider);
+      const exists = live.some((h) => h.id === expanded);
+      if (!exists) {
+        const lower = arg.toLowerCase();
+        const near = live
+          .filter((h) => h.id.toLowerCase().includes(lower) || h.alias.toLowerCase().includes(lower))
+          .slice(0, 5)
+          .map((h) => `  • ${h.id}${h.alias && h.alias !== h.id ? ` (alias: ${h.alias})` : ''}`)
+          .join('\n');
+        await sendTelegram(
+          token,
+          chatId,
+          `❌ Model \`${arg}\` doesn't match any available model for provider \`${group.agent_provider ?? 'claude'}\`.\n` +
+            (near
+              ? `\nDid you mean one of:\n${near}`
+              : `\nNo models contain "${arg}" in their id or alias. Run /model with no args to see the full list.`),
+        );
+        return true;
+      }
+    }
+
+    const ok = setModel(group.folder, expanded);
     if (!ok) {
       reply = 'Failed to persist — group not found by folder.';
     } else {
@@ -80,8 +109,8 @@ async function handleModelCommand(token: string, platformId: string, text: strin
           }
         }
       }
-      reply = newModel
-        ? `✅ Model set to \`${newModel}\`. Next message uses it. (Server rejects unknown models with a clear error.)`
+      reply = expanded
+        ? `✅ Model set to \`${expanded}\`. Next message uses it.`
         : `✅ Model reset — group will use provider default.`;
     }
   }

@@ -36,7 +36,8 @@ const MAX_HINTS = 4;
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 interface CacheEntry {
-  models: ModelHint[];
+  hints: ModelHint[];
+  all: ModelHint[];
   expiresAt: number;
 }
 const cache = new Map<string, CacheEntry>();
@@ -132,7 +133,18 @@ function resolveEndpoint(
   }
 }
 
-async function fetchProviderModels(provider: string): Promise<ModelHint[] | null> {
+/**
+ * Result of a live fetch: the curated top-N for the `/model` command and the
+ * full parsed list for places that want everything (e.g. the playground
+ * Models tab). Both views share the same fetch + parse cost, so we cache
+ * them together to avoid double-hitting the provider's `/v1/models`.
+ */
+interface FetchedModels {
+  hints: ModelHint[];
+  all: ModelHint[];
+}
+
+async function fetchProviderModels(provider: string): Promise<FetchedModels | null> {
   if (process.env.NANOCLAW_NO_LIVE_MODELS) return null;
   const adapter = getModelProvider(provider);
   if (!adapter) return null;
@@ -153,30 +165,51 @@ async function fetchProviderModels(provider: string): Promise<ModelHint[] | null
   if (parsed.length === 0) return null;
 
   const top = adapter.pickTop(parsed, MAX_HINTS);
-  return top.map((p) => ({
+  const toHint = (p: ParsedModel): ModelHint => ({
     id: p.id,
     alias: p.alias,
     note: adapter.noteFor(p.alias) ?? '',
-  }));
+  });
+  return {
+    hints: top.map(toHint),
+    all: parsed.map(toHint),
+  };
 }
 
 // ── Public API ─────────────────────────────────────────────────────────────
 
-export async function hintsForProvider(provider: string | null, force = false): Promise<ModelHint[]> {
+async function loadCached(provider: string | null, force: boolean): Promise<CacheEntry | null> {
   const key = (provider || 'claude').toLowerCase();
   const adapter = getModelProvider(key);
-  if (!adapter) return [];
+  if (!adapter) return null;
 
   const now = Date.now();
   if (!force) {
     const cached = cache.get(key);
-    if (cached && now < cached.expiresAt) return cached.models;
+    if (cached && now < cached.expiresAt) return cached;
   }
 
   const fetched = await fetchProviderModels(key);
-  const models = fetched ?? adapter.staticFallback;
-  cache.set(key, { models, expiresAt: now + CACHE_TTL_MS });
-  return models;
+  const entry: CacheEntry = fetched
+    ? { hints: fetched.hints, all: fetched.all, expiresAt: now + CACHE_TTL_MS }
+    : { hints: adapter.staticFallback, all: adapter.staticFallback, expiresAt: now + CACHE_TTL_MS };
+  cache.set(key, entry);
+  return entry;
+}
+
+export async function hintsForProvider(provider: string | null, force = false): Promise<ModelHint[]> {
+  const entry = await loadCached(provider, force);
+  return entry?.hints ?? [];
+}
+
+/**
+ * All discovered models for a provider, no top-N cap. Used by the
+ * playground Models tab to show the full available list alongside the
+ * curated catalog. Shares the same cache + fetch as `hintsForProvider`.
+ */
+export async function listAllForProvider(provider: string | null, force = false): Promise<ModelHint[]> {
+  const entry = await loadCached(provider, force);
+  return entry?.all ?? [];
 }
 
 /**
@@ -188,8 +221,29 @@ export async function expandAlias(provider: string | null, input: string): Promi
   const trimmed = input.trim();
   if (!trimmed) return trimmed;
   const hints = await hintsForProvider(provider);
-  const match = hints.find((h) => h.alias === trimmed);
-  return match ? match.id : trimmed;
+
+  // 1. Exact alias match (what was always supported).
+  const exact = hints.find((h) => h.alias === trimmed);
+  if (exact) return exact.id;
+
+  // 2. Exact id match — typed the full id, accept verbatim.
+  const idMatch = hints.find((h) => h.id === trimmed);
+  if (idMatch) return idMatch.id;
+
+  // 3. Unique case-insensitive prefix match against the live id list, so
+  //    `/model gemma-4` (when only one gemma-4 is loaded) expands to
+  //    `gemma-4-31B-it-MLX-4bit`. Crucially, only resolve when the prefix
+  //    is *unique* — multiple matches mean the user must disambiguate,
+  //    otherwise we'd silently pick the wrong model.
+  const lowerInput = trimmed.toLowerCase();
+  const prefixMatches = hints.filter((h) => h.id.toLowerCase().startsWith(lowerInput));
+  if (prefixMatches.length === 1) return prefixMatches[0].id;
+
+  // 4. No match — return input unchanged. The /model handler and Models-tab
+  //    APIs will see the literal string; mlx-omni-server (etc.) then
+  //    returns "Model not found" which surfaces to the user instead of
+  //    silently storing a broken value.
+  return trimmed;
 }
 
 /** Internal helper for tests — clears the in-memory cache. */
