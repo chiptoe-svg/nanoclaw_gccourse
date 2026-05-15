@@ -270,10 +270,20 @@ function escapeXml(str: string): string {
 }
 
 /**
- * Strip `<internal>...</internal>` blocks from agent output, then trim.
+ * Strip reasoning/scratchpad blocks from agent output, then trim. Removes:
+ *   - `<internal>...</internal>` — the convention we tell agents to use
+ *     for their own scratchpad reasoning
+ *   - `<think>...</think>` — emitted natively by reasoning models like
+ *     Qwen3 and DeepSeek-R1 as part of their chain-of-thought. Without
+ *     this, the model's internal reasoning leaks verbatim into the chat
+ *     reply on every turn.
+ *
  * Ported from v1 (src/v1/router.ts:25-27). Used to remove the agent's
  * own scratchpad/reasoning before a reply goes out over a channel.
  */
 export function stripInternalTags(text: string): string {
-  return text.replace(/<internal>[\s\S]*?<\/internal>/g, '').trim();
+  return text
+    .replace(/<internal>[\s\S]*?<\/internal>/g, '')
+    .replace(/<think>[\s\S]*?<\/think>/g, '')
+    .trim();
 }

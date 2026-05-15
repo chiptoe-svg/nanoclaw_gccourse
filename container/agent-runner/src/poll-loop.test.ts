@@ -298,6 +298,23 @@ describe('dispatchResultText single-destination fallback', () => {
     expect(JSON.parse(out[0].content).text).toBe('Visible reply.');
   });
 
+  it('strips <think> tags (reasoning-model chain-of-thought) from bare-text fallback', async () => {
+    seedDestination('telegram-mg-17787', 'telegram', 'telegram:user-1');
+    const { dispatchResultText } = await import('./poll-loop.js');
+    dispatchResultText(
+      "<think>\nLet me try curl first.\nIf that fails I'll use the browser.\n</think>\nThe site is up — top story is X.",
+      {
+        inReplyTo: 'm1',
+        platformId: null,
+        channelType: null,
+        threadId: null,
+      },
+    );
+    const out = getUndeliveredMessages();
+    expect(out).toHaveLength(1);
+    expect(JSON.parse(out[0].content).text).toBe('The site is up — top story is X.');
+  });
+
   it('does NOT fall back when group has multiple destinations', async () => {
     seedDestination('telegram-mg-17787', 'telegram', 'telegram:user-1');
     seedDestination('discord-main', 'discord', 'discord:chan-1');
