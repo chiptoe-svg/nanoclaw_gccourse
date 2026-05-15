@@ -182,13 +182,18 @@ cd ~/nanoclaw<button class="copy-btn" type="button" data-copy>Copy</button></div
 <div class="step">
   <div class="step-number">1.5</div>
   <div class="step-body">
-    <h2>(Optional) Migrate your existing <code>.env</code></h2>
-    <p>If you already have a working install elsewhere with credentials configured (Anthropic / OpenAI key, Telegram bot token, Google OAuth, assistant name, etc.), pull the <code>.env</code> over <em>before</em> running step 2 — the bootstrap auto-detects existing values and skips those prompts.</p>
-    <p><strong>Option A — HTTP download (no SSH required).</strong> Ask whoever runs your other install to stage <code>.env</code> at an unguessable URL on their static file server, then:</p>
-    <div class="code-block">curl -fsSL "&lt;staging-url-from-installer&gt;" -o ~/nanoclaw/.env<button class="copy-btn" type="button" data-copy>Copy</button></div>
-    <p><strong>Option B — SCP</strong> (if you have SSH access to your other host):</p>
-    <div class="code-block">scp user@your-other-host:~/nanoclaw/.env ~/nanoclaw/.env<button class="copy-btn" type="button" data-copy>Copy</button></div>
-    <p class="callout"><strong>Optional extras worth migrating:</strong> Google Workspace OAuth at <code>~/.config/gws/credentials.json</code>, and (if you use Claude Code subscription instead of an API key) <code>~/.claude/.credentials.json</code>. The bootstrap regenerates everything else.</p>
+    <h2>(Optional) Migrate everything from an existing install</h2>
+    <p>If you already have a working install elsewhere, you can clone the credentials over in one step instead of re-entering them here. This fork ships an <code>/install-handoff</code> skill that generates a time-limited single-use URL bundling <code>.env</code> + Google Workspace OAuth + Codex creds. Workflow:</p>
+    <ol>
+      <li>On the source machine: open Claude Code in the repo and run:
+        <div class="code-block">ncl handoffs create --ttl 24h --max-uses 1<button class="copy-btn" type="button" data-copy>Copy</button></div>
+        It prints a URL like <code>http://&lt;source-host&gt;:3008/handoff/&lt;token&gt;/install.html</code>.
+      </li>
+      <li>Open that URL in this Mac's browser. The page detects macOS and shows the right install commands inline.</li>
+      <li>Follow the steps it shows: <code>git clone</code>, paste the credential <code>curl</code> block, <code>bash nanoclaw.sh</code>, restart the service. The bootstrap auto-detects the migrated values and skips those prompts.</li>
+    </ol>
+    <p class="callout"><strong>Don't have <code>/install-handoff</code> on the source yet?</strong> Pull this fork's main branch and run <code>/install-handoff</code> in Claude Code — it's a one-shot install. Or skip step 1.5 entirely; the bootstrap will prompt for everything from scratch.</p>
+    <p class="callout"><strong>Note on Claude Code OAuth:</strong> on macOS the OAuth lives in Keychain, not a file. You don't need to migrate it — the setup script auto-extracts it via <code>security find-generic-password -s "Claude Code-credentials" -w</code> when you pick "Use my Claude Code subscription".</p>
   </div>
 </div>
 
@@ -198,7 +203,7 @@ cd ~/nanoclaw<button class="copy-btn" type="button" data-copy>Copy</button></div
     <h2>Run the bootstrap script</h2>
     <p><code>nanoclaw.sh</code> installs Node + pnpm + native modules, builds the agent container, walks you through credential and channel setup, and pairs your first messaging app. If a step fails it hands off to Claude Code to diagnose and resume from where it broke.</p>
     <div class="code-block">bash nanoclaw.sh<button class="copy-btn" type="button" data-copy>Copy</button></div>
-    <p>If you did step 1.5, expect <strong>~2–5 minutes</strong> of mostly-automated work — Docker check, container build, service install. Prompts that would normally ask for credentials get skipped when the values are already in <code>.env</code>.</p>
+    <p>If you did step 1.5 (handoff URL), expect <strong>~2–5 minutes</strong> of mostly-automated work — Docker check, container build, service install. Prompts that would normally ask for credentials get skipped when the values are already in <code>.env</code>.</p>
     <p>If you skipped step 1.5, expect <strong>~5–15 minutes</strong> — you'll be prompted for: display name, AI-coding-CLI (pick Claude Code), <strong>credential mode (defaults to native credential proxy)</strong>, provider credentials, timezone, and which channel to pair first (Telegram is smoothest).</p>
     <p class="callout"><strong>Credential mode — IMPORTANT:</strong> the setup script asks "How would you like to manage credentials?" with two options: <em>Native credential proxy (recommended)</em> and <em>OneCLI vault</em>. <strong>Hit Enter to accept the default (native).</strong> OneCLI is a separate gateway service this fork does NOT install — selecting it triggers an extra ~5min install of the OneCLI binary + vault setup. Native is what you want unless you specifically need centralized credential vaulting or per-user OAuth tokens (Phase 2 classroom territory). If you accidentally pick OneCLI, abort with Ctrl-C and rerun <code>bash nanoclaw.sh</code>.</p>
   </div>
