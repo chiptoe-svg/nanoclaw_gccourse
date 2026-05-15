@@ -58,6 +58,21 @@ function loadSkillLibrary(el, folder) {
     .catch(() => { /* ignore */ });
 }
 
+// Category labels shown to the user. Internal API names (`built-in`,
+// `skills`) are mapped here so we don't have to re-flow the data model.
+const CATEGORY_LABEL = {
+  'built-in': 'Library',
+  skills: 'Anthropic',
+  custom: 'Custom built',
+};
+// Display order. Anything not in this list comes after, alphabetical.
+const CATEGORY_ORDER = ['built-in', 'skills', 'custom'];
+
+function isSkillActive(name) {
+  if (currentSkills === 'all') return true;
+  return Array.isArray(currentSkills) && currentSkills.includes(name);
+}
+
 function renderLibraryList(el) {
   const listEl = el.querySelector('#skills-list');
   listEl.innerHTML = '';
@@ -65,11 +80,19 @@ function renderLibraryList(el) {
   for (const entry of libraryCache) {
     (byCategory[entry.category] = byCategory[entry.category] || []).push(entry);
   }
-  for (const category of Object.keys(byCategory).sort()) {
+  const categories = Object.keys(byCategory).sort((a, b) => {
+    const ai = CATEGORY_ORDER.indexOf(a);
+    const bi = CATEGORY_ORDER.indexOf(b);
+    if (ai !== -1 && bi !== -1) return ai - bi;
+    if (ai !== -1) return -1;
+    if (bi !== -1) return 1;
+    return a.localeCompare(b);
+  });
+  for (const category of categories) {
     const section = document.createElement('div');
     section.className = 'lib-section';
     const heading = document.createElement('h4');
-    heading.textContent = category;
+    heading.textContent = CATEGORY_LABEL[category] || category;
     section.appendChild(heading);
     const ul = document.createElement('ul');
     for (const entry of byCategory[category]) {
@@ -81,7 +104,10 @@ function renderLibraryList(el) {
       const icon = entry.builtin ? '📦' : '🔧';
       li.textContent = `${icon} ${entry.name}${costText}`;
       li.title = entry.builtin ? `[host-shipped built-in] ${entry.description || ''}` : entry.description || '';
-      if (entry.builtin) li.classList.add('skill-builtin');
+      // Yellow highlight when the skill is currently in this agent's active
+      // set. Provenance (built-in vs library) is signalled by the icon, not
+      // by background color — keeps "active" the only meaningful tint.
+      if (isSkillActive(entry.name)) li.classList.add('skill-active');
       if (entry.compatibility === 'incompatible') li.classList.add('skill-incompatible');
       if (entry.compatibility === 'partial') li.classList.add('skill-partial');
       li.addEventListener('click', () => loadSkillPreview(li.closest('.tab-body') || document, entry.category, entry.name));
@@ -153,6 +179,11 @@ function loadActiveSkills(el, folder) {
       currentSkills = data.skills;
       originalSkills = Array.isArray(currentSkills) ? [...currentSkills] : currentSkills;
       renderActiveList(el);
+      // Library list reflects active state too (yellow highlight). Race-safe:
+      // if the library hasn't finished loading yet, libraryCache is empty
+      // and renderLibraryList renders a no-op; loadSkillLibrary's own
+      // render will pick up the now-set currentSkills.
+      renderLibraryList(el);
       recomputeRollup(el);
     });
 }
@@ -227,6 +258,8 @@ function saveActive(el) {
     .then((r) => (r.ok ? r.json() : null))
     .then(() => {
       renderActiveList(el);
+      // Keep the library panel's active-highlight in sync.
+      renderLibraryList(el);
       recomputeRollup(el);
       if (JSON.stringify(currentSkills) !== JSON.stringify(originalSkills)) {
         showDraftBanner(`${window.__pg.agent.name} has unsaved skill changes.`);
