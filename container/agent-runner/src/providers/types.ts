@@ -41,6 +41,16 @@ export interface QueryInput {
   cwd: string;
 
   /**
+   * Container-visible absolute paths to image files attached to this turn.
+   * Populated by the formatter from inbound `content.images[]` (see
+   * src/channels/telegram.ts:processForkAttachments on the host). Providers
+   * with vision support forward these to the upstream model — codex via
+   * `local_image` UserInput items, claude via image content blocks. Text-
+   * only providers ignore the array.
+   */
+  imagePaths?: string[];
+
+  /**
    * System context to inject. Providers translate this into whatever their
    * SDK expects (preset append, full system prompt, per-turn injection…).
    */

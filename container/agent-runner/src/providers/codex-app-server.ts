@@ -336,14 +336,31 @@ export async function startOrResumeCodexThread(
 export interface TurnParams {
   threadId: string;
   inputText: string;
+  /**
+   * Absolute container paths to image files. Each becomes a
+   * `local_image` UserInput in codex's turn/start input array; codex
+   * base64-encodes the file and forwards it to the upstream model as a
+   * multimodal content block. Schema from
+   * codex-rs/protocol/src/user_input.rs:UserInput::LocalImage.
+   */
+  localImagePaths?: string[];
   model?: string;
   cwd?: string;
 }
 
 export async function startCodexTurn(server: AppServer, params: TurnParams): Promise<void> {
+  // Images come first in the input array so vision-capable models see them
+  // before the text describing what to do with them. Matches the order
+  // codex's interactive CLI uses with --image.
+  const input: Array<Record<string, unknown>> = [];
+  for (const path of params.localImagePaths ?? []) {
+    input.push({ type: 'local_image', path });
+  }
+  input.push({ type: 'text', text: params.inputText });
+
   const resp = await sendCodexRequest(server, 'turn/start', {
     threadId: params.threadId,
-    input: [{ type: 'text', text: params.inputText }],
+    input,
     model: params.model,
     cwd: params.cwd,
   });

@@ -386,10 +386,20 @@ async function processAttachments(platformId: string, message: InboundMessage): 
           const savePath = path.join(attachDir, `photo_${msgId}.jpg`);
           const processed = await processImage(buffer, savePath);
 
-          // Inject processed image into content for multimodal delivery
+          // Inject processed image into content for multimodal delivery.
+          // `containerPath` is the path the agent-runner will pass to the
+          // upstream provider (codex `local_image`, claude image content
+          // block). The group folder mounts at /workspace/agent in the
+          // container, so the attachment file the host just wrote at
+          // `<groupDir>/attachments/photo_<msgId>.jpg` is reachable inside
+          // at `/workspace/agent/attachments/photo_<msgId>.jpg`.
           updatedContent.images = [
             ...(Array.isArray(updatedContent.images) ? updatedContent.images : []),
-            { base64: processed.base64, mimeType: processed.mimeType },
+            {
+              base64: processed.base64,
+              mimeType: processed.mimeType,
+              containerPath: `/workspace/agent/attachments/photo_${msgId}.jpg`,
+            },
           ];
           // Update text to reference the saved file
           const caption = updatedContent.text ? ` ${updatedContent.text}` : '';

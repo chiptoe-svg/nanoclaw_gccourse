@@ -115,6 +115,37 @@ export function extractRouting(messages: MessageInRow[]): RoutingContext {
 }
 
 /**
+ * Extract container-visible image file paths from a batch of inbound
+ * messages. The host's telegram adapter stamps each image attachment with
+ * a `containerPath` (`/workspace/agent/attachments/photo_<msgId>.jpg`) at
+ * processForkAttachments time. Providers with vision support (codex
+ * via `local_image`, claude via image content blocks) forward these to
+ * the upstream model; text-only providers get an empty array.
+ *
+ * Returns absolute paths only — the caller has already validated the
+ * route. Missing or malformed images are silently skipped rather than
+ * inserting bad paths that would fail later in the provider.
+ */
+export function extractImagePaths(messages: MessageInRow[]): string[] {
+  const paths: string[] = [];
+  for (const msg of messages) {
+    let content: { images?: Array<{ containerPath?: string }> };
+    try {
+      content = JSON.parse(msg.content) as typeof content;
+    } catch {
+      continue;
+    }
+    if (!Array.isArray(content.images)) continue;
+    for (const img of content.images) {
+      if (typeof img?.containerPath === 'string' && img.containerPath.startsWith('/')) {
+        paths.push(img.containerPath);
+      }
+    }
+  }
+  return paths;
+}
+
+/**
  * Format a batch of messages_in rows into a prompt string.
  *
  * Prepends a `<context timezone="<IANA>" />` header so the agent always knows

@@ -241,6 +241,7 @@ export class CodexProvider implements AgentProvider {
 
       let threadId: string | undefined = input.continuation;
       let initYielded = false;
+      let firstTurnConsumed = false;
 
       try {
         await initializeCodexAppServer(server);
@@ -271,6 +272,13 @@ export class CodexProvider implements AgentProvider {
 
           const text = pending.shift()!;
 
+          // Images are attached to the FIRST turn only — the initial
+          // QueryInput.imagePaths carry the photo the user sent alongside
+          // their prompt. Follow-up pending items (system reminders,
+          // accumulated context, etc.) are text-only by construction.
+          const turnImagePaths = !firstTurnConsumed ? input.imagePaths : undefined;
+          firstTurnConsumed = true;
+
           // One turn = one channel of streaming events. Each notification
           // from the app-server yields an `activity` first (so the
           // poll-loop's idle timer stays honest) and then, where relevant,
@@ -281,6 +289,7 @@ export class CodexProvider implements AgentProvider {
             text,
             self.model,
             input.cwd,
+            turnImagePaths,
             () => initYielded,
             () => {
               initYielded = true;
@@ -326,6 +335,7 @@ async function* runOneTurn(
   inputText: string,
   model: string | undefined,
   cwd: string,
+  localImagePaths: string[] | undefined,
   hasInit: () => boolean,
   markInit: () => void,
 ): AsyncGenerator<ProviderEvent> {
@@ -413,7 +423,7 @@ async function* runOneTurn(
       buffer.push({ type: 'init', continuation: threadId });
     }
 
-    await startCodexTurn(server, { threadId, inputText, model, cwd });
+    await startCodexTurn(server, { threadId, inputText, localImagePaths, model, cwd });
 
     while (true) {
       while (buffer.length > 0) {

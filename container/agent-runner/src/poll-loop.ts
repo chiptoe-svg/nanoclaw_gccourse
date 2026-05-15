@@ -5,6 +5,7 @@ import { getInboundDb, touchHeartbeat, clearStaleProcessingAcks } from './db/con
 import { clearContinuation, migrateLegacyContinuation, setContinuation } from './db/session-state.js';
 import { clearCurrentInReplyTo, setCurrentInReplyTo } from './current-batch.js';
 import {
+  extractImagePaths,
   formatMessages,
   extractRouting,
   categorizeMessage,
@@ -163,6 +164,14 @@ export async function runPollLoop(config: PollLoopConfig): Promise<void> {
     // provider natively handles slash commands), others get XML.
     const prompt = formatMessagesWithCommands(keep, config.provider.supportsNativeSlashCommands);
 
+    // Pull container-visible paths for any image attachments stamped by the
+    // host's channel adapter. The Claude/Codex providers forward these to
+    // their upstream multimodal APIs; text-only providers ignore them.
+    const imagePaths = extractImagePaths(keep);
+    if (imagePaths.length > 0) {
+      log(`Forwarding ${imagePaths.length} image attachment(s) to provider: ${imagePaths.join(', ')}`);
+    }
+
     log(`Processing ${keep.length} message(s), kinds: ${[...new Set(keep.map((m) => m.kind))].join(',')}`);
 
     const query = config.provider.query({
@@ -170,6 +179,7 @@ export async function runPollLoop(config: PollLoopConfig): Promise<void> {
       continuation,
       cwd: config.cwd,
       systemContext: config.systemContext,
+      imagePaths: imagePaths.length > 0 ? imagePaths : undefined,
     });
 
     // Process the query while concurrently polling for new messages
