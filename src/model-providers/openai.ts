@@ -20,44 +20,47 @@
 import { readEnvFile } from '../env.js';
 import type { AuthHeader, ModelHint, ModelProviderAdapter, ParsedModel } from './types.js';
 
+// Notes sourced verbatim from https://developers.openai.com/codex/models
+// (OpenAI's canonical codex model documentation).
 const NOTES: Record<string, string> = {
-  '5.5': 'strongest — complex coding, research, knowledge work',
-  '5.4': 'rollout fallback if 5.5 unavailable',
-  '5.4mini': 'fast/cheap for light tasks, subagents',
-  '5.3': 'older codex variant',
-  '5.3codex': 'older codex-tuned',
+  '5.5': 'default — newest frontier; complex coding, research, knowledge work',
+  '5.4': 'flagship; enhanced reasoning + tool use',
+  '5.4mini': 'fast/efficient; responsive coding, subagents',
+  '5.3codex': 'industry-leading coding model for complex software engineering',
+  '5.3codex-spark': 'research preview, text-only; ChatGPT Pro only',
+  '5.2': 'previous-generation general-purpose',
 };
 
 /**
- * Codex-accepted model ids. The bare `gpt-5`, `gpt-5-mini`, etc. line up
- * with what codex CLI 0.124+ actually targets; the dotted-decimal
- * variants are codex-internal aliases for the same underlying upstream
- * models (translated by codex-app-server when forwarding).
+ * Codex-accepted model ids. Source of truth: OpenAI's docs page
+ * https://developers.openai.com/codex/models. The dotted-decimal
+ * `gpt-N.M[-variant]` shape is what codex CLI accepts via its --model
+ * flag and what the app-server forwards via turn/start.
  *
  * OpenAI's /v1/models returns its full catalog (gpt-4o, embeddings,
  * dall-e, whisper, etc.) — most of those aren't valid codex `model`
  * values. We filter discovery to this whitelist so the Models tab
  * surfaces only ids the user can actually pick.
  *
- * To allow a new id: append here and either ship via BUILTIN_ENTRIES
- * (for everyone) or add to config/model-catalog-local.json with full
- * pricing metadata (per-install).
+ * To allow a new id when OpenAI ships one: append here. To ship pricing
+ * metadata for it: add a corresponding BUILTIN_ENTRIES entry in
+ * src/model-catalog.ts, or per-install via config/model-catalog-local.json.
  */
 const CODEX_WHITELIST = new Set<string>([
-  'gpt-5',
-  'gpt-5-mini',
-  'gpt-5-codex',
-  'gpt-5-codex-mini',
   'gpt-5.5',
   'gpt-5.4',
   'gpt-5.4-mini',
   'gpt-5.3-codex',
+  'gpt-5.3-codex-spark',
+  'gpt-5.2',
 ]);
 
 const STATIC_FALLBACK: ModelHint[] = [
-  { id: 'gpt-5-codex', alias: '5codex', note: 'codex default — code-tuned GPT-5' },
-  { id: 'gpt-5', alias: '5', note: 'general-purpose GPT-5' },
-  { id: 'gpt-5-mini', alias: '5mini', note: 'fast/cheap variant' },
+  { id: 'gpt-5.5', alias: '5.5', note: NOTES['5.5'] },
+  { id: 'gpt-5.4', alias: '5.4', note: NOTES['5.4'] },
+  { id: 'gpt-5.4-mini', alias: '5.4mini', note: NOTES['5.4mini'] },
+  { id: 'gpt-5.3-codex', alias: '5.3codex', note: NOTES['5.3codex'] },
+  { id: 'gpt-5.2', alias: '5.2', note: NOTES['5.2'] },
 ];
 
 function getAuth(): AuthHeader | null {
