@@ -117,8 +117,21 @@ function rowToOkResult(row: HandoffRow): Extract<GetResult, { ok: true }> {
  * the caller must embed it in the URL and not store it anywhere.
  */
 export function issueHandoff(opts: IssueOpts): IssueResult {
-  const db = getDb();
   const token = crypto.randomBytes(16).toString('hex'); // 32-char hex, 128 bits
+  return _issueWithToken({ ...opts, token });
+}
+
+/**
+ * Internal: issue using a caller-provided token. The CLI uses this so it can
+ * bundle files into `data/handoffs/<token>/` first (needs the token) and then
+ * register the handoff with the resulting file manifest under the same token.
+ *
+ * Underscore prefix marks "skill-internal API" — not for general use; bypasses
+ * the "store generates the token" invariant.
+ */
+export function _issueWithToken(opts: IssueOpts & { token: string }): IssueResult {
+  const db = getDb();
+  const token = opts.token;
   const id = crypto.randomBytes(8).toString('hex'); // 16-char hex, 64 bits
   const tokenHash = hashToken(token);
   const createdAt = nowIso();
