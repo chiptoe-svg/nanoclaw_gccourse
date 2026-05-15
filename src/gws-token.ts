@@ -197,14 +197,22 @@ export interface GwsTokenResolution {
  * missing-creds-file all reduce to "use the instructor's token." Per-
  * student isolation only kicks in once a class deployment has wired
  * the student through the playground OAuth flow.
+ *
+ * When `options.requirePersonal` is true the function returns null
+ * instead of falling back to the instructor token. Gmail (Tier C) and
+ * Calendar (Tier D) tools use this gate to refuse to fire until the
+ * student has connected their own Google account. Drive/Sheets/Slides
+ * tools omit the option (or pass false) to keep Mode A fallback.
  */
 export async function getGoogleAccessTokenForAgentGroup(
   agentGroupId: string | null,
+  options?: { requirePersonal?: boolean },
 ): Promise<GwsTokenResolution | null> {
   if (agentGroupId) {
     const studentToken = await getStudentGoogleAccessTokenForAgentGroup(agentGroupId);
     if (studentToken) return { token: studentToken, principal: 'self' };
   }
+  if (options?.requirePersonal) return null;
   const instructorToken = await getInstructorGoogleAccessToken();
   if (instructorToken) return { token: instructorToken, principal: 'instructor-fallback' };
   return null;
