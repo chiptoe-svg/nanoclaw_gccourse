@@ -1417,29 +1417,65 @@ async function askDisplayName(fallback: string): Promise<string> {
 
 async function askChannelChoice(): Promise<ChannelChoice> {
   const isMac = process.platform === 'darwin';
+
+  // Probe .env so a channel that already has credentials gets a "✓ already
+  // configured" hint and pre-focused selection. Channels with QR/pair-code
+  // bootstraps (whatsapp; signal at first run) have no fixed pre-cred env
+  // var and are listed here only when their post-pair value lands.
+  const configured = {
+    telegram: !!readEnvKey('TELEGRAM_BOT_TOKEN'),
+    discord: !!readEnvKey('DISCORD_BOT_TOKEN'),
+    slack: !!readEnvKey('SLACK_BOT_TOKEN'),
+    teams: !!readEnvKey('TEAMS_APP_ID'),
+    signal: !!readEnvKey('SIGNAL_ACCOUNT'),
+    imessage: !!(readEnvKey('IMESSAGE_LOCAL') || readEnvKey('IMESSAGE_API_KEY')),
+  };
+  const configuredHint = '✓ already configured';
+
+  // Pre-focus the first configured channel, else the existing default.
+  const initialValue =
+    (Object.entries(configured).find(([, v]) => v)?.[0] as ChannelChoice | undefined) ?? 'telegram';
+
   const choice = ensureAnswer(
     await brightSelect<ChannelChoice>({
       message: 'Want to chat with your assistant from your phone?',
+      initialValue,
       options: [
-        { value: 'telegram', label: 'Yes, connect Telegram', hint: 'recommended' },
-        { value: 'discord', label: 'Yes, connect Discord' },
+        {
+          value: 'telegram',
+          label: 'Yes, connect Telegram',
+          hint: configured.telegram ? configuredHint : 'recommended',
+        },
+        {
+          value: 'discord',
+          label: 'Yes, connect Discord',
+          hint: configured.discord ? configuredHint : undefined,
+        },
         { value: 'whatsapp', label: 'Yes, connect WhatsApp' },
         {
           value: 'signal',
           label: 'Yes, connect Signal',
-          hint: 'needs signal-cli installed',
+          hint: configured.signal ? configuredHint : 'needs signal-cli installed',
         },
         {
           value: 'imessage',
           label: 'Yes, connect iMessage (experimental)',
-          hint: isMac ? 'local macOS mode' : 'remote Photon only',
+          hint: configured.imessage
+            ? configuredHint
+            : isMac
+              ? 'local macOS mode'
+              : 'remote Photon only',
         },
         {
           value: 'slack',
           label: 'Yes, connect Slack (experimental)',
-          hint: 'needs public URL',
+          hint: configured.slack ? configuredHint : 'needs public URL',
         },
-        { value: 'teams', label: 'Yes, connect Microsoft Teams', hint: 'complex setup' },
+        {
+          value: 'teams',
+          label: 'Yes, connect Microsoft Teams',
+          hint: configured.teams ? configuredHint : 'complex setup',
+        },
         { value: 'other', label: 'Other…', hint: 'install via /add-<name> after setup' },
         { value: 'skip', label: 'Skip for now', hint: "I'll just use the terminal" },
       ],

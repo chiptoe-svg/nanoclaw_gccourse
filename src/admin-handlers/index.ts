@@ -7,5 +7,6 @@
  * imports this barrel once near startup, so no admin tools = no-op import.
  */
 import './auth.js';
+import './codex-auth.js';
 import './model.js';
 import './provider.js';
