@@ -25,7 +25,7 @@ import {
   listAgentGroups,
   listDrafts,
 } from '../../agent-builder/core.js';
-import { CONTAINER_DIR, GROUPS_DIR } from '../../config.js';
+import { GROUPS_DIR } from '../../config.js';
 import { processImage } from '../../image.js';
 import { readContainerConfig, writeContainerConfig } from '../../container-config.js';
 import { isContainerRunning, killContainer } from '../../container-runner.js';
@@ -397,32 +397,7 @@ export async function route(
     const draftFolder = skillsMatch[1]!;
     try {
       const cfg = readContainerConfig(draftFolder);
-      // Enumerate container/skills/ — these get mounted into every agent
-      // container at /home/node/.claude/skills/ and are always available
-      // regardless of the per-agent skills field. The Skills tab used to
-      // only know about the toggleable Anthropic library skills, so users
-      // couldn't see (or trust) that agent-browser/make-website/wiki/etc.
-      // were actually present.
-      const containerSkillsDir = path.join(CONTAINER_DIR, 'skills');
-      const containerBuiltins: Array<{ name: string; description?: string }> = [];
-      try {
-        for (const entry of fs.readdirSync(containerSkillsDir, { withFileTypes: true })) {
-          if (!entry.isDirectory()) continue;
-          const skillMd = path.join(containerSkillsDir, entry.name, 'SKILL.md');
-          if (!fs.existsSync(skillMd)) continue;
-          const raw = fs.readFileSync(skillMd, 'utf-8');
-          const fmMatch = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/);
-          let description: string | undefined;
-          if (fmMatch) {
-            const descLine = fmMatch[1].split(/\r?\n/).find((l) => /^description\s*:/i.test(l));
-            if (descLine) description = descLine.replace(/^description\s*:\s*/i, '').trim();
-          }
-          containerBuiltins.push({ name: entry.name, description });
-        }
-      } catch {
-        /* container/skills dir missing — list stays empty */
-      }
-      return send(res, 200, { skills: cfg.skills, containerBuiltins });
+      return send(res, 200, { skills: cfg.skills });
     } catch (err) {
       return send(res, 500, { error: (err as Error).message });
     }

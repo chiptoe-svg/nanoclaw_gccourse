@@ -78,8 +78,10 @@ function renderLibraryList(el) {
       li.dataset.category = entry.category;
       li.dataset.name = entry.name;
       const costText = entry.costTokens != null ? ` (+~${entry.costTokens} tok)` : '';
-      li.textContent = `🔧 ${entry.name}${costText}`;
-      li.title = entry.description || '';
+      const icon = entry.builtin ? '📦' : '🔧';
+      li.textContent = `${icon} ${entry.name}${costText}`;
+      li.title = entry.builtin ? `[host-shipped built-in] ${entry.description || ''}` : entry.description || '';
+      if (entry.builtin) li.classList.add('skill-builtin');
       if (entry.compatibility === 'incompatible') li.classList.add('skill-incompatible');
       if (entry.compatibility === 'partial') li.classList.add('skill-partial');
       li.addEventListener('click', () => loadSkillPreview(li.closest('.tab-body') || document, entry.category, entry.name));
@@ -144,15 +146,12 @@ function loadFile(el, category, name, relPath) {
     .then((data) => { el.querySelector('#file-body').textContent = data.text || ''; });
 }
 
-let containerBuiltinsCache = [];
-
 function loadActiveSkills(el, folder) {
   fetch(`/api/drafts/${folder}/skills`, { credentials: 'same-origin' })
-    .then((r) => (r.ok ? r.json() : { skills: 'all', containerBuiltins: [] }))
+    .then((r) => (r.ok ? r.json() : { skills: 'all' }))
     .then((data) => {
       currentSkills = data.skills;
       originalSkills = Array.isArray(currentSkills) ? [...currentSkills] : currentSkills;
-      containerBuiltinsCache = Array.isArray(data.containerBuiltins) ? data.containerBuiltins : [];
       renderActiveList(el);
       recomputeRollup(el);
     });
@@ -161,35 +160,10 @@ function loadActiveSkills(el, folder) {
 function renderActiveList(el) {
   const ul = el.querySelector('#active-skills');
   ul.innerHTML = '';
-
-  // Always show container built-ins first — these are mounted into every
-  // agent container and can't be toggled from this UI. Helps the user
-  // understand what their agent has access to vs. what "All skills
-  // enabled" abstractly means.
-  if (containerBuiltinsCache.length > 0) {
-    const header = document.createElement('li');
-    header.className = 'active-section-header';
-    header.textContent = `Container built-ins (always available, ${containerBuiltinsCache.length})`;
-    ul.appendChild(header);
-    for (const b of containerBuiltinsCache) {
-      const li = document.createElement('li');
-      li.className = 'active-entry active-entry-builtin';
-      const desc = b.description ? `<span class="active-desc">${escapeHtml(b.description.slice(0, 120))}${b.description.length > 120 ? '…' : ''}</span>` : '';
-      li.innerHTML = `<span>🔒 ${escapeHtml(b.name)}</span>${desc}`;
-      ul.appendChild(li);
-    }
-  }
-
-  // Then the Anthropic-library section.
-  const libHeader = document.createElement('li');
-  libHeader.className = 'active-section-header';
-  libHeader.textContent = currentSkills === 'all' ? 'Library skills: all enabled' : `Library skills (${currentSkills.length})`;
-  ul.appendChild(libHeader);
-
   if (currentSkills === 'all') {
     const li = document.createElement('li');
     li.className = 'active-all';
-    li.textContent = 'Every Anthropic-library skill in the catalog is implicitly enabled. Add specific ones via "+ Add to active" to narrow the set.';
+    li.textContent = 'All skills enabled (container default). Remove any to switch to explicit mode.';
     ul.appendChild(li);
     return;
   }

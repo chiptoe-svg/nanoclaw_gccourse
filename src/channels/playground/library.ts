@@ -14,11 +14,14 @@ import { spawnSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 
-import { DATA_DIR } from '../../config.js';
+import { CONTAINER_DIR, DATA_DIR } from '../../config.js';
 import { log } from '../../log.js';
 
 const LIBRARY_REPO = 'https://github.com/anthropics/skills.git';
 const LIBRARY_CACHE_DIR = path.join(DATA_DIR, 'playground', 'library-cache');
+/** Category name used for container/skills/* entries in listLibrary output. */
+const BUILTIN_CATEGORY = 'built-in';
+const BUILTIN_SKILLS_DIR = path.join(CONTAINER_DIR, 'skills');
 
 // Tools available inside NanoClaw containers — kept loose; the runner allows
 // most things. Used purely for the compatibility badge.
@@ -54,6 +57,12 @@ export interface LibraryEntry {
   costTokens?: number;
   /** Estimated latency added per turn (ms). Best-effort from SKILL.md frontmatter. */
   latencyMs?: number;
+  /**
+   * True for entries sourced from container/skills/* (host-shipped, mounted
+   * into every agent container). Distinguishes them visually from the
+   * Anthropic-library entries even though they share the same toggle UX.
+   */
+  builtin?: boolean;
 }
 
 export interface LibraryPreview extends LibraryEntry {
@@ -111,45 +120,71 @@ function classifyTools(md: string): {
 }
 
 export function listLibrary(refresh = false): LibraryEntry[] {
+  const out: LibraryEntry[] = [];
+
+  // 1. Anthropic-library skills (cloned + cached).
   try {
     ensureClone(refresh);
+    const walk = (dir: string, rel: string): void => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (entry.name.startsWith('.')) continue;
+        const full = path.join(dir, entry.name);
+        const subRel = rel ? `${rel}/${entry.name}` : entry.name;
+        if (entry.isDirectory()) {
+          walk(full, subRel);
+        } else if (entry.name === 'SKILL.md') {
+          const parts = subRel.split('/');
+          if (parts.length < 2) continue;
+          const name = parts[parts.length - 2]!;
+          const category = parts[0]!;
+          const md = fs.readFileSync(full, 'utf-8');
+          const fm = parseFrontmatter(md);
+          const description = fm.description || '';
+          const { compatibility } = classifyTools(md);
+          const costTokensRaw = fm['cost_tokens'];
+          const latencyMsRaw = fm['latency_ms'];
+          const costTokens = costTokensRaw && !isNaN(Number(costTokensRaw)) ? Number(costTokensRaw) : undefined;
+          const latencyMs = latencyMsRaw && !isNaN(Number(latencyMsRaw)) ? Number(latencyMsRaw) : undefined;
+          out.push({
+            category,
+            name,
+            description,
+            compatibility,
+            ...(costTokens !== undefined ? { costTokens } : {}),
+            ...(latencyMs !== undefined ? { latencyMs } : {}),
+          });
+        }
+      }
+    };
+    walk(LIBRARY_CACHE_DIR, '');
   } catch (err) {
     log.warn('Library clone unavailable', { err });
-    return [];
   }
-  const out: LibraryEntry[] = [];
-  const walk = (dir: string, rel: string): void => {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      if (entry.name.startsWith('.')) continue;
-      const full = path.join(dir, entry.name);
-      const subRel = rel ? `${rel}/${entry.name}` : entry.name;
-      if (entry.isDirectory()) {
-        walk(full, subRel);
-      } else if (entry.name === 'SKILL.md') {
-        const parts = subRel.split('/');
-        if (parts.length < 2) continue;
-        const name = parts[parts.length - 2]!;
-        const category = parts[0]!;
-        const md = fs.readFileSync(full, 'utf-8');
+
+  // 2. Container built-ins (host-shipped, mounted into every agent
+  //    container). One level deep — each subdir has a SKILL.md.
+  try {
+    if (fs.existsSync(BUILTIN_SKILLS_DIR)) {
+      for (const entry of fs.readdirSync(BUILTIN_SKILLS_DIR, { withFileTypes: true })) {
+        if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
+        const skillMd = path.join(BUILTIN_SKILLS_DIR, entry.name, 'SKILL.md');
+        if (!fs.existsSync(skillMd)) continue;
+        const md = fs.readFileSync(skillMd, 'utf-8');
         const fm = parseFrontmatter(md);
         const description = fm.description || '';
-        const { compatibility } = classifyTools(md);
-        const costTokensRaw = fm['cost_tokens'];
-        const latencyMsRaw = fm['latency_ms'];
-        const costTokens = costTokensRaw && !isNaN(Number(costTokensRaw)) ? Number(costTokensRaw) : undefined;
-        const latencyMs = latencyMsRaw && !isNaN(Number(latencyMsRaw)) ? Number(latencyMsRaw) : undefined;
         out.push({
-          category,
-          name,
+          category: BUILTIN_CATEGORY,
+          name: entry.name,
           description,
-          compatibility,
-          ...(costTokens !== undefined ? { costTokens } : {}),
-          ...(latencyMs !== undefined ? { latencyMs } : {}),
+          compatibility: 'compatible',
+          builtin: true,
         });
       }
     }
-  };
-  walk(LIBRARY_CACHE_DIR, '');
+  } catch (err) {
+    log.warn('Built-in skills enumeration failed', { err });
+  }
+
   return out.sort((a, b) =>
     a.category === b.category ? a.name.localeCompare(b.name) : a.category.localeCompare(b.category),
   );
@@ -168,11 +203,25 @@ export interface SkillFileEntry {
   isDir: boolean;
 }
 
+/**
+ * Resolve the on-disk root for a given (category, name). Returns null if
+ * the category is unknown OR the name doesn't pass the validator (defense
+ * against path-traversal in the URL).
+ *
+ * - `built-in` (BUILTIN_CATEGORY) → container/skills/<name>/
+ * - any other category → data/playground/library-cache/<category>/<name>/
+ */
+function resolveSkillRoot(category: string, name: string): string | null {
+  if (!NAME_RE.test(name)) return null;
+  if (category === BUILTIN_CATEGORY) return path.join(BUILTIN_SKILLS_DIR, name);
+  if (!NAME_RE.test(category)) return null;
+  return path.join(LIBRARY_CACHE_DIR, category, name);
+}
+
 /** Enumerate all non-hidden files inside a skill's directory. Recursive. */
 export function listSkillFiles(category: string, name: string): SkillFileEntry[] {
-  if (!NAME_RE.test(category) || !NAME_RE.test(name)) return [];
-  const skillDir = path.join(LIBRARY_CACHE_DIR, category, name);
-  if (!fs.existsSync(skillDir)) return [];
+  const skillDir = resolveSkillRoot(category, name);
+  if (!skillDir || !fs.existsSync(skillDir)) return [];
   const out: SkillFileEntry[] = [];
   const walk = (dir: string, rel: string): void => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -193,11 +242,11 @@ export function listSkillFiles(category: string, name: string): SkillFileEntry[]
 
 /** Read one file inside a skill directory. Returns undefined on missing/invalid. */
 export function readSkillFile(category: string, name: string, relPath: string): string | undefined {
-  if (!NAME_RE.test(category) || !NAME_RE.test(name)) return undefined;
+  const skillDir = resolveSkillRoot(category, name);
+  if (!skillDir) return undefined;
   // Reject traversal in the relPath.
   if (relPath.split('/').some((seg) => seg === '..' || seg.startsWith('.'))) return undefined;
-  const full = path.join(LIBRARY_CACHE_DIR, category, name, relPath);
-  const skillDir = path.join(LIBRARY_CACHE_DIR, category, name);
+  const full = path.join(skillDir, relPath);
   // Defense-in-depth: ensure the resolved path stays inside the skill dir.
   if (!path.resolve(full).startsWith(path.resolve(skillDir) + path.sep)) return undefined;
   if (!fs.existsSync(full)) return undefined;

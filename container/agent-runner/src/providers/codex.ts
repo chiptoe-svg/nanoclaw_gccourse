@@ -104,11 +104,20 @@ function readAgentAndGlobalClaudeMd(): string | undefined {
  * full SKILL.md before acting." That mirrors Claude Code's discoverable-
  * skill model and keeps prompt overhead proportional to skill count.
  */
-export function composeAvailableSkills(skillsDir = '/home/node/.claude/skills'): string | undefined {
+export function composeAvailableSkills(
+  skillsDir = '/home/node/.claude/skills',
+  allowedNames?: string[] | 'all',
+): string | undefined {
   if (!fs.existsSync(skillsDir)) return undefined;
+
+  // null means "all enabled" (legacy default before per-agent filtering
+  // existed); an array narrows the visible set. Empty array → nothing
+  // visible, which is a valid user choice (run agent with no skills).
+  const allow = allowedNames === undefined || allowedNames === 'all' ? null : new Set(allowedNames);
 
   const entries: { name: string; description: string }[] = [];
   for (const dirent of fs.readdirSync(skillsDir).sort()) {
+    if (allow && !allow.has(dirent)) continue;
     const skillMdPath = path.join(skillsDir, dirent, 'SKILL.md');
     if (!fs.existsSync(skillMdPath)) continue;
     const raw = fs.readFileSync(skillMdPath, 'utf-8');
@@ -176,9 +185,10 @@ export function composeRuntimeIdentity(provider: string, model: string | undefin
 function composeBaseInstructions(
   promptAddendum: string | undefined,
   runtimeIdentity: string | undefined,
+  allowedSkills?: string[] | 'all',
 ): string | undefined {
   const claudeMd = readAgentAndGlobalClaudeMd();
-  const skills = composeAvailableSkills();
+  const skills = composeAvailableSkills(undefined, allowedSkills);
   const pieces = [runtimeIdentity, claudeMd, skills, promptAddendum].filter((s): s is string => Boolean(s));
   return pieces.length > 0 ? pieces.join('\n\n---\n\n') : undefined;
 }
@@ -224,7 +234,11 @@ export class CodexProvider implements AgentProvider {
       // missing or partial.
       const containerJsonPath = '/workspace/agent/container.json';
       const containerJson = fs.existsSync(containerJsonPath)
-        ? (JSON.parse(fs.readFileSync(containerJsonPath, 'utf-8')) as { provider?: string; model?: string })
+        ? (JSON.parse(fs.readFileSync(containerJsonPath, 'utf-8')) as {
+            provider?: string;
+            model?: string;
+            skills?: string[] | 'all';
+          })
         : {};
       const proxyBaseUrl = (process.env.OPENAI_BASE_URL ?? 'http://host.docker.internal:3001/openai/v1')
         .replace(/\/(openai|omlx)\/v1$/, '');
@@ -255,6 +269,7 @@ export class CodexProvider implements AgentProvider {
           baseInstructions: composeBaseInstructions(
             input.systemContext?.instructions,
             composeRuntimeIdentity(activeProvider, effectiveModel),
+            containerJson.skills,
           ),
         };
 
