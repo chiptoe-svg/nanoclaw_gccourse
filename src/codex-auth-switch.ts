@@ -55,7 +55,7 @@ export function getCodexAuthStatus(): CodexAuthStatus {
     return {
       mode,
       hasOAuthTokens: !!(auth.tokens?.refresh_token && auth.tokens?.access_token),
-      hasApiKey: !!(auth.OPENAI_API_KEY),
+      hasApiKey: !!auth.OPENAI_API_KEY,
       lastRefresh: auth.last_refresh ?? null,
     };
   } catch {

@@ -26,8 +26,7 @@ async function handleCodexAuthCommand(token: string, platformId: string, text: s
 
   if (!subcommand) {
     const { mode, hasOAuthTokens, hasApiKey, lastRefresh } = getCodexAuthStatus();
-    const modeLabel =
-      mode === 'chatgpt' ? 'ChatGPT subscription (OAuth)' : mode === 'apikey' ? 'API key' : 'unknown';
+    const modeLabel = mode === 'chatgpt' ? 'ChatGPT subscription (OAuth)' : mode === 'apikey' ? 'API key' : 'unknown';
     const credStatus =
       mode === 'chatgpt'
         ? hasOAuthTokens
@@ -46,14 +45,16 @@ async function handleCodexAuthCommand(token: string, platformId: string, text: s
   } else if (subcommand === 'chatgpt') {
     try {
       switchCodexAuthMode('chatgpt');
-      reply = '✅ Switched to ChatGPT subscription mode.\nSend a message to your agent to test it — the next container spawn will use the OAuth tokens.';
+      reply =
+        '✅ Switched to ChatGPT subscription mode.\nSend a message to your agent to test it — the next container spawn will use the OAuth tokens.';
     } catch (err) {
       reply = `❌ ${err instanceof Error ? err.message : String(err)}`;
     }
   } else if (subcommand === 'api') {
     try {
       switchCodexAuthMode('apikey');
-      reply = '✅ Switched to API key mode.\nThe credential proxy will inject OPENAI_API_KEY on the next container spawn.';
+      reply =
+        '✅ Switched to API key mode.\nThe credential proxy will inject OPENAI_API_KEY on the next container spawn.';
     } catch (err) {
       reply = `❌ ${err instanceof Error ? err.message : String(err)}`;
     }

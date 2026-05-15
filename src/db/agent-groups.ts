@@ -98,9 +98,7 @@ export function getPlaygroundAgentForUser(userId: string | null): AgentGroup | n
     if (row) return row;
   }
   const fallback = getDb()
-    .prepare(
-      `SELECT * FROM agent_groups WHERE folder NOT LIKE 'draft_%' ORDER BY created_at ASC LIMIT 1`,
-    )
+    .prepare(`SELECT * FROM agent_groups WHERE folder NOT LIKE 'draft_%' ORDER BY created_at ASC LIMIT 1`)
     .get() as AgentGroup | undefined;
   return fallback ?? null;
 }
