@@ -67,11 +67,56 @@ function mcpAllowPattern(serverName: string): string {
   return `mcp__${serverName.replace(/[^a-zA-Z0-9_-]/g, '_')}__*`;
 }
 
+/**
+ * Anthropic API content block for images. The SDK accepts these inside
+ * a user message's `content` array alongside `{ type: 'text', ... }`
+ * blocks. See https://docs.anthropic.com/en/api/messages content-blocks.
+ */
+interface ImageBlock {
+  type: 'image';
+  source: { type: 'base64'; media_type: string; data: string };
+}
+interface TextBlock {
+  type: 'text';
+  text: string;
+}
+type ContentBlock = TextBlock | ImageBlock;
+
 interface SDKUserMessage {
   type: 'user';
-  message: { role: 'user'; content: string };
+  message: { role: 'user'; content: string | ContentBlock[] };
   parent_tool_use_id: null;
   session_id: string;
+}
+
+function mimeForExt(p: string): string {
+  const ext = p.slice(p.lastIndexOf('.')).toLowerCase();
+  if (ext === '.png') return 'image/png';
+  if (ext === '.gif') return 'image/gif';
+  if (ext === '.webp') return 'image/webp';
+  return 'image/jpeg';
+}
+
+/**
+ * Build a content-block array from text + local image paths. Each path
+ * is read off disk and base64-encoded; images come first (matches the
+ * convention codex's CLI uses with --image, and tends to produce more
+ * coherent vision responses than image-after-text). Failed reads are
+ * silently skipped — the text still goes through.
+ */
+function buildContentBlocks(text: string, imagePaths: string[] | undefined): string | ContentBlock[] {
+  if (!imagePaths || imagePaths.length === 0) return text;
+  const blocks: ContentBlock[] = [];
+  for (const p of imagePaths) {
+    try {
+      const data = fs.readFileSync(p).toString('base64');
+      blocks.push({ type: 'image', source: { type: 'base64', media_type: mimeForExt(p), data } });
+    } catch (err) {
+      log(`buildContentBlocks: skipping ${p} — ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  blocks.push({ type: 'text', text });
+  return blocks;
 }
 
 /**
@@ -82,10 +127,10 @@ class MessageStream {
   private waiting: (() => void) | null = null;
   private done = false;
 
-  push(text: string): void {
+  push(text: string, imagePaths?: string[]): void {
     this.queue.push({
       type: 'user',
-      message: { role: 'user', content: text },
+      message: { role: 'user', content: buildContentBlocks(text, imagePaths) },
       parent_tool_use_id: null,
       session_id: '',
     });
@@ -275,7 +320,11 @@ export class ClaudeProvider implements AgentProvider {
 
   query(input: QueryInput): AgentQuery {
     const stream = new MessageStream();
-    stream.push(input.prompt);
+    // Initial message gets the image attachments (if any). Subsequent
+    // follow-up push() calls from the poll-loop are text-only by
+    // construction — they're system reminders or accumulated context,
+    // not user uploads.
+    stream.push(input.prompt, input.imagePaths);
 
     const instructions = input.systemContext?.instructions;
 
