@@ -119,14 +119,18 @@ function buildCard(m) {
   const activeBadge = isActive({ provider: m.provider, model: m.id })
     ? `<span class="active-badge">● Active</span>`
     : '';
-  const defaultBadge = m.default ? `<span class="default-badge" title="Recommended default for this provider">★ Default</span>` : '';
+  const star = m.default ? '★' : '☆';
+  const starTitle = m.default
+    ? `Default for ${m.provider} — click to unset`
+    : `Set as default for ${m.provider}`;
+  const starClass = m.default ? 'default-star is-default' : 'default-star';
 
   card.innerHTML = `
     <label class="model-head">
       <input type="checkbox" ${isAllowed ? 'checked' : ''}>
       <strong>${escapeHtml(m.displayName || m.id)}</strong>
       ${activeBadge}
-      ${defaultBadge}
+      <button type="button" class="${starClass}" title="${starTitle}">${star}</button>
       <button type="button" class="edit-metadata-btn" title="Edit metadata">✏</button>
     </label>
     <div class="chips">${chipsHtml}</div>
@@ -143,6 +147,11 @@ function buildCard(m) {
     e.preventDefault();
     e.stopPropagation();
     openAddMetadataModal({ provider: m.provider, id: m.id }, m);
+  });
+  card.querySelector('.default-star').addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    toggleDefault({ provider: m.provider, id: m.id });
   });
   return card;
 }
@@ -176,6 +185,28 @@ function buildDiscoveredCard(d) {
   });
   card.querySelector('.add-metadata-btn').addEventListener('click', () => openAddMetadataModal(d));
   return card;
+}
+
+async function toggleDefault({ provider, id }) {
+  try {
+    const r = await fetch('/api/catalog/toggle-default', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ provider, id }),
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      alert(`Set default failed: ${err.error || r.status}`);
+      return;
+    }
+    // Reload — catalog merge order may shift now that local file gained an override.
+    const el = document.querySelector('.models-layout').parentElement;
+    const folder = window.__pg.agent.folder;
+    loadModels(el, folder);
+  } catch (err) {
+    alert(`Set default failed: ${String(err)}`);
+  }
 }
 
 async function toggleModel(model, checked, card) {

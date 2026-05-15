@@ -45,6 +45,7 @@ import {
   handlePutActiveModel,
   handlePutLocalCatalogEntry,
   handlePutModels,
+  handleToggleDefaultModel,
 } from './api/models.js';
 import { isOwner } from '../../modules/permissions/db/user-roles.js';
 import { handleGetEntry, handleListLibrary, handleSaveMyEntry } from './api/library.js';
@@ -475,6 +476,17 @@ export async function route(
     }
     const body = await readJsonBody(req);
     const r = await handleAutoFillCatalog(body);
+    return send(res, r.status, r.body);
+  }
+
+  // PUT /api/catalog/toggle-default — toggle the default flag on a catalog
+  // entry. Owner-only (writes to the global catalog file).
+  if (method === 'PUT' && url.pathname === '/api/catalog/toggle-default') {
+    if (!session.userId || !isOwner(session.userId)) {
+      return send(res, 403, { error: 'owner role required' });
+    }
+    const body = await readJsonBody(req);
+    const r = handleToggleDefaultModel(body);
     return send(res, r.status, r.body);
   }
 

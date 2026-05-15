@@ -168,13 +168,49 @@ export function handlePutActiveModel(
  */
 const CLOUD_METADATA: Record<string, Partial<ModelEntry>> = {
   // Anthropic
-  'claude-haiku-4-5': { displayName: 'claude-haiku-4-5', costPer1kTokensUsd: 0.0008, modalities: ['text', 'image'], chips: ['⚡ fast', '$ cheap', '☁ Anthropic'], bestFor: 'Short answers, classification, structured output.' },
-  'claude-sonnet-4-6': { displayName: 'claude-sonnet-4-6', costPer1kTokensUsd: 0.012, modalities: ['text', 'image'], chips: ['🐢 slower', '$$ pricier', '☁ Anthropic'], bestFor: 'Reasoning, long outputs.' },
-  'claude-opus-4-7': { displayName: 'claude-opus-4-7', costPer1kTokensUsd: 0.03, modalities: ['text', 'image'], chips: ['🐢 slower', '$$$ premium', '☁ Anthropic'], bestFor: 'Frontier reasoning, hard problems.' },
+  'claude-haiku-4-5': {
+    displayName: 'claude-haiku-4-5',
+    costPer1kTokensUsd: 0.0008,
+    modalities: ['text', 'image'],
+    chips: ['⚡ fast', '$ cheap', '☁ Anthropic'],
+    bestFor: 'Short answers, classification, structured output.',
+  },
+  'claude-sonnet-4-6': {
+    displayName: 'claude-sonnet-4-6',
+    costPer1kTokensUsd: 0.012,
+    modalities: ['text', 'image'],
+    chips: ['🐢 slower', '$$ pricier', '☁ Anthropic'],
+    bestFor: 'Reasoning, long outputs.',
+  },
+  'claude-opus-4-7': {
+    displayName: 'claude-opus-4-7',
+    costPer1kTokensUsd: 0.03,
+    modalities: ['text', 'image'],
+    chips: ['🐢 slower', '$$$ premium', '☁ Anthropic'],
+    bestFor: 'Frontier reasoning, hard problems.',
+  },
   // OpenAI
-  'gpt-5-mini': { displayName: 'gpt-5-mini', costPer1kTokensUsd: 0.0006, modalities: ['text', 'image'], chips: ['⚡ fast', '$ cheap', '☁ OpenAI'], bestFor: 'Quick, broad-knowledge tasks.' },
-  'gpt-5': { displayName: 'gpt-5', costPer1kTokensUsd: 0.005, modalities: ['text', 'image'], chips: ['☁ OpenAI'], bestFor: 'General-purpose, well-rounded.' },
-  'gpt-5-codex': { displayName: 'gpt-5-codex', costPer1kTokensUsd: 0.004, modalities: ['text'], chips: ['💻 code', '☁ OpenAI'], bestFor: 'Code generation + analysis.' },
+  'gpt-5-mini': {
+    displayName: 'gpt-5-mini',
+    costPer1kTokensUsd: 0.0006,
+    modalities: ['text', 'image'],
+    chips: ['⚡ fast', '$ cheap', '☁ OpenAI'],
+    bestFor: 'Quick, broad-knowledge tasks.',
+  },
+  'gpt-5': {
+    displayName: 'gpt-5',
+    costPer1kTokensUsd: 0.005,
+    modalities: ['text', 'image'],
+    chips: ['☁ OpenAI'],
+    bestFor: 'General-purpose, well-rounded.',
+  },
+  'gpt-5-codex': {
+    displayName: 'gpt-5-codex',
+    costPer1kTokensUsd: 0.004,
+    modalities: ['text'],
+    chips: ['💻 code', '☁ OpenAI'],
+    bestFor: 'Code generation + analysis.',
+  },
 };
 
 function modalitiesFromPipelineTag(tag: string | undefined): ('text' | 'image' | 'audio')[] | undefined {
@@ -319,6 +355,69 @@ export function handlePutLocalCatalogEntry(body: { entry?: unknown }): ApiResult
     arr.push(clean);
     fs.writeFileSync(MODEL_CATALOG_LOCAL_PATH, JSON.stringify(arr, null, 2) + '\n');
     return { status: 200, body: { ok: true, entry: clean } };
+  } catch (err) {
+    return { status: 500, body: { error: (err as Error).message } };
+  }
+}
+
+/**
+ * Toggle the `default` flag for one catalog entry. Enforces the invariant
+ * that at most one entry per provider is the default — setting model X
+ * as default automatically un-sets any other default in the same provider.
+ * Clicking the star on an entry that's already default un-sets it (no
+ * replacement; the provider has no recommended default after that).
+ *
+ * Writes through to config/model-catalog-local.json. For built-in entries
+ * being mutated, the full ModelEntry is copied into the local overrides
+ * file (with the flipped default flag) so getModelCatalog's local-wins
+ * dedup serves the right value on the next API call.
+ */
+export function handleToggleDefaultModel(body: {
+  provider?: unknown;
+  id?: unknown;
+}): ApiResult<{ ok: true; provider: string; id: string; default: boolean }> {
+  const provider = typeof body.provider === 'string' ? body.provider : '';
+  const id = typeof body.id === 'string' ? body.id : '';
+  if (!provider || !id) return { status: 400, body: { error: 'provider and id required' } };
+
+  const catalog = getModelCatalog();
+  const target = catalog.find((e) => e.provider === provider && e.id === id);
+  if (!target) return { status: 404, body: { error: `no catalog entry for ${provider}:${id}` } };
+  const targetIsCurrentlyDefault = Boolean(target.default);
+
+  // Other entries for this provider currently flagged default. Will be
+  // unset when target gets set; left alone when target is being un-set.
+  const otherDefaults = catalog.filter(
+    (e) => e.provider === provider && !(e.id === id) && e.default === true,
+  );
+
+  try {
+    let arr: ModelEntry[] = [];
+    if (fs.existsSync(MODEL_CATALOG_LOCAL_PATH)) {
+      const raw = fs.readFileSync(MODEL_CATALOG_LOCAL_PATH, 'utf-8');
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) arr = parsed as ModelEntry[];
+    } else {
+      fs.mkdirSync(path.dirname(MODEL_CATALOG_LOCAL_PATH), { recursive: true });
+    }
+
+    function upsert(entry: ModelEntry): void {
+      arr = arr.filter((e) => !(e.provider === entry.provider && e.id === entry.id));
+      arr.push(entry);
+    }
+
+    // Toggle target.
+    upsert({ ...target, default: !targetIsCurrentlyDefault });
+
+    // If we're enabling the target's default, also clear others.
+    if (!targetIsCurrentlyDefault) {
+      for (const other of otherDefaults) {
+        upsert({ ...other, default: false });
+      }
+    }
+
+    fs.writeFileSync(MODEL_CATALOG_LOCAL_PATH, JSON.stringify(arr, null, 2) + '\n');
+    return { status: 200, body: { ok: true, provider, id, default: !targetIsCurrentlyDefault } };
   } catch (err) {
     return { status: 500, body: { error: (err as Error).message } };
   }

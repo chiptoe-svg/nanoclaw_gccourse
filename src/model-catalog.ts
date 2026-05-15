@@ -113,5 +113,11 @@ function readLocalEntries(): ModelEntry[] {
 }
 
 export function getModelCatalog(): ModelEntry[] {
-  return [...BUILTIN_ENTRIES, ...readLocalEntries()];
+  // Local-file entries win over built-ins with the same provider+id, so
+  // an operator's local-catalog-local.json acts as an override layer
+  // (used by the Models tab's edit / set-default flows).
+  const localEntries = readLocalEntries();
+  const localIds = new Set(localEntries.map((e) => `${e.provider}:${e.id}`));
+  const builtins = BUILTIN_ENTRIES.filter((e) => !localIds.has(`${e.provider}:${e.id}`));
+  return [...builtins, ...localEntries];
 }
