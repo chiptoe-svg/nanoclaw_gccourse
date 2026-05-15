@@ -26,6 +26,7 @@ import { GROUPS_DIR } from './config.js';
 import { getDb } from './db/connection.js';
 import { getAgentGroupByFolder } from './db/agent-groups.js';
 import { getActiveSessions } from './db/sessions.js';
+import { getModelCatalog } from './model-catalog.js';
 
 // Read at call time, not import time, so tests can flip TEST_GROUPS_DIR
 // between cases without resetting modules. Production code never sets the
@@ -95,8 +96,17 @@ export function setProvider(folder: string, provider: string): SetProviderResult
     return { ok: false, reason: 'group-not-found' };
   }
 
+  // Provider determines model. The old model belonged to the old provider and
+  // is almost never valid for the new one (e.g. switching codex→local leaves a
+  // gpt-5.5 string pointing at an mlx server that doesn't know it). Reset to
+  // whichever model the catalog flags `default: true` for the new provider.
+  // No default in the catalog → leave model alone (best-effort fallback).
+  const defaultEntry = getModelCatalog().find((e) => e.provider === provider && e.default === true);
+  const newModel = defaultEntry?.id ?? null;
+
   // 1. container.json
   containerJson.provider = provider;
+  if (newModel) containerJson.model = newModel;
   writeContainerJson(folder, containerJson);
 
   // 2. sessions.agent_provider — for in-flight sessions.
@@ -105,11 +115,20 @@ export function setProvider(folder: string, provider: string): SetProviderResult
     .run(provider, group.id);
   const sessionsUpdated = updated.changes;
 
-  // 3. agent_groups.agent_provider — for /model and any other code that
-  //    looks up the group's provider rather than a specific session's.
-  //    Forgetting this caused the /model picker to list Claude models
-  //    for a codex group (caught 2026-05-11).
-  getDb().prepare('UPDATE agent_groups SET agent_provider = ? WHERE id = ?').run(provider, group.id);
+  // 3. agent_groups.agent_provider + model — for /model and any other code
+  //    that looks up the group's provider/model rather than a specific
+  //    session's. Forgetting agent_provider caused the /model picker to list
+  //    Claude models for a codex group (caught 2026-05-11). Forgetting model
+  //    caused a codex group to keep pointing at an mlx model after a switch
+  //    (caught 2026-05-15) — agent then hangs because codex asks OpenAI for
+  //    a local-only model name.
+  if (newModel) {
+    getDb()
+      .prepare('UPDATE agent_groups SET agent_provider = ?, model = ? WHERE id = ?')
+      .run(provider, newModel, group.id);
+  } else {
+    getDb().prepare('UPDATE agent_groups SET agent_provider = ? WHERE id = ?').run(provider, group.id);
+  }
 
   // 4. Stop running containers — best-effort. Errors here are not fatal:
   //    a stale container will be reaped by the next sweep tick or replaced
@@ -138,6 +157,7 @@ export function setProvider(folder: string, provider: string): SetProviderResult
 
 interface ContainerJson {
   provider?: string;
+  model?: string;
   [key: string]: unknown;
 }
 

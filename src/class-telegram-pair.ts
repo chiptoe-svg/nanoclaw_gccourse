@@ -99,15 +99,9 @@ export type ConsumePairResult =
   | { ok: true; webUserId: string }
   | { ok: false; reason: 'unknown' | 'expired' | 'already-used' };
 
-export function consumePairCode(
-  code: string,
-  telegramUserId: string,
-  telegramHandle: string,
-): ConsumePairResult {
+export function consumePairCode(code: string, telegramUserId: string, telegramHandle: string): ConsumePairResult {
   const db = getDb();
-  const row = db
-    .prepare('SELECT * FROM class_telegram_pair_codes WHERE code = ?')
-    .get(code) as PairCodeRow | undefined;
+  const row = db.prepare('SELECT * FROM class_telegram_pair_codes WHERE code = ?').get(code) as PairCodeRow | undefined;
 
   if (!row) return { ok: false, reason: 'unknown' };
   if (row.consumed_at !== null) return { ok: false, reason: 'already-used' };

@@ -138,7 +138,7 @@ afterEach(() => {
 });
 
 describe('writeCodexConfigToml — codex provider', () => {
-  it('emits [model_providers.openai] block plus top-level model / model_provider', () => {
+  it('emits [model_providers.openai-custom] block plus top-level model / model_provider', () => {
     writeCodexConfigToml({
       mcpServers: {},
       activeProvider: 'codex',
@@ -146,13 +146,12 @@ describe('writeCodexConfigToml — codex provider', () => {
       proxyBaseUrl: 'http://host.docker.internal:3001',
     });
     const toml = fs.readFileSync(configPath, 'utf8');
-    expect(toml).toContain('[model_providers.openai]');
-    expect(toml).toContain('name = "openai"');
+    expect(toml).toContain('[model_providers.openai-custom]');
+    expect(toml).toContain('name = "openai-custom"');
     expect(toml).toContain('base_url = "http://host.docker.internal:3001/openai/v1"');
-    expect(toml).toContain('wire_api = "chat"');
     expect(toml).toContain('env_key = "OPENAI_API_KEY"');
     expect(toml).toContain('model = "gpt-5-mini"');
-    expect(toml).toContain('model_provider = "openai"');
+    expect(toml).toContain('model_provider = "openai-custom"');
     expect(toml).not.toContain('[model_providers.omlx]');
   });
 });
@@ -173,7 +172,7 @@ describe('writeCodexConfigToml — local provider', () => {
     expect(toml).toContain('env_key = "OMLX_API_KEY"');
     expect(toml).toContain('model = "Qwen3.6-35B-A3B-UD-MLX-4bit"');
     expect(toml).toContain('model_provider = "omlx"');
-    expect(toml).not.toContain('[model_providers.openai]');
+    expect(toml).not.toContain('[model_providers.openai-custom]');
   });
 });
 
@@ -189,7 +188,7 @@ describe('writeCodexConfigToml — mcp servers still emitted', () => {
     });
     const toml = fs.readFileSync(configPath, 'utf8');
     expect(toml).toContain('[mcp_servers.nanoclaw]');
-    expect(toml).toContain('[model_providers.openai]');
+    expect(toml).toContain('[model_providers.openai-custom]');
     expect(toml).toContain('FOO = "bar"');
   });
 });

@@ -86,6 +86,10 @@ function loadModelDropdowns(el, folder) {
       const catalog = data.catalog || [];
       const discovered = (data.discovered || []).map((d) => ({ provider: d.provider, id: d.id }));
       const combined = [...catalog, ...discovered];
+      // Stash the merged catalog so appendAgentTraceCall (called from the SSE
+      // handler in wireSse — a separate scope) can look up cost fields by
+      // provider+model when rendering an agent-mode call entry.
+      if (window.__pg) window.__pg.catalog = combined;
       const allow = (data.allowedModels && data.allowedModels.length > 0)
         ? new Set(data.allowedModels.map((a) => `${a.provider}/${a.model}`))
         : null;
@@ -158,9 +162,45 @@ function loadModelDropdowns(el, folder) {
       });
       renderModels();
 
-      modelSel.addEventListener('change', () => {
+      // Track last-confirmed model so a cancelled switch can revert the select.
+      let lastModel = modelSel.value;
+      modelSel.addEventListener('change', async () => {
         const log = el.querySelector('#chat-log');
-        appendChatNote(log, `— model changed to ${modelSel.value}; next reply will use it —`);
+        const newModel = modelSel.value;
+        if (newModel === lastModel) return;
+
+        // In agent mode the model is wired into container.json + agent_groups.model
+        // and read at spawn time, so switching means restarting the session
+        // container — which drops the running conversation. Warn first.
+        // In direct mode the dropdown directly controls the request body, no
+        // persisted state changes and no container involved.
+        const isAgentMode = el.querySelector('#mode-agent')?.classList.contains('active');
+        if (isAgentMode) {
+          const ok = await showModelSwitchModal(lastModel, newModel);
+          if (!ok) {
+            modelSel.value = lastModel;
+            return;
+          }
+          try {
+            const r = await fetch(`/api/drafts/${folder}/active-model`, {
+              method: 'PUT',
+              headers: { 'content-type': 'application/json' },
+              credentials: 'same-origin',
+              body: JSON.stringify({ provider: provSel.value, model: newModel }),
+            });
+            if (!r.ok) throw new Error(`status ${r.status}`);
+            lastModel = newModel;
+            log.innerHTML = '';
+            appendSystemNote(log, `— model switched to ${newModel}; container respawning —`);
+          } catch (err) {
+            appendChatNote(log, `Model switch failed: ${String(err)}`);
+            modelSel.value = lastModel;
+            return;
+          }
+        } else {
+          lastModel = newModel;
+          appendChatNote(log, `— model changed to ${newModel}; next reply will use it —`);
+        }
         // Pulse the dropdown briefly to signal the change.
         modelSel.classList.add('model-changed');
         setTimeout(() => modelSel.classList.remove('model-changed'), 1500);
@@ -188,8 +228,15 @@ function wireSse(el, folder) {
       if (traceEmpty) { traceEmpty.remove(); traceEmpty = null; }
       appendTraceEvent(trace, data.content || data);
     } else {
-      // Chat-kind agent reply
+      // Chat-kind agent reply. Mirror the bubble's provider/model/tokens
+      // footer into the trace pane so a plain hello→hi turn (no tool calls,
+      // no system events) still shows the underlying LLM call — matches
+      // direct-mode's appendDirectTraceCall behavior.
       appendAgentReply(log, data);
+      if (data.provider && data.model) {
+        if (traceEmpty) { traceEmpty.remove(); traceEmpty = null; }
+        appendAgentTraceCall(trace, data);
+      }
     }
   });
   sse.addEventListener('error', () => {
@@ -310,6 +357,11 @@ function wireChatForm(el, folder) {
       const modelSel = el.querySelector('#model-sel');
       const trace = el.querySelector('#trace-log');
       const traceLi = appendDirectTraceCall(trace, provSel.value, modelSel.value, directHistory.length);
+      // Client-side timing — direct-chat.ts doesn't return latencyMs (it's a
+      // synchronous HTTP round-trip) so we measure wall-clock from the fetch
+      // dispatch. Includes proxy + upstream + parse, which is what the user
+      // actually waited for. Mirrors how agent-mode latencyMs is reported.
+      const startedAt = Date.now();
       try {
         const reasoningSel = el.querySelector('#reasoning-sel');
         const reasoningEffort = reasoningSel && reasoningSel.value !== 'default' ? reasoningSel.value : undefined;
@@ -325,19 +377,20 @@ function wireChatForm(el, folder) {
             ...(reasoningEffort ? { reasoningEffort } : {}),
           }),
         });
+        const latencyMs = Date.now() - startedAt;
         if (!r.ok) {
           const err = await r.json().catch(() => ({}));
           appendSystemNote(log, `Direct chat failed: ${err.error || r.status}`);
-          finalizeDirectTraceCall(traceLi, { error: err.error || `HTTP ${r.status}` });
+          finalizeDirectTraceCall(traceLi, { error: err.error || `HTTP ${r.status}`, latencyMs });
           return;
         }
         const data = await r.json();
         directHistory.push({ role: 'assistant', content: data.text });
         appendDirectReply(log, data);
-        finalizeDirectTraceCall(traceLi, data);
+        finalizeDirectTraceCall(traceLi, { ...data, latencyMs });
       } catch (err) {
         appendSystemNote(log, `Direct chat failed: ${String(err)}`);
-        finalizeDirectTraceCall(traceLi, { error: String(err) });
+        finalizeDirectTraceCall(traceLi, { error: String(err), latencyMs: Date.now() - startedAt });
       }
       return;
     }
@@ -472,31 +525,68 @@ function appendTraceEvent(trace, data) {
     summary = data.summary || data.message || kind;
   }
 
-  const kindEl = document.createElement('div');
-  kindEl.className = 'trace-kind';
-  kindEl.textContent = summary;
-  li.appendChild(kindEl);
-
-  // Show a truncated body when there's structured payload.
-  const payload = data.input || data.content;
+  // Native <details>/<summary> gives a built-in disclosure triangle for
+  // free — collapsed view shows kind + a one-line preview; expanded view
+  // shows the full untruncated payload (the actual tool input / result).
+  // No payload → render the line plainly without a triangle.
+  const payload = data.input ?? data.content;
   if (payload != null) {
-    const bodyEl = document.createElement('div');
+    const details = document.createElement('details');
+    details.className = 'trace-details';
+    const summaryEl = document.createElement('summary');
+    summaryEl.className = 'trace-summary';
+    const kindEl = document.createElement('span');
+    kindEl.className = 'trace-kind';
+    kindEl.textContent = summary;
+    summaryEl.appendChild(kindEl);
+    const preview = document.createElement('span');
+    preview.className = 'trace-preview';
+    preview.textContent = formatTracePreview(payload);
+    summaryEl.appendChild(preview);
+    details.appendChild(summaryEl);
+    const bodyEl = document.createElement('pre');
     bodyEl.className = 'trace-body';
-    bodyEl.textContent = formatTracePayload(payload);
-    li.appendChild(bodyEl);
+    bodyEl.textContent = formatTracePayloadFull(payload);
+    details.appendChild(bodyEl);
+    li.appendChild(details);
+  } else {
+    const kindEl = document.createElement('div');
+    kindEl.className = 'trace-kind';
+    kindEl.textContent = summary;
+    li.appendChild(kindEl);
   }
 
   trace.appendChild(li);
   trace.scrollTop = trace.scrollHeight;
 }
 
-function formatTracePayload(payload) {
+/** Single-line preview shown next to the triangle when collapsed. */
+function formatTracePreview(payload) {
   if (payload == null) return '';
-  if (typeof payload === 'string') return truncate(payload, 400);
+  if (typeof payload === 'string') return truncate(payload.replace(/\s+/g, ' '), 80);
   if (Array.isArray(payload) && payload.every((b) => b && typeof b === 'object' && 'text' in b)) {
-    return truncate(payload.map((b) => b.text).join('\n'), 400);
+    return truncate(payload.map((b) => b.text).join(' ').replace(/\s+/g, ' '), 80);
   }
-  try { return truncate(JSON.stringify(payload, null, 2), 600); } catch { return String(payload); }
+  // Pull a meaningful first field for objects (query for web_search,
+  // command for bash, etc.). Falls back to compact JSON.
+  if (typeof payload === 'object') {
+    const obj = payload;
+    for (const key of ['query', 'command', 'tool', 'path', 'url', 'message']) {
+      if (typeof obj[key] === 'string' && obj[key]) return truncate(`${key}: ${obj[key]}`, 80);
+    }
+    try { return truncate(JSON.stringify(payload), 80); } catch { return String(payload); }
+  }
+  return truncate(String(payload), 80);
+}
+
+/** Full payload shown when expanded. No length cap (trace bodies are bounded by what the model produced). */
+function formatTracePayloadFull(payload) {
+  if (payload == null) return '';
+  if (typeof payload === 'string') return payload;
+  if (Array.isArray(payload) && payload.every((b) => b && typeof b === 'object' && 'text' in b)) {
+    return payload.map((b) => b.text).join('\n');
+  }
+  try { return JSON.stringify(payload, null, 2); } catch { return String(payload); }
 }
 
 function truncate(s, max) {
@@ -508,6 +598,28 @@ function appendSystemNote(log, text) {
   li.className = 'msg system';
   li.textContent = text;
   log.appendChild(li);
+}
+
+function showModelSwitchModal(from, to) {
+  return new Promise((resolve) => {
+    const root = document.getElementById('modal-root');
+    root.innerHTML = `
+      <div class="modal-backdrop">
+        <div class="modal">
+          <h3>⚠ Switch model?</h3>
+          <p>Switching from <strong>${escapeHtml(from)}</strong> to <strong>${escapeHtml(to)}</strong> will <strong>reset this chat</strong> — the running container will be killed and the agent will start a fresh conversation with the new model.</p>
+          <p class="hint">Your persona, skills, and library entries are not affected. Only the live conversation state is lost.</p>
+          <div class="modal-actions">
+            <button class="btn" id="modal-cancel">Cancel</button>
+            <button class="btn btn-danger" id="modal-ok">Switch &amp; reset chat</button>
+          </div>
+        </div>
+      </div>
+    `;
+    const cleanup = (result) => { root.innerHTML = ''; resolve(result); };
+    root.querySelector('#modal-cancel').addEventListener('click', () => cleanup(false));
+    root.querySelector('#modal-ok').addEventListener('click', () => cleanup(true));
+  });
 }
 
 function showProviderSwitchModal(from, to) {
@@ -549,6 +661,60 @@ function escapeHtml(s) {
  * SSE stream (tool_use, system events, etc.); in direct mode there's
  * only one event per turn — the API call itself.
  */
+/**
+ * Synthetic trace event for an agent-mode LLM call. Built from the same
+ * provider/model/tokens/latency fields the chat bubble's footer uses, so
+ * a tool-less turn still leaves a record in the trace pane. Cost is
+ * computed client-side by looking up the catalog entry stashed at
+ * window.__pg.catalog (populated by loadModelDropdowns).
+ */
+function appendAgentTraceCall(trace, data) {
+  if (!trace) return;
+  const li = document.createElement('li');
+  li.className = 'trace-event trace-agent-call';
+  const parts = [];
+  const tokensIn = data.tokens && typeof data.tokens.input === 'number' ? data.tokens.input : null;
+  const tokensOut = data.tokens && typeof data.tokens.output === 'number' ? data.tokens.output : null;
+  if (tokensIn != null && tokensOut != null) {
+    parts.push(`${tokensIn} in · ${tokensOut} out`);
+  }
+  if (typeof data.latencyMs === 'number') parts.push(`${(data.latencyMs / 1000).toFixed(1)}s`);
+  const cost = computeAgentCallCost(data.provider, data.model, tokensIn, tokensOut);
+  if (cost != null) parts.push(cost < 0.001 ? `$${cost.toFixed(5)}` : `$${cost.toFixed(4)}`);
+  const body = parts.length > 0 ? parts.join(' · ') : '(no usage reported)';
+  li.innerHTML = `
+    <div class="trace-event-head">
+      <span class="trace-event-kind">agent call</span>
+      <code>${escapeHtml(data.provider)}/${escapeHtml(data.model)}</code>
+    </div>
+    <div class="trace-event-body">${escapeHtml(body)}</div>
+  `;
+  trace.appendChild(li);
+  trace.scrollTop = trace.scrollHeight;
+}
+
+/**
+ * Mirror of src/channels/playground/api/direct-chat.ts:priceFor — look the
+ * model up in the playground-side catalog (stashed by loadModelDropdowns)
+ * and apply split rates when available, else the legacy blended rate.
+ * Returns null when no usable rate is found so the caller can omit the
+ * cost field entirely rather than showing "$0" (which is misleading for
+ * cloud models we just don't have prices for).
+ */
+function computeAgentCallCost(provider, model, tokensIn, tokensOut) {
+  if (tokensIn == null || tokensOut == null) return null;
+  const catalog = (window.__pg && window.__pg.catalog) || [];
+  const entry = catalog.find((e) => e.provider === provider && e.id === model);
+  if (!entry) return null;
+  if (entry.costPer1kInUsd != null || entry.costPer1kOutUsd != null) {
+    return (tokensIn / 1000) * (entry.costPer1kInUsd || 0) + (tokensOut / 1000) * (entry.costPer1kOutUsd || 0);
+  }
+  if (entry.costPer1kTokensUsd != null) {
+    return ((tokensIn + tokensOut) / 1000) * entry.costPer1kTokensUsd;
+  }
+  return null;
+}
+
 function appendDirectTraceCall(trace, provider, model, turnNumber) {
   if (!trace) return null;
   const placeholder = trace.querySelector('.trace-empty');
@@ -581,5 +747,6 @@ function finalizeDirectTraceCall(li, data) {
   const cachedNote = data.tokensCached > 0 ? `, ${data.tokensCached} cached` : '';
   const reasoning = data.tokensReasoning || 0;
   const outBreakdown = reasoning > 0 ? `${data.tokensOut} out (${reasoning} reasoning)` : `${data.tokensOut} out`;
-  body.textContent = `${data.tokensIn} in${cachedNote} · ${outBreakdown} · ${cost}`;
+  const latency = typeof data.latencyMs === 'number' ? ` · ${(data.latencyMs / 1000).toFixed(1)}s` : '';
+  body.textContent = `${data.tokensIn} in${cachedNote} · ${outBreakdown}${latency} · ${cost}`;
 }

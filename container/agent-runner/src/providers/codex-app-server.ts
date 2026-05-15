@@ -406,8 +406,10 @@ export interface CodexConfigTomlInput {
 }
 
 interface ProviderBlockSpec {
-  /** TOML table name and codex's `model_provider = "..."` value. */
-  name: 'openai' | 'omlx';
+  /** TOML table name and codex's `model_provider = "..."` value.
+   *  Cannot be the bare `"openai"` — codex reserves that as a built-in
+   *  provider ID and refuses to load a config that overrides it. */
+  name: 'openai-custom' | 'omlx';
   /** Path suffix added to the proxy base URL. */
   proxyPathSuffix: string;
   /** Container env var carrying the placeholder bearer token. */
@@ -418,7 +420,7 @@ function providerBlockSpec(activeProvider: string): ProviderBlockSpec {
   if (activeProvider === 'local') {
     return { name: 'omlx', proxyPathSuffix: '/omlx/v1', envKey: 'OMLX_API_KEY' };
   }
-  return { name: 'openai', proxyPathSuffix: '/openai/v1', envKey: 'OPENAI_API_KEY' };
+  return { name: 'openai-custom', proxyPathSuffix: '/openai/v1', envKey: 'OPENAI_API_KEY' };
 }
 
 export function writeCodexConfigToml(input: CodexConfigTomlInput): void {

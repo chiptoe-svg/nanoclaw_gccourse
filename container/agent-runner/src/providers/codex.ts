@@ -339,6 +339,133 @@ export function resolveCodexModel(env: Record<string, string | undefined> | unde
   return model || undefined;
 }
 
+// ── ThreadItem → ProviderEvent translation ──────────────────────────────────
+// Codex emits typed ThreadItems via item/started + item/completed. The host's
+// trace plumbing (poll-loop.ts:442) speaks the older tool_use/tool_result
+// vocabulary the Claude provider has always emitted; we translate so the
+// playground trace pane lights up the same way it does for claude agents.
+// Non-tool ThreadItem types (reasoning, userMessage, agentMessage, plan,
+// hookPrompt, etc.) are intentionally NOT translated — they would either
+// duplicate the chat bubble (agentMessage) or flood the trace pane (reasoning).
+
+interface ThreadItemAny {
+  type?: string;
+  id?: string;
+  // commandExecution
+  command?: string;
+  cwd?: string;
+  aggregatedOutput?: string;
+  exitCode?: number;
+  status?: string;
+  // webSearch
+  query?: string;
+  action?: unknown;
+  // mcpToolCall
+  server?: string;
+  tool?: string;
+  arguments?: unknown;
+  result?: unknown;
+  error?: { message?: string };
+  // dynamicToolCall
+  namespace?: string;
+  contentItems?: unknown;
+  success?: boolean;
+  // fileChange
+  changes?: unknown;
+}
+
+function toolUseFromItem(item: ThreadItemAny | undefined): ProviderEvent | null {
+  if (!item || !item.id) return null;
+  switch (item.type) {
+    case 'commandExecution':
+      return {
+        type: 'tool_use',
+        toolUseId: item.id,
+        toolName: 'bash',
+        input: { command: item.command ?? '', cwd: item.cwd ?? '' },
+      };
+    case 'webSearch':
+      // query is often empty on item/started — codex fills it in on
+      // item/completed. The trace renders what we have either way.
+      return {
+        type: 'tool_use',
+        toolUseId: item.id,
+        toolName: 'web_search',
+        input: { query: item.query ?? '' },
+      };
+    case 'mcpToolCall':
+      return {
+        type: 'tool_use',
+        toolUseId: item.id,
+        toolName: `mcp:${item.server ?? '?'}.${item.tool ?? '?'}`,
+        input: item.arguments ?? null,
+      };
+    case 'dynamicToolCall':
+      return {
+        type: 'tool_use',
+        toolUseId: item.id,
+        toolName: `dynamic:${item.tool ?? '?'}`,
+        input: item.arguments ?? null,
+      };
+    case 'fileChange':
+      return {
+        type: 'tool_use',
+        toolUseId: item.id,
+        toolName: 'file_change',
+        input: { changes: item.changes ?? null },
+      };
+    default:
+      return null;
+  }
+}
+
+function toolResultFromItem(item: ThreadItemAny | undefined): ProviderEvent | null {
+  if (!item || !item.id) return null;
+  switch (item.type) {
+    case 'commandExecution': {
+      const failed = item.status === 'failed' || (typeof item.exitCode === 'number' && item.exitCode !== 0);
+      return {
+        type: 'tool_result',
+        toolUseId: item.id,
+        content: item.aggregatedOutput ?? '',
+        isError: failed,
+      };
+    }
+    case 'webSearch':
+      return {
+        type: 'tool_result',
+        toolUseId: item.id,
+        // query becomes meaningful on completion; surface it so trace shows
+        // what was actually searched for.
+        content: { query: item.query ?? '', action: item.action ?? null },
+        isError: item.status === 'failed',
+      };
+    case 'mcpToolCall':
+      return {
+        type: 'tool_result',
+        toolUseId: item.id,
+        content: item.error ? { error: item.error.message ?? 'mcp error' } : item.result ?? null,
+        isError: item.status === 'failed' || !!item.error,
+      };
+    case 'dynamicToolCall':
+      return {
+        type: 'tool_result',
+        toolUseId: item.id,
+        content: item.contentItems ?? null,
+        isError: item.status === 'failed' || item.success === false,
+      };
+    case 'fileChange':
+      return {
+        type: 'tool_result',
+        toolUseId: item.id,
+        content: { changes: item.changes ?? null },
+        isError: item.status === 'failed',
+      };
+    default:
+      return null;
+  }
+}
+
 // ── Per-turn event pump ─────────────────────────────────────────────────────
 // Pulled out because the gen() loop above reads cleaner with it extracted,
 // and because it's a natural seam for future unit tests that drive it with
@@ -397,33 +524,48 @@ async function* runOneTurn(
         if (delta) resultText += delta;
         break;
       }
+      case 'item/started': {
+        // Tool invocations begin here. Codex v0.124.0 dropped the legacy
+        // tool_use_begin pattern in favor of typed ThreadItems streamed
+        // via item/started; we translate to the host's existing
+        // tool_use ProviderEvent (poll-loop.ts:442 picks these up and
+        // pushes them as kind:'trace' rows for the playground).
+        // Skip non-tool item types so the trace pane doesn't fill with
+        // reasoning chunks (every codex turn emits dozens) or duplicate
+        // userMessage/agentMessage entries the chat bubble already shows.
+        const item = params.item as { type?: string; id?: string; [k: string]: unknown } | undefined;
+        const ev = toolUseFromItem(item);
+        if (ev) buffer.push(ev);
+        break;
+      }
       case 'item/completed': {
-        const item = params.item as { type?: string; text?: string } | undefined;
+        // Two responsibilities: pick up agentMessage text for resultText
+        // (legacy path, preserved verbatim), and emit tool_result events
+        // for tool ThreadItems so the playground trace can render
+        // completion alongside the tool_use event from item/started.
+        const item = params.item as { type?: string; text?: string; id?: string; [k: string]: unknown } | undefined;
         if (item?.type === 'agentMessage' && item.text) resultText = item.text;
+        const ev = toolResultFromItem(item);
+        if (ev) buffer.push(ev);
         break;
       }
       case 'turn/completed':
         turnDone = true;
         break;
-      case 'token_count': {
-        // Codex's session-log token_count event surfaces total_token_usage
-        // (cumulative for the turn — input_tokens, cached_input_tokens,
-        // output_tokens, reasoning_output_tokens). We take the last event's
-        // values since they're the most complete count for the turn.
-        const info = params.info as
-          | {
-              total_token_usage?: {
-                input_tokens?: number;
-                cached_input_tokens?: number;
-                output_tokens?: number;
-              };
-            }
-          | undefined;
-        const u = info?.total_token_usage;
-        if (u) {
-          if (typeof u.input_tokens === 'number') tokensIn = u.input_tokens;
-          if (typeof u.cached_input_tokens === 'number') tokensCached = u.cached_input_tokens;
-          if (typeof u.output_tokens === 'number') tokensOut = u.output_tokens;
+      case 'thread/tokenUsage/updated': {
+        // Replaces the v0.120-era `token_count` notification (which no longer
+        // fires in v0.124+). Payload structure:
+        //   tokenUsage: { total: {inputTokens, cachedInputTokens, outputTokens,
+        //                         reasoningOutputTokens, totalTokens},
+        //                 last:  {…same fields, scoped to most recent response},
+        //                 modelContextWindow }
+        // We use `total` (cumulative for the turn) so the displayed count
+        // grows across tool-call iterations rather than resetting per round.
+        const tu = (params.tokenUsage as { total?: Record<string, number> } | undefined)?.total;
+        if (tu) {
+          if (typeof tu.inputTokens === 'number') tokensIn = tu.inputTokens;
+          if (typeof tu.cachedInputTokens === 'number') tokensCached = tu.cachedInputTokens;
+          if (typeof tu.outputTokens === 'number') tokensOut = tu.outputTokens;
         }
         break;
       }

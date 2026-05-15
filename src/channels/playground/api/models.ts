@@ -387,9 +387,7 @@ export function handleToggleDefaultModel(body: {
 
   // Other entries for this provider currently flagged default. Will be
   // unset when target gets set; left alone when target is being un-set.
-  const otherDefaults = catalog.filter(
-    (e) => e.provider === provider && !(e.id === id) && e.default === true,
-  );
+  const otherDefaults = catalog.filter((e) => e.provider === provider && !(e.id === id) && e.default === true);
 
   try {
     let arr: ModelEntry[] = [];

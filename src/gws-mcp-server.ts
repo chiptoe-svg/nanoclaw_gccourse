@@ -145,7 +145,9 @@ function validateSlidesAppend(raw: unknown): { presentation_id: string; layout?:
   return { presentation_id: id, layout: asString(o, 'layout') ?? undefined };
 }
 
-function validateSlidesReplaceText(raw: unknown): { presentation_id: string; find: string; replace_with: string } | string {
+function validateSlidesReplaceText(
+  raw: unknown,
+): { presentation_id: string; find: string; replace_with: string } | string {
   const o = asObject(raw);
   if (!o) return 'arguments must be an object';
   const id = asString(o, 'presentation_id');

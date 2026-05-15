@@ -168,7 +168,9 @@ export function handleGetUsage(folder: string, providers?: string[]): ApiResult<
  * folder starts with `student_`. Reuses aggregateAgentUsage per agent so
  * the cost-computation rules stay in one place.
  */
-export function handleGetStudentsUsage(providers?: string[]): ApiResult<{ students: (UsageResponse & { agentGroupId: string })[] }> {
+export function handleGetStudentsUsage(
+  providers?: string[],
+): ApiResult<{ students: (UsageResponse & { agentGroupId: string })[] }> {
   // Walk sessions root → agent_group_ids that have data. Cross-check the
   // sessions table for active groups + the agent_groups table for naming.
   const baseDir = sessionsBaseDir();
