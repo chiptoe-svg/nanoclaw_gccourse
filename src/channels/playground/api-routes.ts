@@ -362,8 +362,13 @@ export async function route(
   // PUT /api/drafts/:folder/active-model — set provider + model atomically
   const activeModelMatch = url.pathname.match(/^\/api\/drafts\/([A-Za-z0-9_-]+)\/active-model$/);
   if (method === 'PUT' && activeModelMatch) {
+    const draftFolder = activeModelMatch[1]!;
+    {
+      const decision = checkDraftMutation(draftFolder, 'models_put', session.userId);
+      if (!decision.allow) return send(res, 403, { error: decision.reason || 'Forbidden' });
+    }
     const body = await readJsonBody(req);
-    const r = handlePutActiveModel(activeModelMatch[1]!, body);
+    const r = handlePutActiveModel(draftFolder, body);
     return send(res, r.status, r.body);
   }
 
