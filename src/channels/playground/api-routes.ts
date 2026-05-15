@@ -26,6 +26,7 @@ import {
   listDrafts,
 } from '../../agent-builder/core.js';
 import { GROUPS_DIR } from '../../config.js';
+import { processImage } from '../../image.js';
 import { readContainerConfig, writeContainerConfig } from '../../container-config.js';
 import { isContainerRunning, killContainer } from '../../container-runner.js';
 import { getAgentGroupByFolder, updateAgentGroup } from '../../db/agent-groups.js';
@@ -107,18 +108,31 @@ export async function route(
     }
   }
 
-  // POST /api/drafts/:folder/messages — body: { text } → forward to router.
+  // POST /api/drafts/:folder/messages — body: { text, files? } → forward to router.
   // Accepts draft_* (instructor drafts), student_* / ta_* / instructor_*
   // (classroom roles) — anything that's a valid agent_group folder. The
   // route is still gated by playground auth (the session check above);
   // for classroom folders the user must be a member of the agent_group,
   // which is enforced in getPlaygroundAgentForUser at sign-in time.
+  //
+  // Optional `files: [{ name, mimeType, base64 }]` lets the playground UI
+  // send image and PDF attachments. Images run through processImage()
+  // (resize to 1024px / JPEG quality 80) and land in content.images[]
+  // alongside the text. PDFs save to groups/<folder>/attachments/ and
+  // are referenced as `[PDF: attachments/<name>.pdf]` text markers, same
+  // convention as Telegram. Total decoded size capped at 25 MB.
   const messagesMatch = url.pathname.match(/^\/api\/drafts\/([A-Za-z0-9_-]+)\/messages$/);
   if (method === 'POST' && messagesMatch) {
     const draftFolder = messagesMatch[1]!;
-    const body = await readJsonBody(req);
-    const text = body.text as string | undefined;
-    if (!text) return send(res, 400, { error: 'text required' });
+    let body: Record<string, unknown>;
+    try {
+      body = await readJsonBody(req, { maxBytes: 35_000_000 });
+    } catch (err) {
+      return send(res, 413, { error: (err as Error).message });
+    }
+    const text = (body.text as string | undefined) ?? '';
+    const files = (body.files as Array<{ name?: string; mimeType?: string; base64?: string }> | undefined) ?? [];
+    if (!text && files.length === 0) return send(res, 400, { error: 'text or files required' });
     const setupConfig = getSetupConfig();
     if (!setupConfig) return send(res, 503, { error: 'adapter not ready' });
 
@@ -129,8 +143,69 @@ export async function route(
       return send(res, 400, { error: (err as Error).message });
     }
 
-    const platformId = `${getPlatformPrefix()}${draftFolder}`;
+    // Process attachments. Errors per-file are reported but don't kill the
+    // whole submit — the message still goes through with whatever survived.
     const messageId = `pg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const attachDir = path.join(GROUPS_DIR, draftFolder, 'attachments');
+    fs.mkdirSync(attachDir, { recursive: true });
+
+    let totalBytes = 0;
+    const images: Array<{ base64: string; mimeType: string; containerPath: string }> = [];
+    const pdfMarkers: string[] = [];
+    const fileErrors: string[] = [];
+
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      if (!f || typeof f.base64 !== 'string' || typeof f.mimeType !== 'string') {
+        fileErrors.push(`file[${i}]: malformed (need base64 + mimeType)`);
+        continue;
+      }
+      const buffer = Buffer.from(f.base64, 'base64');
+      totalBytes += buffer.length;
+      if (totalBytes > 25 * 1024 * 1024) {
+        fileErrors.push(`file[${i}]: aborted — total attachments exceed 25 MB`);
+        break;
+      }
+      if (f.mimeType.startsWith('image/')) {
+        try {
+          const savePath = path.join(attachDir, `playground_${messageId}_${i}.jpg`);
+          const processed = await processImage(buffer, savePath);
+          images.push({
+            base64: processed.base64,
+            mimeType: processed.mimeType,
+            containerPath: `/workspace/agent/attachments/playground_${messageId}_${i}.jpg`,
+          });
+        } catch (err) {
+          fileErrors.push(`file[${i}]: image processing failed — ${(err as Error).message}`);
+        }
+      } else if (f.mimeType === 'application/pdf') {
+        const safeName = (f.name || `playground_${messageId}_${i}.pdf`).replace(/[^A-Za-z0-9._-]/g, '_');
+        const savePath = path.join(attachDir, safeName);
+        try {
+          fs.writeFileSync(savePath, buffer);
+          pdfMarkers.push(`[PDF: attachments/${safeName}]`);
+        } catch (err) {
+          fileErrors.push(`file[${i}]: PDF save failed — ${(err as Error).message}`);
+        }
+      } else {
+        fileErrors.push(`file[${i}]: unsupported mimeType ${f.mimeType} (only image/* and application/pdf accepted)`);
+      }
+    }
+
+    if (fileErrors.length > 0) log.warn('Playground attachment(s) had errors', { draftFolder, fileErrors });
+
+    // Compose the chat-sdk-style content. Order: PDF markers prepended to
+    // text so the agent sees them in context; images carried separately as
+    // content.images[] which the formatter extracts into imagePaths.
+    const composedText = [...pdfMarkers, text].filter(Boolean).join('\n');
+    const contentObj: Record<string, unknown> = {
+      text: composedText,
+      sender: 'You',
+      senderId: 'playground-user',
+    };
+    if (images.length > 0) contentObj.images = images;
+
+    const platformId = `${getPlatformPrefix()}${draftFolder}`;
     const event: InboundEvent = {
       channelType: 'playground',
       platformId,
@@ -138,7 +213,7 @@ export async function route(
       message: {
         id: messageId,
         kind: 'chat',
-        content: JSON.stringify({ text, sender: 'You', senderId: 'playground-user' }),
+        content: JSON.stringify(contentObj),
         timestamp: new Date().toISOString(),
         isMention: true, // every playground message engages
         isGroup: false,
@@ -147,7 +222,7 @@ export async function route(
     void Promise.resolve(setupConfig.onInboundEvent(event)).catch((err) =>
       log.error('Playground onInboundEvent failed', { draftFolder, err }),
     );
-    return send(res, 200, { ok: true, messageId });
+    return send(res, 200, { ok: true, messageId, attachmentErrors: fileErrors.length > 0 ? fileErrors : undefined });
   }
 
   // PUT /api/drafts/:folder/provider — body: { provider: 'claude' | 'codex' }

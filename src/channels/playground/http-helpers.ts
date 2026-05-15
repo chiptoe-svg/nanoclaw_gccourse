@@ -17,11 +17,30 @@ export function sendHtml(res: http.ServerResponse, status: number, html: string)
   send(res, status, html, 'text/html; charset=utf-8');
 }
 
-/** Read the request body and parse as JSON. Empty body → empty object. */
-export async function readJsonBody(req: http.IncomingMessage): Promise<Record<string, unknown>> {
+/**
+ * Read the request body and parse as JSON. Empty body → empty object.
+ * Optional `maxBytes` caps the accumulated body size; the connection is
+ * destroyed and the promise rejects when the cap is exceeded. Default
+ * cap is 1 MB — endpoints that accept inline attachments (the chat
+ * messages POST, with base64 files) bump this explicitly to ~35 MB.
+ */
+export async function readJsonBody(
+  req: http.IncomingMessage,
+  options: { maxBytes?: number } = {},
+): Promise<Record<string, unknown>> {
+  const maxBytes = options.maxBytes ?? 1_048_576;
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
-    req.on('data', (c) => chunks.push(c));
+    let total = 0;
+    req.on('data', (c: Buffer) => {
+      total += c.length;
+      if (total > maxBytes) {
+        req.destroy();
+        reject(new Error(`request body exceeds ${maxBytes} bytes`));
+        return;
+      }
+      chunks.push(c);
+    });
     req.on('end', () => {
       const raw = Buffer.concat(chunks).toString('utf8');
       if (!raw) return resolve({});

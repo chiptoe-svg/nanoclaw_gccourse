@@ -17,9 +17,16 @@ export function mountChat(el) {
       <div class="chat-column">
         <ul id="chat-log" class="chat-log"></ul>
         <form id="chat-form">
-          <textarea id="chat-input" rows="1" placeholder="ask your agent…" autocomplete="off"></textarea>
-          <button type="submit" class="btn btn-primary">Send</button>
-          <span class="send-hint"><kbd>⌘↵</kbd> to send</span>
+          <div id="attach-chips" class="attach-chips"></div>
+          <div class="chat-input-row">
+            <label class="attach-btn" title="Attach image or PDF">
+              📎
+              <input id="attach-input" type="file" accept="image/*,application/pdf" multiple hidden>
+            </label>
+            <textarea id="chat-input" rows="1" placeholder="ask your agent…" autocomplete="off"></textarea>
+            <button type="submit" class="btn btn-primary">Send</button>
+          </div>
+          <span class="send-hint"><kbd>↵</kbd> to send · <kbd>⇧↵</kbd> newline</span>
         </form>
       </div>
       <aside class="trace-panel">
@@ -175,19 +182,107 @@ function wireChatForm(el, folder) {
     }
   });
 
+  // Attachment state: each entry is { file, base64 } where base64 is filled
+  // lazily so big files don't double-buffer in memory at click time.
+  const attached = [];
+  const chipsEl = el.querySelector('#attach-chips');
+  const attachInput = el.querySelector('#attach-input');
+
+  function renderChips() {
+    chipsEl.innerHTML = '';
+    for (let i = 0; i < attached.length; i++) {
+      const { file } = attached[i];
+      const chip = document.createElement('span');
+      chip.className = 'attach-chip';
+      chip.innerHTML = `<span class="attach-name">${escapeHtml(file.name)}</span><span class="attach-size">${Math.round(file.size / 1024)} KB</span><button type="button" class="attach-remove" aria-label="Remove">×</button>`;
+      chip.querySelector('.attach-remove').addEventListener('click', () => {
+        attached.splice(i, 1);
+        renderChips();
+      });
+      chipsEl.appendChild(chip);
+    }
+  }
+
+  function readFileAsBase64(file) {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onerror = () => reject(r.error);
+      r.onload = () => {
+        const result = r.result;
+        const idx = typeof result === 'string' ? result.indexOf('base64,') : -1;
+        if (idx < 0) return reject(new Error('FileReader did not return a data URL'));
+        resolve(result.slice(idx + 'base64,'.length));
+      };
+      r.readAsDataURL(file);
+    });
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  attachInput.addEventListener('change', () => {
+    const TWENTY_FIVE_MB = 25 * 1024 * 1024;
+    const remaining = TWENTY_FIVE_MB - attached.reduce((sum, a) => sum + a.file.size, 0);
+    for (const file of attachInput.files) {
+      if (file.size > remaining) {
+        appendSystemNote(log, `${file.name} (${Math.round(file.size / 1024)} KB) skipped — total attachments would exceed 25 MB`);
+        continue;
+      }
+      const allowed = file.type.startsWith('image/') || file.type === 'application/pdf';
+      if (!allowed) {
+        appendSystemNote(log, `${file.name} (${file.type || 'unknown'}) skipped — only images and PDFs supported`);
+        continue;
+      }
+      attached.push({ file, base64: null });
+    }
+    attachInput.value = '';
+    renderChips();
+  });
+
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const text = input.value.trim();
-    if (!text) return;
-    appendUserBubble(log, text);
+    if (!text && attached.length === 0) return;
+    appendUserBubble(log, text || `(${attached.length} attachment${attached.length === 1 ? '' : 's'})`);
     input.value = '';
+
+    // Read pending files to base64. Done at send time, not at attach time,
+    // to avoid double-buffering for files the user might immediately remove.
+    let files;
     try {
-      await fetch(`/api/drafts/${folder}/messages`, {
+      files = await Promise.all(
+        attached.map(async ({ file }) => ({
+          name: file.name,
+          mimeType: file.type || 'application/octet-stream',
+          base64: await readFileAsBase64(file),
+        })),
+      );
+    } catch (err) {
+      appendSystemNote(log, `Attachment encode failed: ${String(err)}`);
+      return;
+    }
+
+    // Clear attachments only after a successful upload; if the request
+    // fails the user keeps their chips and can retry.
+    try {
+      const r = await fetch(`/api/drafts/${folder}/messages`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         credentials: 'same-origin',
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ text, files }),
       });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        appendSystemNote(log, `Send failed: ${err.error || r.status}`);
+        return;
+      }
+      const data = await r.json().catch(() => ({}));
+      if (data.attachmentErrors) {
+        for (const msg of data.attachmentErrors) appendSystemNote(log, `Attachment issue: ${msg}`);
+      }
+      attached.length = 0;
+      renderChips();
     } catch {
       appendSystemNote(log, 'Send failed — check connection.');
     }

@@ -365,6 +365,15 @@ html, body {
   border-radius: 3px;
   padding: 1px 4px;
 }
+.chat-input-row { display: flex; align-items: flex-start; gap: 6px; width: 100%; }
+.attach-btn { display: inline-flex; align-items: center; justify-content: center; padding: 4px 8px; font-size: 18px; cursor: pointer; border: 1px solid #ccc; border-radius: 6px; background: #fafafa; user-select: none; }
+.attach-btn:hover { background: #f0f0f0; }
+.attach-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; min-height: 0; }
+.attach-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; background: #eef4ff; border: 1px solid #cdddff; border-radius: 12px; font-size: 12px; }
+.attach-chip .attach-name { font-weight: 600; }
+.attach-chip .attach-size { color: #888; }
+.attach-chip .attach-remove { background: transparent; border: none; cursor: pointer; color: #666; font-size: 14px; padding: 0 2px; line-height: 1; }
+.attach-chip .attach-remove:hover { color: #c00; }
 
 .trace-panel {
   flex: 1;
