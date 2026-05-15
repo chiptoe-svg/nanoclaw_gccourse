@@ -154,6 +154,117 @@ export function handlePutActiveModel(
 }
 
 /**
+ * Best-effort metadata lookup for a model id. Returns suggested catalog
+ * fields that the frontend modal pre-populates; the user can still edit
+ * before saving. Sources by provider:
+ *   - local: HuggingFace search API. Tries the bare id then strips common
+ *     quantization suffixes (-MLX-4bit, -UD-MLX-4bit, etc.) to find the
+ *     upstream model card. Reads pipeline_tag for modalities, tags for
+ *     license/architecture hints.
+ *   - claude/codex: small hardcoded lookup table keyed by id substring.
+ *     There's no public model-card API for cloud providers, so this is
+ *     the realistic ceiling without scraping HTML docs. Users can extend
+ *     CLOUD_METADATA below.
+ */
+const CLOUD_METADATA: Record<string, Partial<ModelEntry>> = {
+  // Anthropic
+  'claude-haiku-4-5': { displayName: 'claude-haiku-4-5', costPer1kTokensUsd: 0.0008, modalities: ['text', 'image'], chips: ['⚡ fast', '$ cheap', '☁ Anthropic'], bestFor: 'Short answers, classification, structured output.' },
+  'claude-sonnet-4-6': { displayName: 'claude-sonnet-4-6', costPer1kTokensUsd: 0.012, modalities: ['text', 'image'], chips: ['🐢 slower', '$$ pricier', '☁ Anthropic'], bestFor: 'Reasoning, long outputs.' },
+  'claude-opus-4-7': { displayName: 'claude-opus-4-7', costPer1kTokensUsd: 0.03, modalities: ['text', 'image'], chips: ['🐢 slower', '$$$ premium', '☁ Anthropic'], bestFor: 'Frontier reasoning, hard problems.' },
+  // OpenAI
+  'gpt-5-mini': { displayName: 'gpt-5-mini', costPer1kTokensUsd: 0.0006, modalities: ['text', 'image'], chips: ['⚡ fast', '$ cheap', '☁ OpenAI'], bestFor: 'Quick, broad-knowledge tasks.' },
+  'gpt-5': { displayName: 'gpt-5', costPer1kTokensUsd: 0.005, modalities: ['text', 'image'], chips: ['☁ OpenAI'], bestFor: 'General-purpose, well-rounded.' },
+  'gpt-5-codex': { displayName: 'gpt-5-codex', costPer1kTokensUsd: 0.004, modalities: ['text'], chips: ['💻 code', '☁ OpenAI'], bestFor: 'Code generation + analysis.' },
+};
+
+function modalitiesFromPipelineTag(tag: string | undefined): ('text' | 'image' | 'audio')[] | undefined {
+  if (!tag) return undefined;
+  if (tag.includes('image-text-to-text') || tag.includes('visual-question-answering')) return ['text', 'image'];
+  if (tag.includes('automatic-speech-recognition') || tag.includes('audio-to-text')) return ['text', 'audio'];
+  if (tag === 'text-generation' || tag === 'conversational') return ['text'];
+  return undefined;
+}
+
+async function autoFillFromHuggingFace(id: string): Promise<Partial<ModelEntry> | null> {
+  // mlx-omni-server ids are usually `<owner>/<quantized-variant>` or just
+  // `<quantized-variant>`. The HF model card we want is the upstream
+  // (non-quantized) repo. Try a few strategies in order, returning the
+  // first hit.
+  const stripped = id
+    .replace(/-MLX(-[0-9]+bit)?$/i, '')
+    .replace(/-UD(-MLX(-[0-9]+bit)?)?$/i, '')
+    .replace(/-GGUF$/i, '');
+  const candidates = Array.from(
+    new Set([
+      id,
+      stripped,
+      // common owner prefixes for MLX-quantized models on HF
+      `mlx-community/${id}`,
+      `Qwen/${stripped}`,
+      `google/${stripped}`,
+      `meta-llama/${stripped}`,
+    ]),
+  );
+
+  for (const cand of candidates) {
+    try {
+      const ctl = new AbortController();
+      const timer = setTimeout(() => ctl.abort(), 2500);
+      const res = await fetch(`https://huggingface.co/api/models/${encodeURIComponent(cand)}`, {
+        signal: ctl.signal,
+        headers: { 'user-agent': 'nanoclaw-playground/1.0' },
+      });
+      clearTimeout(timer);
+      if (!res.ok) continue;
+      const data = (await res.json()) as {
+        id?: string;
+        pipeline_tag?: string;
+        tags?: string[];
+        modelId?: string;
+      };
+      const modalities = modalitiesFromPipelineTag(data.pipeline_tag);
+      const out: Partial<ModelEntry> = { displayName: id };
+      if (modalities) out.modalities = modalities;
+      // Param count is hard to pull from HF API reliably; many cards have
+      // it as a tag like "params:27B" but most don't. Skip unless obvious.
+      const paramTag = data.tags?.find((t) => /^\d+\.?\d*[BM]$/i.test(t));
+      if (paramTag) out.paramCount = paramTag;
+      // Notes: include the HF source so user knows where the fields came from.
+      out.notes = `Auto-filled from HuggingFace (${data.modelId || cand}).`;
+      return out;
+    } catch {
+      /* try next candidate */
+    }
+  }
+  return null;
+}
+
+export async function handleAutoFillCatalog(body: {
+  provider?: unknown;
+  id?: unknown;
+}): Promise<ApiResult<{ suggestion: Partial<ModelEntry> | null; source: string }>> {
+  const provider = typeof body.provider === 'string' ? body.provider : '';
+  const id = typeof body.id === 'string' ? body.id : '';
+  if (!provider || !id) return { status: 400, body: { error: 'provider and id required' } };
+
+  if (provider === 'local') {
+    const suggestion = await autoFillFromHuggingFace(id);
+    return { status: 200, body: { suggestion, source: 'huggingface' } };
+  }
+
+  if (provider === 'claude' || provider === 'codex') {
+    // Exact match first, then substring (gpt-5-mini in id "gpt-5-mini-2025-01-15", etc.).
+    const exact = CLOUD_METADATA[id];
+    if (exact) return { status: 200, body: { suggestion: exact, source: 'builtin-table' } };
+    const subKey = Object.keys(CLOUD_METADATA).find((k) => id.startsWith(k));
+    if (subKey) return { status: 200, body: { suggestion: CLOUD_METADATA[subKey], source: 'builtin-table' } };
+    return { status: 200, body: { suggestion: null, source: 'builtin-table' } };
+  }
+
+  return { status: 200, body: { suggestion: null, source: 'no-source-for-provider' } };
+}
+
+/**
  * Append (or replace) a curated catalog entry in config/model-catalog-local.json.
  * Lets the Models tab promote a discovered-only model into a richer card
  * without hand-editing JSON. Dedupes on `provider:id` — re-saving the same
@@ -171,11 +282,12 @@ export function handlePutLocalCatalogEntry(body: { entry?: unknown }): ApiResult
     return { status: 400, body: { error: 'entry.displayName required' } };
 
   // Coerce origin from provider if absent: cloud for claude/codex, local for local.
-  const origin: 'cloud' | 'local' = entry.origin === 'local' || entry.origin === 'cloud'
-    ? entry.origin
-    : entry.provider === 'local'
-      ? 'local'
-      : 'cloud';
+  const origin: 'cloud' | 'local' =
+    entry.origin === 'local' || entry.origin === 'cloud'
+      ? entry.origin
+      : entry.provider === 'local'
+        ? 'local'
+        : 'cloud';
 
   const clean: ModelEntry = {
     id: entry.id,

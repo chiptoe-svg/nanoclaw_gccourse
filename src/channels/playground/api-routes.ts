@@ -38,7 +38,13 @@ import type { PlaygroundSession } from './auth-store.js';
 import { readJsonBody, send } from './http-helpers.js';
 import { getLibraryCacheStat, listLibrary, listSkillFiles, readSkillFile } from './library.js';
 import { handlePersonaLayers } from './api/persona-layers.js';
-import { handleGetModels, handlePutActiveModel, handlePutLocalCatalogEntry, handlePutModels } from './api/models.js';
+import {
+  handleAutoFillCatalog,
+  handleGetModels,
+  handlePutActiveModel,
+  handlePutLocalCatalogEntry,
+  handlePutModels,
+} from './api/models.js';
 import { isOwner } from '../../modules/permissions/db/user-roles.js';
 import { handleGetEntry, handleListLibrary, handleSaveMyEntry } from './api/library.js';
 import { handleGetMyAgent, handleLogout, handleLogoutAll } from './api/me.js';
@@ -382,6 +388,18 @@ export async function route(
     }
     const body = await readJsonBody(req);
     const r = handlePutLocalCatalogEntry(body);
+    return send(res, r.status, r.body);
+  }
+
+  // POST /api/catalog/auto-fill — best-effort metadata lookup. HF API for
+  // local, hardcoded table for claude/codex. Owner-only because it can hit
+  // external services (HuggingFace) on the host's behalf.
+  if (method === 'POST' && url.pathname === '/api/catalog/auto-fill') {
+    if (!session.userId || !isOwner(session.userId)) {
+      return send(res, 403, { error: 'owner role required' });
+    }
+    const body = await readJsonBody(req);
+    const r = await handleAutoFillCatalog(body);
     return send(res, r.status, r.body);
   }
 

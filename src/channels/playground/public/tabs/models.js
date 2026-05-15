@@ -250,6 +250,8 @@ function openAddMetadataModal(discovered) {
         Saved to <code>config/model-catalog-local.json</code>.
         Only fill in what you know — required fields are marked.
       </p>
+      <button type="button" class="btn auto-fill-btn">✨ Auto-fill from ${escapeHtml(discovered.provider === 'local' ? 'HuggingFace' : 'built-in table')}</button>
+      <div class="auto-fill-status muted"></div>
       <form id="add-metadata-form" class="add-metadata-form">
         <label>Display name <span class="required">*</span><br>
           <input name="displayName" required value="${escapeHtml(discovered.id)}" type="text"></label>
@@ -284,6 +286,46 @@ function openAddMetadataModal(discovered) {
   overlay.querySelector('.cancel-btn').addEventListener('click', close);
   overlay.addEventListener('click', (e) => {
     if (e.target === overlay) close();
+  });
+
+  const status = overlay.querySelector('.auto-fill-status');
+  overlay.querySelector('.auto-fill-btn').addEventListener('click', async () => {
+    status.textContent = 'Looking up…';
+    try {
+      const r = await fetch('/api/catalog/auto-fill', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ provider: discovered.provider, id: discovered.id }),
+      });
+      if (!r.ok) {
+        status.textContent = `Lookup failed (${r.status}).`;
+        return;
+      }
+      const data = await r.json();
+      if (!data.suggestion) {
+        status.textContent = `No metadata found in ${data.source}. Fill manually below.`;
+        return;
+      }
+      // Populate form fields from suggestion.
+      const form = overlay.querySelector('#add-metadata-form');
+      const s = data.suggestion;
+      if (s.displayName) form.elements.displayName.value = s.displayName;
+      if (s.paramCount) form.elements.paramCount.value = s.paramCount;
+      if (s.contextSize) form.elements.contextSize.value = s.contextSize;
+      if (s.quantization) form.elements.quantization.value = s.quantization;
+      if (s.avgLatencySec) form.elements.avgLatencySec.value = s.avgLatencySec;
+      if (s.notes) form.elements.notes.value = s.notes;
+      if (s.bestFor) form.elements.bestFor.value = s.bestFor;
+      if (Array.isArray(s.modalities)) {
+        for (const cb of form.querySelectorAll('input[name="modalities"]')) {
+          cb.checked = s.modalities.includes(cb.value);
+        }
+      }
+      status.textContent = `Populated from ${data.source}. Edit anything before saving.`;
+    } catch (err) {
+      status.textContent = `Lookup failed: ${String(err)}`;
+    }
   });
 
   overlay.querySelector('#add-metadata-form').addEventListener('submit', async (e) => {
