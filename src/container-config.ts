@@ -69,7 +69,11 @@ function emptyConfig(): ContainerConfig {
     mcpServers: {},
     packages: { apt: [], npm: [] },
     additionalMounts: [],
-    skills: 'all',
+    // Barebones default — instructors explicitly grant skills via the
+    // Skills tab so students can compare agent behavior with and without
+    // any given skill. The legacy "all" sentinel is still accepted (older
+    // installs / hand-edited container.json) but no longer auto-applied.
+    skills: [],
   };
 }
 

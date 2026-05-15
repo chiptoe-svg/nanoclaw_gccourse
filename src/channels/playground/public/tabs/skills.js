@@ -161,21 +161,25 @@ function renderActiveList(el) {
   const ul = el.querySelector('#active-skills');
   ul.innerHTML = '';
 
-  // "all" mode means every library entry is implicitly enabled. Render the
-  // full list anyway so the user can SEE what their agent has and remove any
-  // they don't want. Clicking × on any one transitions to explicit mode with
-  // that one omitted (we materialize the rest of the library as the new set).
-  const isAllMode = currentSkills === 'all';
-  const activeNames = isAllMode ? libraryCache.map((e) => e.name) : currentSkills;
-
-  if (isAllMode) {
+  // Legacy "all" sentinel — agent.json still carrying the old default.
+  // One-line note + "Convert to explicit list" CTA so the user can move
+  // off the abstraction. New agents default to [] so they never see this.
+  if (currentSkills === 'all') {
     const banner = document.createElement('li');
     banner.className = 'active-all-banner';
-    banner.textContent = `All ${activeNames.length} skills enabled (container default). Remove any to switch to explicit mode.`;
+    banner.innerHTML = `
+      <span>This agent is on the legacy <code>"all"</code> default — every library skill is implicitly active.</span>
+      <button class="btn btn-ghost convert-to-explicit">Convert to empty list</button>
+    `;
+    banner.querySelector('.convert-to-explicit').addEventListener('click', () => {
+      currentSkills = [];
+      saveActive(el);
+    });
     ul.appendChild(banner);
+    return;
   }
 
-  for (const skill of activeNames) {
+  for (const skill of currentSkills) {
     const entry = libraryCache.find((e) => e.name === skill);
     const li = document.createElement('li');
     li.className = entry && entry.builtin ? 'active-entry active-entry-builtin' : 'active-entry';
@@ -187,30 +191,23 @@ function renderActiveList(el) {
       <button class="active-remove" title="Remove">×</button>
     `;
     li.querySelector('.active-remove').addEventListener('click', () => {
-      if (isAllMode) {
-        // Transition from "all" → explicit list, sans this skill.
-        currentSkills = libraryCache.map((e) => e.name).filter((n) => n !== skill);
-      } else {
-        currentSkills = currentSkills.filter((s) => s !== skill);
-      }
+      currentSkills = currentSkills.filter((s) => s !== skill);
       saveActive(el);
     });
     ul.appendChild(li);
   }
-  if (!isAllMode && currentSkills.length === 0) {
+  if (currentSkills.length === 0) {
     const li = document.createElement('li');
     li.className = 'active-empty';
-    li.textContent = '(no skills enabled — agent has no extra tools)';
+    li.textContent = 'This agent has no skills active. Add some from the left to grant capabilities.';
     ul.appendChild(li);
   }
 }
 
 function addSkillToActive(el, name) {
-  // When transitioning from the implicit "all" sentinel to an explicit
-  // list, seed the list with every currently-known library skill before
-  // appending the new one. The old behavior (reset to []) silently
-  // *removed* every skill except the one being added — surprising and
-  // destructive when "+ Add to active" reads as additive.
+  // New agents default to []. Legacy agents on the "all" sentinel are
+  // converted to an explicit list seeded with the full library before
+  // append, so the click still reads as "add" (no skill is dropped).
   if (currentSkills === 'all') {
     currentSkills = libraryCache.map((e) => e.name).filter((n) => typeof n === 'string');
   }
