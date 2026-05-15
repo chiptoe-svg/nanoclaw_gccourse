@@ -37,6 +37,7 @@ import {
   loadStudentCredentials,
   writeStudentCredentials,
 } from './student-google-auth.js';
+import { studentGwsCredentialsPath } from './student-creds-paths.js';
 
 const SAMPLE_CREDS: GwsCredentialsJson = {
   type: 'authorized_user',
@@ -99,6 +100,12 @@ describe('writeStudentCredentials', () => {
     const credPath = path.join(tmpDir, 'student-google-auth', 'user_test01', 'credentials.json');
     const parsed = JSON.parse(fs.readFileSync(credPath, 'utf-8')) as GwsCredentialsJson;
     expect(parsed.refresh_token).toBe('new-refresh-token');
+  });
+
+  it('directory mode is 0o700', () => {
+    writeStudentCredentials('user_dirmode', SAMPLE_CREDS);
+    const dir = path.dirname(studentGwsCredentialsPath('user_dirmode'));
+    expect(fs.statSync(dir).mode & 0o777).toBe(0o700);
   });
 });
 
@@ -207,8 +214,7 @@ describe('userId with special characters', () => {
     expect(loaded!.refresh_token).toBe('refresh-token-789');
   });
 
-  it('writes to different directories for class:student_03 vs class_student_03', () => {
-    // Colon vs underscore produce different sanitized paths
+  it('colliding sanitized names share a path — last write wins', () => {
     writeStudentCredentials('class:student_03', { ...SAMPLE_CREDS, refresh_token: 'colon-version' });
     writeStudentCredentials('class_student_03', { ...SAMPLE_CREDS, refresh_token: 'underscore-version' });
 
