@@ -14,6 +14,7 @@ import {
   CREDENTIAL_PROXY_PORT,
   DATA_DIR,
   GROUPS_DIR,
+  GWS_MCP_RELAY_PORT,
   TIMEZONE,
 } from './config.js';
 import { collectContainerEnv } from './container-env-registry.js';
@@ -496,6 +497,10 @@ async function buildContainerArgs(
   // the appropriate API key per upstream.
   const openaiPrefix = provider === 'local' ? '/omlx/v1' : '/openai/v1';
   args.push('-e', `OPENAI_BASE_URL=http://${CONTAINER_HOST_GATEWAY}:${CREDENTIAL_PROXY_PORT}${openaiPrefix}`);
+
+  // Google Workspace MCP relay — host-side gateway that the container's
+  // gws.ts shims forward to. Per-call attribution header set by gws.ts.
+  args.push('-e', `GWS_MCP_RELAY_URL=http://${CONTAINER_HOST_GATEWAY}:${GWS_MCP_RELAY_PORT}`);
 
   // Per-call attribution for the credential proxy. The container's
   // proxy-fetch wrapper injects this as `X-NanoClaw-Agent-Group` on

@@ -41,6 +41,7 @@ export const CONTAINER_TIMEOUT = parseInt(process.env.CONTAINER_TIMEOUT || '1800
 export const CONTAINER_MAX_OUTPUT_SIZE = parseInt(process.env.CONTAINER_MAX_OUTPUT_SIZE || '10485760', 10); // 10MB default
 export const CREDENTIAL_PROXY_PORT = parseInt(process.env.CREDENTIAL_PROXY_PORT || '3001', 10);
 export const PLAYGROUND_PORT = parseInt(process.env.PLAYGROUND_PORT || '3002', 10);
+export const GWS_MCP_RELAY_PORT = parseInt(process.env.GWS_MCP_RELAY_PORT || '3007', 10);
 const playgroundEnv = readEnvFile(['PLAYGROUND_BIND_HOST', 'PLAYGROUND_IDLE_MINUTES', 'PLAYGROUND_ENABLED']);
 const playgroundEnabledRaw = (process.env.PLAYGROUND_ENABLED || playgroundEnv.PLAYGROUND_ENABLED || '').toLowerCase();
 export const PLAYGROUND_ENABLED = playgroundEnabledRaw === '1' || playgroundEnabledRaw === 'true';
