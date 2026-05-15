@@ -68,31 +68,43 @@ Order matches `plans/master.md` §"Phase 2 — Full classroom capability".
           require allowlisting until app is verified — out of
           scope for 10 students).
 
-  **Policy for unconnected students:** Personal-data tools
-  refuse to fire until the student has connected their Google
-  account. Specifically:
-    - `drive_doc_read_as_markdown`, `drive_doc_write_from_markdown`,
-      `sheet_read_range`, `sheet_write_range`, `slides_*` →
-      personal Drive only, **gated**.
-    - `gmail_*` (Tier C, all variants) → **gated**.
-    - `calendar_create_event`, `calendar_update_event` (Tier D
-      write side) → **gated**.
-    - `calendar_list_events` (Tier D read side) → also gated
-      since there's no class-shared calendar to fall back to.
-    - The existing `/workspace/drive/` rclone bind mount
-      (per-student folder inside the instructor's shared Drive)
-      is **unaffected** — that's a filesystem mount, not an
-      MCP tool, and class-shared artifacts remain accessible
-      via the same instructor-bearer path Mode A established.
-    - Chat, wiki commits, persona editing, skills — all
-      **unaffected**; the agent itself is fully usable without a
-      Google connection.
+  **Policy for unconnected students.** Mode A (today's shared-
+  classroom) already gives every student the ability to create
+  Docs/Sheets/Slides in the instructor's Drive and read/edit
+  the ones THEY created, via the `nanoclaw_owners` ownership-
+  tag primitive installed by `/add-classroom-gws`. Phase 14
+  does NOT remove that — it adds an OPTIONAL per-student
+  write target. The split:
 
-  When a gated tool fires for an unconnected student, the tool
-  returns a structured error: `connect_required` with a
-  human-readable message pointing them at the home-tab "Connect
-  Google" card. The agent surfaces this verbatim to the user
-  rather than retrying.
+    - **Drive / Sheets / Slides** (`drive_doc_*`, `sheet_*`,
+      `slides_*`): unchanged for unconnected students — same
+      Mode A behavior (instructor bearer + ownership tags
+      keep student artifacts isolated). Connected students:
+      new artifacts go into THEIR Drive instead of the
+      instructor's. Both paths coexist; the resolver picks
+      per-student token when present, falls back to instructor
+      otherwise. Previously-created instructor-Drive artifacts
+      stay where they were — no migration.
+    - **Gmail** (`gmail_*`, new in Tier C): **gated**. There's
+      no class-shared inbox to fall back to, and reading the
+      instructor's inbox makes no sense.
+    - **Calendar** (`calendar_*`, new in Tier D): **gated**
+      for both reads and writes. No class-shared calendar to
+      fall back to.
+    - **`/workspace/drive/` rclone bind mount**: unchanged —
+      still backed by instructor bearer, exposing the per-
+      student folder. Filesystem path, not an MCP tool.
+    - **Chat, wiki commits, persona editing, skills, agent
+      loop itself**: unaffected; the agent is fully usable
+      without a Google connection.
+
+  When a gated tool (Gmail / Calendar) fires for an unconnected
+  student, it returns a structured error: `connect_required`
+  with a human-readable message pointing them at the home-tab
+  "Connect Google" card. The agent surfaces this verbatim
+  rather than retrying. The non-gated Drive tools never error
+  on the connection state — they just route differently based
+  on what's available.
 
   **Tier A — Foundation (no agent-runner behavior change yet;
   this tier wires the credential writer + UI + resolver but
@@ -112,11 +124,11 @@ Order matches `plans/master.md` §"Phase 2 — Full classroom capability".
           with an `options.requirePersonal: boolean` flag. When
           true, resolve user_id from `classroom_roster` by
           agent_group_id, try per-student credentials, return
-          null if absent (no instructor fallback). When false
-          (existing call sites), keep current behavior: try
-          per-student first, fall back to instructor. Personal-
-          data tools call with `requirePersonal: true`; the
-          rclone bind mount keeps calling with the default.
+          null if absent (no instructor fallback) — used by
+          Gmail (Tier C) and Calendar (Tier D) tools. When
+          false (the default, used by Drive/Sheets/Slides tools
+          and the rclone bind mount), keep current behavior:
+          try per-student first, fall back to instructor.
           Update returned `principal` to `"student:<user_id>"`,
           `"instructor"`, or `null` accordingly so per-call
           attribution surfaces correctly in proxy logs and usage
@@ -149,23 +161,26 @@ Order matches `plans/master.md` §"Phase 2 — Full classroom capability".
           at the home-tab "Connect Google" card. No mention of
           required connection (it's optional).
 
-  **Tier B — Drive tools gated on personal connection:**
-    - [ ] Update `src/gws-mcp-server.ts` Drive / Sheets / Slides
-          handlers to call `getGoogleAccessTokenForAgentGroup(id,
-          { requirePersonal: true })`. On null return, respond
-          with the `connect_required` error envelope (new
-          shared helper) carrying the human message and a link
-          to the home-tab card.
-    - [ ] Container-side shim in
-          `container/agent-runner/src/mcp-tools/gws.ts` —
-          translate `connect_required` HTTP response into a
-          tool-result whose text is the friendly message, so the
-          agent reads it directly. Set `isError: false` so the
-          agent treats it as guidance rather than a tool crash.
-    - [ ] Integration test: simulate an unconnected student
-          invoking `drive_doc_read_as_markdown` → expect
-          structured error; connect the student via the writer
-          API; expect success on retry.
+  **Tier B — Drive tools route per-student when connected
+  (no gate — Mode A fallback preserved):**
+    - [ ] Verify existing `drive_doc_read_as_markdown` /
+          `drive_doc_write_from_markdown` / `sheet_*` /
+          `slides_*` tools route through the per-student
+          credential when present, instructor bearer otherwise.
+          Should fall out of Tier A's `gws-token.ts` change
+          (default `requirePersonal: false` keeps the instructor
+          fallback).
+    - [ ] Add a `principal` field to each tool's response
+          metadata (e.g. `"student:alice@clemson.edu"` /
+          `"instructor"`) so the agent / playground can surface
+          "this Doc was created in your Drive" vs "this Doc was
+          created in the class shared Drive" when listing
+          artifacts. Useful for student awareness without
+          forcing them to connect.
+    - [ ] Integration test: same tool call with and without a
+          per-student credential — verify the resulting Doc
+          lands in the correct Drive each time, and the
+          response `principal` matches.
 
   **Tier C — Gmail tools (gated on personal connection):**
     - [ ] Add `gmail_search`, `gmail_read_thread`,
