@@ -488,6 +488,14 @@ async function handlePlaygroundCommand(
   const { startPlaygroundServer, stopPlaygroundServer, getPlaygroundStatus, revokeSessionsForUser } =
     await import('./playground.js');
 
+  // Normalize the caller's user_id to the canonical `<channel>:<handle>`
+  // form used by the rest of the entity model (agent_group_members,
+  // user_roles, sessions). The bare handle Telegram gives us — e.g.
+  // "8731035088" — would otherwise fail every later lookup, landing the
+  // user on the wrong default agent in the playground.
+  const normalizedAuthorUserId =
+    authorUserId && !authorUserId.includes(':') ? `telegram:${authorUserId}` : authorUserId;
+
   const parts = text.trim().split(/\s+/);
   const sub = parts[1]?.toLowerCase();
   const flag = parts[2]?.toLowerCase();
@@ -499,10 +507,10 @@ async function handlePlaygroundCommand(
       if (!status.running) {
         reply = 'Playground is not running.';
       } else if (flag === '--self') {
-        if (!authorUserId) {
+        if (!normalizedAuthorUserId) {
           reply = '❌ /playground stop --self requires an identified caller.';
         } else {
-          const removed = revokeSessionsForUser(authorUserId);
+          const removed = revokeSessionsForUser(normalizedAuthorUserId);
           reply =
             removed > 0
               ? `✅ Revoked ${removed} of your session(s). Other users unaffected.`
@@ -513,7 +521,7 @@ async function handlePlaygroundCommand(
         reply = '✅ Playground stopped (all sessions revoked).';
       }
     } else if (!sub || sub === 'start') {
-      const { url, alreadyRunning } = await startPlaygroundServer({ userId: authorUserId });
+      const { url, alreadyRunning } = await startPlaygroundServer({ userId: normalizedAuthorUserId });
       reply = alreadyRunning
         ? `Playground already running.\nFresh magic link: ${url}`
         : `✅ Playground started.\n${url}`;
