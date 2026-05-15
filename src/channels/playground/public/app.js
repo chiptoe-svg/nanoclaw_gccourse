@@ -1,5 +1,5 @@
 import { mountHome } from './tabs/home.js';
-import { mountChat } from './tabs/chat.js';
+import { mountChat, refreshChatModels } from './tabs/chat.js';
 import { mountPersona } from './tabs/persona.js';
 import { mountSkills } from './tabs/skills.js';
 import { mountModels } from './tabs/models.js';
@@ -14,9 +14,15 @@ function showTab(name) {
     document.querySelector(`[data-tab="${t}"]`).classList.toggle('active', t === name);
     document.getElementById(`tab-${t}`).hidden = t !== name;
   }
+  const tabEl = document.getElementById(`tab-${name}`);
   if (!mounted[name]) {
-    mounters[name](document.getElementById(`tab-${name}`));
+    mounters[name](tabEl);
     mounted[name] = true;
+  } else if (name === 'chat') {
+    // Tab was previously mounted but the user may have changed the
+    // allowedModels whitelist in the Models tab since then — re-fetch so
+    // the dropdowns reflect the current curation.
+    refreshChatModels(tabEl);
   }
 }
 

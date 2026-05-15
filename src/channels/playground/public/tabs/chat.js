@@ -2,6 +2,17 @@ import { showDraftBanner } from '../draft-banner.js';
 
 let sse = null; // single EventSource per agent
 
+/**
+ * Re-fetch the Chat tab's provider/model dropdowns. Called by the tab
+ * switcher every time the user lands on Chat so whitelist changes (made
+ * in the Models tab) take effect without a page reload.
+ */
+export function refreshChatModels(el) {
+  const folder = window.__pg && window.__pg.agent && window.__pg.agent.folder;
+  if (!folder || !el || !el.querySelector('#provider-sel')) return;
+  loadModelDropdowns(el, folder);
+}
+
 export function mountChat(el) {
   const folder = window.__pg.agent.folder;
   const agentName = window.__pg.agent.name;
