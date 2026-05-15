@@ -408,7 +408,18 @@ export function writeCodexConfigToml(input: CodexConfigTomlInput): void {
 
   const lines: string[] = [];
 
-  // 1. MCP servers (preserve existing behavior verbatim).
+  // 1. Top-level model + model_provider routing.
+  // MUST precede all [section] headers — TOML scopes key=value lines to the
+  // last opened [section], so any root-level key written after a [section]
+  // header silently becomes a property of that section, not the root table.
+  const spec = providerBlockSpec(input.activeProvider);
+  if (input.model) {
+    lines.push(`model = ${tomlBasicString(input.model)}`);
+  }
+  lines.push(`model_provider = ${tomlBasicString(spec.name)}`);
+  lines.push('');
+
+  // 2. MCP servers (preserve existing behavior verbatim).
   for (const [name, config] of Object.entries(input.mcpServers)) {
     lines.push(`[mcp_servers.${name}]`);
     lines.push('type = "stdio"');
@@ -426,21 +437,13 @@ export function writeCodexConfigToml(input: CodexConfigTomlInput): void {
     lines.push('');
   }
 
-  // 2. Active model_providers block — only the one for activeProvider.
-  const spec = providerBlockSpec(input.activeProvider);
+  // 3. Active model_providers block — only the one for activeProvider.
   const baseUrl = `${input.proxyBaseUrl.replace(/\/+$/, '')}${spec.proxyPathSuffix}`;
   lines.push(`[model_providers.${spec.name}]`);
   lines.push(`name = ${tomlBasicString(spec.name)}`);
   lines.push(`base_url = ${tomlBasicString(baseUrl)}`);
   lines.push('wire_api = "responses"');
   lines.push(`env_key = ${tomlBasicString(spec.envKey)}`);
-  lines.push('');
-
-  // 3. Top-level model + model_provider routing.
-  if (input.model) {
-    lines.push(`model = ${tomlBasicString(input.model)}`);
-  }
-  lines.push(`model_provider = ${tomlBasicString(spec.name)}`);
   lines.push('');
 
   fs.writeFileSync(configTomlPath, lines.join('\n'));
