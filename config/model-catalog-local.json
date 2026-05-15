@@ -7,12 +7,19 @@
     "costPer1kTokensUsd": 0,
     "avgLatencySec": 6,
     "paramCount": "27B",
-    "modalities": ["text", "image"],
+    "modalities": [
+      "text",
+      "image"
+    ],
     "notes": "Smaller sibling of the 35B. Faster but slightly less capable.",
     "host": "http://localhost:8000",
     "contextSize": 32768,
     "quantization": "MLX 4-bit",
-    "chips": ["🆓 free", "💻 mlx local", "⚡ faster than 35B"],
+    "chips": [
+      "🆓 free",
+      "💻 mlx local",
+      "⚡ faster than 35B"
+    ],
     "bestFor": "Faster local responses when the 35B feels slow."
   },
   {
@@ -23,12 +30,28 @@
     "costPer1kTokensUsd": 0,
     "avgLatencySec": 7,
     "paramCount": "31B",
-    "modalities": ["text", "image"],
+    "modalities": [
+      "text",
+      "image"
+    ],
     "notes": "Google's open-weight model. Strong instruction-following, different family from Qwen.",
     "host": "http://localhost:8000",
     "contextSize": 8192,
     "quantization": "MLX 4-bit",
-    "chips": ["🆓 free", "💻 mlx local", "🐢 slower"],
+    "chips": [
+      "🆓 free",
+      "💻 mlx local",
+      "🐢 slower"
+    ],
     "bestFor": "Cross-checking Qwen output with a different model family."
+  },
+  {
+    "id": "claude-opus-4-7",
+    "provider": "claude",
+    "displayName": "claude-opus-4-7",
+    "origin": "cloud",
+    "modalities": [
+      "text"
+    ]
   }
 ]

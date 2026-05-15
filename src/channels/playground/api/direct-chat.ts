@@ -31,8 +31,18 @@ export interface DirectChatResponse {
   tokensIn: number;
   tokensCached: number;
   tokensOut: number;
+  /**
+   * Reasoning (a.k.a. thinking) tokens — billed as output tokens but
+   * generated for the model's internal chain-of-thought rather than the
+   * visible reply. Always ≤ tokensOut. Surfaced separately so cost
+   * displays can attribute "where the money went" between visible output
+   * and silent reasoning.
+   */
+  tokensReasoning: number;
   costUsd: number;
   model: string;
+  /** Effort level used for the turn, if the request specified one. */
+  reasoningEffort?: 'low' | 'medium' | 'high';
 }
 
 function priceFor(entry: ModelEntry | undefined, tokensIn: number, tokensOut: number, tokensCached: number): number {
@@ -103,28 +113,34 @@ export async function handleDirectChat(body: {
   model?: unknown;
   messages?: unknown;
   agentFolder?: unknown;
+  reasoningEffort?: unknown;
 }): Promise<ApiResult<DirectChatResponse>> {
   const provider = typeof body.provider === 'string' ? body.provider : '';
   const model = typeof body.model === 'string' ? body.model : '';
   const messages = Array.isArray(body.messages) ? (body.messages as DirectChatMessage[]) : [];
   const agentFolder = typeof body.agentFolder === 'string' ? body.agentFolder : '';
+  const reasoningEffort: 'low' | 'medium' | 'high' | undefined =
+    body.reasoningEffort === 'low' || body.reasoningEffort === 'medium' || body.reasoningEffort === 'high'
+      ? body.reasoningEffort
+      : undefined;
   if (!provider || !model) return { status: 400, body: { error: 'provider and model required' } };
   if (messages.length === 0) return { status: 400, body: { error: 'messages array required' } };
 
   // OpenAI-compatible Chat Completions for codex (cloud) and local
   // (mlx-omni-server). Claude branch can be added by translating to
   // Anthropic /v1/messages format — skipped today (OpenAI-only class).
-  const proxyPrefix =
-    provider === 'codex' ? '/openai/v1' : provider === 'local' ? '/omlx/v1' : null;
+  const proxyPrefix = provider === 'codex' ? '/openai/v1' : provider === 'local' ? '/omlx/v1' : null;
   if (!proxyPrefix) return { status: 400, body: { error: `direct-chat doesn't support provider ${provider} yet` } };
 
   const url = `http://127.0.0.1:${CREDENTIAL_PROXY_PORT}${proxyPrefix}/chat/completions`;
+  const requestBody: Record<string, unknown> = { model, messages };
+  if (reasoningEffort) requestBody.reasoning_effort = reasoningEffort;
   let upstream: Response;
   try {
     upstream = await fetch(url, {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: 'Bearer placeholder' },
-      body: JSON.stringify({ model, messages }),
+      body: JSON.stringify(requestBody),
     });
   } catch (err) {
     return { status: 502, body: { error: `proxy unreachable: ${(err as Error).message}` } };
@@ -139,12 +155,17 @@ export async function handleDirectChat(body: {
       prompt_tokens?: number;
       completion_tokens?: number;
       prompt_tokens_details?: { cached_tokens?: number };
+      completion_tokens_details?: { reasoning_tokens?: number };
     };
   };
   const text = data.choices?.[0]?.message?.content ?? '';
   const tokensIn = data.usage?.prompt_tokens ?? 0;
   const tokensOut = data.usage?.completion_tokens ?? 0;
   const tokensCached = data.usage?.prompt_tokens_details?.cached_tokens ?? 0;
+  // OpenAI bills reasoning tokens as part of completion_tokens; we surface
+  // them separately so the UI can show "of these out tokens, N were
+  // reasoning." Models without reasoning return 0 (or omit the field).
+  const tokensReasoning = data.usage?.completion_tokens_details?.reasoning_tokens ?? 0;
 
   const catalog = getModelCatalog();
   const entry = catalog.find((e) => e.provider === provider && e.id === model);
@@ -157,5 +178,8 @@ export async function handleDirectChat(body: {
     if (group) recordDirectChatUsage(group.id, provider, model, text, tokensIn, tokensOut);
   }
 
-  return { status: 200, body: { text, tokensIn, tokensCached, tokensOut, costUsd, model } };
+  return {
+    status: 200,
+    body: { text, tokensIn, tokensCached, tokensOut, tokensReasoning, costUsd, model, reasoningEffort },
+  };
 }

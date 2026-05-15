@@ -27,6 +27,14 @@ export function mountChat(el) {
       <span class="spacer"></span>
       <label>provider <select id="provider-sel"></select></label>
       <label>model <select id="model-sel"></select></label>
+      <label class="reasoning-label" title="Direct-mode only. Higher = more reasoning tokens (charged as output).">reasoning
+        <select id="reasoning-sel">
+          <option value="default">default</option>
+          <option value="low">low</option>
+          <option value="medium">medium</option>
+          <option value="high">high</option>
+        </select>
+      </label>
     </div>
     <div class="chat-layout">
       <div class="chat-column">
@@ -303,6 +311,8 @@ function wireChatForm(el, folder) {
       const trace = el.querySelector('#trace-log');
       const traceLi = appendDirectTraceCall(trace, provSel.value, modelSel.value, directHistory.length);
       try {
+        const reasoningSel = el.querySelector('#reasoning-sel');
+        const reasoningEffort = reasoningSel && reasoningSel.value !== 'default' ? reasoningSel.value : undefined;
         const r = await fetch('/api/direct-chat', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -312,6 +322,7 @@ function wireChatForm(el, folder) {
             model: modelSel.value,
             messages: directHistory,
             agentFolder: folder,
+            ...(reasoningEffort ? { reasoningEffort } : {}),
           }),
         });
         if (!r.ok) {
@@ -380,11 +391,18 @@ function appendDirectReply(log, data) {
   const cost =
     data.costUsd < 0.001 ? `$${data.costUsd.toFixed(5)}` : `$${data.costUsd.toFixed(4)}`;
   const cachedNote = data.tokensCached > 0 ? ` (${data.tokensCached} cached)` : '';
+  // Split reasoning tokens from visible output so students see where the
+  // output cost actually went. tokensReasoning is already counted in
+  // tokensOut by the API contract, so we display "X reasoning of Y out"
+  // rather than treating them as separate buckets.
+  const reasoning = data.tokensReasoning || 0;
+  const outNote = reasoning > 0 ? `${data.tokensOut} out (${reasoning} reasoning)` : `${data.tokensOut} out`;
+  const effortBadge = data.reasoningEffort ? `<span class="reasoning-badge">reasoning: ${data.reasoningEffort}</span>` : '';
   li.innerHTML = `
     <div class="bubble-text"></div>
     <div class="bubble-meta">
-      <code>${escapeHtml(data.model)}</code> ·
-      ${data.tokensIn} in${escapeHtml(cachedNote)} · ${data.tokensOut} out ·
+      <code>${escapeHtml(data.model)}</code> ${effortBadge} ·
+      ${data.tokensIn} in${escapeHtml(cachedNote)} · ${outNote} ·
       <strong>${cost}</strong>
     </div>
   `;
@@ -561,5 +579,7 @@ function finalizeDirectTraceCall(li, data) {
   }
   const cost = data.costUsd < 0.001 ? `$${data.costUsd.toFixed(5)}` : `$${data.costUsd.toFixed(4)}`;
   const cachedNote = data.tokensCached > 0 ? `, ${data.tokensCached} cached` : '';
-  body.textContent = `${data.tokensIn} in${cachedNote} · ${data.tokensOut} out · ${cost}`;
+  const reasoning = data.tokensReasoning || 0;
+  const outBreakdown = reasoning > 0 ? `${data.tokensOut} out (${reasoning} reasoning)` : `${data.tokensOut} out`;
+  body.textContent = `${data.tokensIn} in${cachedNote} · ${outBreakdown} · ${cost}`;
 }
