@@ -79,7 +79,7 @@ const BUILTIN_ENTRIES: ModelEntry[] = [
     costPer1kTokensUsd: 0,
     avgLatencySec: 8,
     paramCount: '35B',
-    modalities: ['text'],
+    modalities: ['text', 'image'],
     notes: 'Runs on the host Mac. Free, no quota — but slower than cloud.',
     host: 'http://localhost:8000',
     contextSize: 32768,

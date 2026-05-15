@@ -1,4 +1,5 @@
 import { readContainerConfig, writeContainerConfig } from '../../../container-config.js';
+import { readEnvFile } from '../../../env.js';
 import { type ModelEntry, getModelCatalog } from '../../../model-catalog.js';
 import { listAllForProvider } from '../../../model-discovery.js';
 import { setModel } from '../../../model-switch.js';
@@ -19,6 +20,28 @@ export interface ModelsResponse {
   allowedModels: { provider: string; model: string }[];
   discovered: DiscoveredModel[];
   activeModel: { provider: string; model: string } | null;
+  /**
+   * Reachability of the local OpenAI-compatible server (mlx-omni-server etc.).
+   * Probed server-side because the browser-side fetch sees a *different*
+   * "localhost" when accessing the playground over the LAN. `null` when the
+   * probe itself failed for a reason unrelated to reachability (timeout etc.).
+   */
+  localServerOnline: boolean | null;
+}
+
+async function probeLocalServer(): Promise<boolean> {
+  const env = readEnvFile(['OMLX_BASE_URL']);
+  const baseUrl = (process.env.OMLX_BASE_URL ?? env.OMLX_BASE_URL ?? 'http://localhost:8000').replace(/\/$/, '');
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 1500);
+  try {
+    const res = await fetch(`${baseUrl}/v1/models`, { signal: ctl.signal });
+    return res.ok;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export async function handleGetModels(draftFolder: string): Promise<ApiResult<ModelsResponse>> {
@@ -27,10 +50,11 @@ export async function handleGetModels(draftFolder: string): Promise<ApiResult<Mo
     const catalog = getModelCatalog();
     const catalogIds = new Set(catalog.map((m) => `${m.provider}:${m.id}`));
 
-    const [claudeHints, codexHints, localHints] = await Promise.all([
+    const [claudeHints, codexHints, localHints, localServerOnline] = await Promise.all([
       listAllForProvider('claude').catch(() => []),
       listAllForProvider('codex').catch(() => []),
       listAllForProvider('local').catch(() => []),
+      probeLocalServer(),
     ]);
 
     const discovered: DiscoveredModel[] = [];
@@ -53,6 +77,7 @@ export async function handleGetModels(draftFolder: string): Promise<ApiResult<Mo
         allowedModels: cfg.allowedModels ?? [],
         discovered,
         activeModel,
+        localServerOnline,
       },
     };
   } catch (err) {

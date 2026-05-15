@@ -45,7 +45,11 @@ export function mountModels(el) {
 
 function loadModels(el, folder) {
   fetch(`/api/drafts/${folder}/models`, { credentials: 'same-origin' })
-    .then((r) => (r.ok ? r.json() : { catalog: [], discovered: [], allowedModels: [], activeModel: null }))
+    .then((r) =>
+      r.ok
+        ? r.json()
+        : { catalog: [], discovered: [], allowedModels: [], activeModel: null, localServerOnline: null },
+    )
     .then((data) => {
       catalogCache = data.catalog || [];
       discoveredCache = data.discovered || [];
@@ -53,7 +57,7 @@ function loadModels(el, folder) {
       activeModel = data.activeModel || null;
       originalAllowed = JSON.parse(JSON.stringify(allowedModelsCache));
       renderSections(el);
-      pollLocalServer(el);
+      renderLocalServerStatus(el, data.localServerOnline);
     });
 }
 
@@ -242,19 +246,21 @@ async function useNow({ provider, model }) {
   }
 }
 
-async function pollLocalServer(el) {
+function renderLocalServerStatus(el, online) {
   const statusEl = el.querySelector('#local-server-status');
   if (!statusEl) return;
-  try {
-    // mlx-omni-server's /v1/models is the cheapest reachability check.
-    // no-cors mode means a resolved fetch tells us only "host responded",
-    // which is exactly what we need for online/offline rendering.
-    await fetch('http://localhost:8000/v1/models', { method: 'GET', mode: 'no-cors' });
+  // Server-side probe result. Browser-side fetches would see a different
+  // "localhost" when the user accesses the playground from a different
+  // machine (e.g. their phone over the LAN) and incorrectly report offline.
+  if (online === true) {
     statusEl.textContent = '● online';
     statusEl.className = 'model-section-status status-online';
-  } catch {
+  } else if (online === false) {
     statusEl.textContent = '○ offline — start mlx-omni-server on :8000';
     statusEl.className = 'model-section-status status-offline';
+  } else {
+    statusEl.textContent = '';
+    statusEl.className = 'model-section-status';
   }
 }
 
