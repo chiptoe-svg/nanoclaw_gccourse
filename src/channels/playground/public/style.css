@@ -814,6 +814,11 @@ select.model-changed {
 .model-card.active { box-shadow: 0 0 0 2px #1a7a1a; }
 .active-badge { margin-left: auto; font-size: 12px; color: #1a7a1a; font-weight: 600; }
 .default-badge { margin-left: 8px; font-size: 11px; color: #6b5b1a; background: #fff8dc; padding: 2px 6px; border-radius: 3px; font-weight: 600; }
+.cc-group { margin: 8px 0 12px; }
+.cc-group h3 { font-size: 12px; margin: 4px 0 4px; color: #555; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; }
+.cc-row { display: flex; flex-wrap: wrap; gap: 12px; }
+.cc-check { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; }
+.cc-check input { margin: 0; }
 .default-star { margin-left: 8px; background: transparent; border: none; font-size: 16px; color: #b0b0b0; cursor: pointer; padding: 0 2px; line-height: 1; }
 .default-star:hover { color: #c9a227; }
 .default-star.is-default { color: #d4a017; }

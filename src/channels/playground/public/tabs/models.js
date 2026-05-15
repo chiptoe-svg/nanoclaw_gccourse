@@ -62,8 +62,16 @@ function loadModels(el, folder) {
 }
 
 function renderSections(el) {
+  // Class-controls gates which provider sections render for non-owners.
+  // Owner always sees every section so they can curate.
+  const cc = window.__pg && window.__pg.classControls;
+  const isOwner = window.__pg && window.__pg.user && window.__pg.user.role === 'owner';
+  const allowedProviders = isOwner || !cc ? null : new Set(cc.providersAvailable || []);
   for (const provider of ['claude', 'codex', 'local']) {
     const grid = el.querySelector(`[data-grid="${provider}"]`);
+    if (!grid) continue;
+    const section = grid.closest('.model-section');
+    if (section) section.hidden = !!(allowedProviders && !allowedProviders.has(provider));
     grid.innerHTML = '';
 
     const curated = catalogCache.filter((m) => m.provider === provider);

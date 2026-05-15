@@ -1,4 +1,5 @@
 import { getPlaygroundAgentForUser } from '../../../db/agent-groups.js';
+import { isGlobalAdmin, isOwner } from '../../../modules/permissions/db/user-roles.js';
 import { revokeSession, revokeSessionsForUser } from '../auth-store.js';
 import type { PlaygroundSession } from '../auth-store.js';
 
@@ -8,8 +9,15 @@ export interface ApiResult<T> {
 }
 
 export interface MyAgentResponse {
-  user: { id: string | null };
+  user: { id: string | null; role: 'owner' | 'admin' | 'member' };
   agent: { id: string; name: string; folder: string };
+}
+
+function resolveRole(userId: string | null): 'owner' | 'admin' | 'member' {
+  if (!userId) return 'member';
+  if (isOwner(userId)) return 'owner';
+  if (isGlobalAdmin(userId)) return 'admin';
+  return 'member';
 }
 
 export function handleGetMyAgent(session: PlaygroundSession): ApiResult<MyAgentResponse> {
@@ -18,7 +26,7 @@ export function handleGetMyAgent(session: PlaygroundSession): ApiResult<MyAgentR
   return {
     status: 200,
     body: {
-      user: { id: session.userId },
+      user: { id: session.userId, role: resolveRole(session.userId) },
       agent: { id: agent.id, name: agent.name, folder: agent.folder },
     },
   };

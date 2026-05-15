@@ -24,7 +24,7 @@ async function init() {
   // Resolve the agent group this user is assigned to (or the first non-draft
   // group as a fallback for operators not formally membered).
   let agent = { id: '?', name: '(no agent)', folder: '?' };
-  let user = { id: '?', email: undefined };
+  let user = { id: '?', email: undefined, role: 'member' };
   try {
     const r = await fetch('/api/me/agent', { credentials: 'same-origin' });
     if (r.ok) {
@@ -35,16 +35,43 @@ async function init() {
   } catch {
     /* /api/me/agent not yet wired or user not signed in */
   }
-  window.__pg = { agent, user };
+
+  // Pull the class-controls config so we can gate tabs (and Models/auth UIs
+  // later). Owner always sees every tab. Other roles see only what the
+  // instructor authorized — empty/missing config falls back to "everything"
+  // so installs that never touched the file behave as before.
+  let classControls = {
+    tabsVisibleToStudents: ['home', 'chat', 'persona', 'skills', 'models'],
+    providersAvailable: ['claude', 'codex', 'local'],
+    authModesAvailable: ['api-key', 'oauth', 'claude-code-oauth'],
+  };
+  try {
+    const r = await fetch('/api/class-controls', { credentials: 'same-origin' });
+    if (r.ok) classControls = await r.json();
+  } catch {
+    /* default stands */
+  }
+
+  window.__pg = { agent, user, classControls };
   document.getElementById('active-agent-name').textContent = agent.name;
   document.getElementById('who').textContent = user.email || user.id;
 
+  // Hide tabs the student isn't authorized to see. Owner sees everything.
+  const allowedTabs =
+    user.role === 'owner' ? TABS : TABS.filter((t) => classControls.tabsVisibleToStudents.includes(t));
+  for (const t of TABS) {
+    const btn = document.querySelector(`[data-tab="${t}"]`);
+    if (!btn) continue;
+    btn.hidden = !allowedTabs.includes(t);
+  }
+
   initDraftBanner();
 
-  for (const t of TABS) {
+  for (const t of allowedTabs) {
     document.querySelector(`[data-tab="${t}"]`).addEventListener('click', () => showTab(t));
   }
-  showTab('home');
+  // First visible tab — home if allowed, else whatever's available.
+  showTab(allowedTabs.includes('home') ? 'home' : allowedTabs[0] || 'home');
 }
 
 init();

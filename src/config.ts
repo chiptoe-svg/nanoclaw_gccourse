@@ -15,7 +15,10 @@ export const ASSISTANT_HAS_OWN_NUMBER =
   (process.env.ASSISTANT_HAS_OWN_NUMBER || envConfig.ASSISTANT_HAS_OWN_NUMBER) === 'true';
 
 // Absolute paths needed for container mounts
-const PROJECT_ROOT = process.cwd();
+// Exported so per-feature modules (class controls, etc.) can resolve
+// their config files relative to the install root without each
+// re-deriving from process.cwd().
+export const PROJECT_ROOT = process.cwd();
 const HOME_DIR = process.env.HOME || os.homedir();
 
 // Mount security: allowlist stored OUTSIDE project root, never mounted into containers

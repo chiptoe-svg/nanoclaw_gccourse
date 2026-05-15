@@ -68,7 +68,14 @@ function loadModelDropdowns(el, folder) {
         : null;
       const visible = allow ? combined.filter((m) => allow.has(`${m.provider}/${m.id}`)) : combined;
 
-      const providers = [...new Set(visible.map((m) => m.provider))];
+      // Filter providers by class-controls — owner sees everything;
+      // students see only what the instructor authorized.
+      const cc = window.__pg && window.__pg.classControls;
+      const isOwner = window.__pg && window.__pg.user && window.__pg.user.role === 'owner';
+      const allowedProviders = isOwner || !cc ? null : new Set(cc.providersAvailable || []);
+      const providers = [...new Set(visible.map((m) => m.provider))].filter(
+        (p) => !allowedProviders || allowedProviders.has(p),
+      );
       provSel.innerHTML = '';
       for (const p of providers) provSel.add(new Option(p, p));
 

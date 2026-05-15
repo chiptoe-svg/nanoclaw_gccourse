@@ -1,5 +1,18 @@
 export function mountHome(el) {
   const { agent, user } = window.__pg || { agent: { name: '?', folder: '?' }, user: { id: '?' } };
+  const isOwner = user && user.role === 'owner';
+
+  // Owner-only "Class controls" card. Toggles tabs/providers/auth modes
+  // for non-owners. Inserted just below Profile so it's the first thing
+  // the instructor sees when they land. Hidden entirely for students.
+  const classControlsCard = isOwner
+    ? `
+      <section class="home-card" id="class-controls-card">
+        <h2>Class controls</h2>
+        <p class="muted">Choose what students see in the playground. You always see everything.</p>
+        <div id="class-controls-body"><p class="muted">Loading…</p></div>
+      </section>`
+    : '';
 
   el.innerHTML = `
     <div class="home-layout">
@@ -11,8 +24,11 @@ export function mountHome(el) {
           <dd><strong>${escapeHtml(agent.name || '?')}</strong> <span class="muted">(${escapeHtml(agent.folder || '?')})</span></dd>
           <dt>Sign-in identity</dt>
           <dd><code>${escapeHtml(user.id || 'anonymous')}</code></dd>
+          ${isOwner ? `<dt>Role</dt><dd><strong>owner</strong> <span class="muted">(class instructor)</span></dd>` : ''}
         </dl>
       </section>
+
+      ${classControlsCard}
 
       <section class="home-card">
         <h2>Settings</h2>
@@ -61,6 +77,87 @@ export function mountHome(el) {
   });
 
   renderTelegramCard(el.querySelector('#telegram-card-body'));
+
+  if (isOwner) {
+    renderClassControlsCard(el.querySelector('#class-controls-body'));
+  }
+}
+
+const ALL_TABS = ['home', 'chat', 'persona', 'skills', 'models'];
+const ALL_PROVIDERS = ['claude', 'codex', 'local'];
+const ALL_AUTH = ['api-key', 'oauth', 'claude-code-oauth'];
+const AUTH_LABEL = { 'api-key': 'API key', oauth: 'OAuth (Anthropic Console / OpenAI)', 'claude-code-oauth': 'Claude Code OAuth' };
+
+async function renderClassControlsCard(body) {
+  if (!body) return;
+  try {
+    const res = await fetch('/api/class-controls', { credentials: 'same-origin' });
+    if (!res.ok) {
+      body.innerHTML = `<p class="muted">Couldn't load class controls (${res.status}).</p>`;
+      return;
+    }
+    const cfg = await res.json();
+    renderClassControlsForm(body, cfg);
+  } catch (err) {
+    body.innerHTML = `<p class="muted">Couldn't load class controls: ${escapeHtml(String(err))}</p>`;
+  }
+}
+
+function renderClassControlsForm(body, cfg) {
+  const tabsChecks = ALL_TABS.map((t) => `
+    <label class="cc-check"><input type="checkbox" data-cc-tab="${t}" ${cfg.tabsVisibleToStudents.includes(t) ? 'checked' : ''}> ${t}</label>
+  `).join('');
+  const providersChecks = ALL_PROVIDERS.map((p) => `
+    <label class="cc-check"><input type="checkbox" data-cc-provider="${p}" ${cfg.providersAvailable.includes(p) ? 'checked' : ''}> ${p}</label>
+  `).join('');
+  const authChecks = ALL_AUTH.map((a) => `
+    <label class="cc-check"><input type="checkbox" data-cc-auth="${a}" ${cfg.authModesAvailable.includes(a) ? 'checked' : ''}> ${escapeHtml(AUTH_LABEL[a])}</label>
+  `).join('');
+
+  body.innerHTML = `
+    <div class="cc-group">
+      <h3>Tabs visible to students</h3>
+      <div class="cc-row">${tabsChecks}</div>
+    </div>
+    <div class="cc-group">
+      <h3>Providers available</h3>
+      <div class="cc-row">${providersChecks}</div>
+    </div>
+    <div class="cc-group">
+      <h3>Auth modes available</h3>
+      <div class="cc-row">${authChecks}</div>
+    </div>
+    <div class="home-actions">
+      <button class="btn btn-primary" id="cc-save">Save class controls</button>
+      <span class="muted" id="cc-status"></span>
+    </div>
+  `;
+
+  body.querySelector('#cc-save').addEventListener('click', async () => {
+    const next = {
+      tabsVisibleToStudents: [...body.querySelectorAll('[data-cc-tab]')].filter((i) => i.checked).map((i) => i.dataset.ccTab),
+      providersAvailable: [...body.querySelectorAll('[data-cc-provider]')].filter((i) => i.checked).map((i) => i.dataset.ccProvider),
+      authModesAvailable: [...body.querySelectorAll('[data-cc-auth]')].filter((i) => i.checked).map((i) => i.dataset.ccAuth),
+    };
+    const status = body.querySelector('#cc-status');
+    status.textContent = 'Saving…';
+    try {
+      const res = await fetch('/api/class-controls', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify(next),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        status.textContent = `Save failed: ${err.error || res.status}`;
+        return;
+      }
+      status.textContent = 'Saved. Students will see the new settings on their next page load.';
+    } catch (err) {
+      status.textContent = `Save failed: ${String(err)}`;
+    }
+  });
 }
 
 async function renderTelegramCard(body) {

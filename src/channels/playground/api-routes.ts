@@ -47,6 +47,7 @@ import {
   handlePutModels,
   handleToggleDefaultModel,
 } from './api/models.js';
+import { handleGetClassControls, handlePutClassControls } from './api/class-controls.js';
 import { isOwner } from '../../modules/permissions/db/user-roles.js';
 import { handleGetEntry, handleListLibrary, handleSaveMyEntry } from './api/library.js';
 import { handleGetMyAgent, handleLogout, handleLogoutAll } from './api/me.js';
@@ -487,6 +488,22 @@ export async function route(
     }
     const body = await readJsonBody(req);
     const r = handleToggleDefaultModel(body);
+    return send(res, r.status, r.body);
+  }
+
+  // GET /api/class-controls — read instructor's tab/provider/auth gates.
+  // Open to anyone signed in — students need it to know what UI to render.
+  if (method === 'GET' && url.pathname === '/api/class-controls') {
+    const r = handleGetClassControls();
+    return send(res, r.status, r.body);
+  }
+  // PUT /api/class-controls — owner-only, mutates config/class-controls.json.
+  if (method === 'PUT' && url.pathname === '/api/class-controls') {
+    if (!session.userId || !isOwner(session.userId)) {
+      return send(res, 403, { error: 'owner role required' });
+    }
+    const body = await readJsonBody(req);
+    const r = handlePutClassControls(body);
     return send(res, r.status, r.body);
   }
 
