@@ -29,6 +29,7 @@ import {
   formatSessionCookie,
   getSessionByCookie,
   hasLostLinkRecoverer,
+  isPinRequiredForClassToken,
   mintMagicToken,
   type PlaygroundSession,
   recoverLostLink,
@@ -187,6 +188,18 @@ function handleClassTokenRedemption(url: URL, res: http.ServerResponse): boolean
   if (!token) return false;
   const session = redeemClassToken(token);
   if (!session) return false; // not a class token — let normal auth flow handle the request
+  // classroom-pin:redirect START
+  // When /add-classroom-pin is installed, the trunk redeemer still resolves
+  // the user_id (verifies token is valid + not revoked), but we redirect
+  // through the email-PIN entry page instead of setting the cookie now.
+  // The PIN page issues a code via Resend and only sets the cookie after
+  // the user enters it. This closes the URL-forwarding gap.
+  if (isPinRequiredForClassToken()) {
+    res.writeHead(302, { location: `/login/pin?token=${encodeURIComponent(token)}` });
+    res.end();
+    return true;
+  }
+  // classroom-pin:redirect END
   res.writeHead(302, { location: '/playground/', 'set-cookie': formatSessionCookie(session.cookieValue) });
   res.end();
   return true;
@@ -279,6 +292,31 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
     });
     return;
   }
+  // classroom-pin:routes START
+  // Email-PIN dance for class-token URLs. Pre-auth (the whole point is the
+  // user has no cookie yet). Three routes: GET the entry page, POST issue,
+  // POST verify.
+  if (method === 'GET' && url.pathname === '/login/pin') {
+    return serveStatic(res, 'login-pin.html', 'text/html; charset=utf-8');
+  }
+  if (method === 'POST' && (url.pathname === '/login/pin/issue' || url.pathname === '/login/pin/verify')) {
+    void (async () => {
+      const { handleIssue, handleVerify } = await import('./api/login-pin.js');
+      try {
+        const body = (await readJsonBody(req)) as Record<string, unknown>;
+        const result = url.pathname === '/login/pin/issue' ? await handleIssue(body) : handleVerify(body);
+        const headers: Record<string, string> = { 'content-type': 'application/json' };
+        if (result.setCookie) headers['set-cookie'] = result.setCookie;
+        res.writeHead(result.status, headers);
+        res.end(JSON.stringify(result.body));
+      } catch (err) {
+        log.error('login-pin handler error', { err });
+        if (!res.headersSent) send(res, 500, { error: 'login-pin handler failed' });
+      }
+    })();
+    return;
+  }
+  // classroom-pin:routes END
 
   const session = authenticate(req);
   if (!session) {
