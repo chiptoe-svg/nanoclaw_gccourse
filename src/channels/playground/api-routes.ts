@@ -48,6 +48,7 @@ import {
   handleToggleDefaultModel,
 } from './api/models.js';
 import { handleGetClassControls, handlePutClassControls } from './api/class-controls.js';
+import { handleGetStudentsUsage, handleGetUsage } from './api/usage.js';
 import { isOwner } from '../../modules/permissions/db/user-roles.js';
 import { handleGetEntry, handleListLibrary, handleSaveMyEntry } from './api/library.js';
 import { handleGetMyAgent, handleLogout, handleLogoutAll } from './api/me.js';
@@ -504,6 +505,23 @@ export async function route(
     }
     const body = await readJsonBody(req);
     const r = handlePutClassControls(body);
+    return send(res, r.status, r.body);
+  }
+
+  // GET /api/usage/:folder — per-agent token + cost aggregation. Available
+  // to anyone authenticated (the agent's own home wants this too).
+  const usageMatch = url.pathname.match(/^\/api\/usage\/([A-Za-z0-9_-]+)$/);
+  if (method === 'GET' && usageMatch) {
+    const r = handleGetUsage(usageMatch[1]!);
+    return send(res, r.status, r.body);
+  }
+  // GET /api/usage/_/students — instructor roster. Owner-only since it
+  // walks every student_* agent.
+  if (method === 'GET' && url.pathname === '/api/usage/_/students') {
+    if (!session.userId || !isOwner(session.userId)) {
+      return send(res, 403, { error: 'owner role required' });
+    }
+    const r = handleGetStudentsUsage();
     return send(res, r.status, r.body);
   }
 

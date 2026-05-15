@@ -1,0 +1,194 @@
+/**
+ * Per-agent usage aggregator. Reads every session's outbound.db for the
+ * agent, sums tokens by model, multiplies by the catalog's per-model
+ * pricing, and returns { thisMonth, total } buckets.
+ *
+ * Cost calculation: prefers split rates (costPer1kInUsd / Out / CachedIn)
+ * when the catalog entry provides them; falls back to the legacy single
+ * costPer1kTokensUsd × (in + out) for entries without splits.
+ *
+ * Cached input tokens aren't currently persisted by the agent-runner —
+ * messages_out has no column for them. The aggregator reads them as 0
+ * for now; once the providers start surfacing prompt-cache stats on the
+ * `result` event the DB schema and this calc can grow together without
+ * touching the wire API.
+ */
+import fs from 'fs';
+import path from 'path';
+
+import Database from 'better-sqlite3';
+
+import { getAgentGroupByFolder } from '../../../db/agent-groups.js';
+import { getActiveSessions } from '../../../db/sessions.js';
+import { type ModelEntry, getModelCatalog } from '../../../model-catalog.js';
+import { sessionsBaseDir } from '../../../session-manager.js';
+import type { ApiResult } from './me.js';
+
+export interface UsageBucket {
+  tokensIn: number;
+  tokensOut: number;
+  tokensCached: number;
+  costUsd: number;
+  /** Per-model breakdown for the bucket. */
+  byModel: { model: string; provider: string | null; tokensIn: number; tokensOut: number; costUsd: number }[];
+}
+
+export interface UsageResponse {
+  agentGroup: { id: string; folder: string; name: string };
+  thisMonth: UsageBucket;
+  total: UsageBucket;
+}
+
+function priceFor(entry: ModelEntry | undefined, tokensIn: number, tokensOut: number, tokensCached: number): number {
+  if (!entry) return 0;
+  if (entry.costPer1kInUsd != null || entry.costPer1kOutUsd != null) {
+    const inUsd = (tokensIn / 1000) * (entry.costPer1kInUsd ?? 0);
+    const outUsd = (tokensOut / 1000) * (entry.costPer1kOutUsd ?? 0);
+    const cachedUsd = (tokensCached / 1000) * (entry.costPer1kCachedInUsd ?? 0);
+    return inUsd + outUsd + cachedUsd;
+  }
+  // Legacy single-rate field: apply blended to (in + out). Cached not modeled.
+  const blend = entry.costPer1kTokensUsd ?? 0;
+  return ((tokensIn + tokensOut) / 1000) * blend;
+}
+
+/** All session ids on disk for the given agent_group_id. Includes ones the
+ *  sessions table no longer references (handy for total-lifetime usage). */
+function sessionIdsForAgent(agentGroupId: string): string[] {
+  const dir = path.join(sessionsBaseDir(), agentGroupId);
+  if (!fs.existsSync(dir)) return [];
+  try {
+    return fs.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name);
+  } catch {
+    return [];
+  }
+}
+
+export function aggregateAgentUsage(agentGroupId: string): { thisMonth: UsageBucket; total: UsageBucket } {
+  const now = new Date();
+  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+  const catalog = getModelCatalog();
+  const catalogByKey = new Map(catalog.map((e) => [`${e.provider}:${e.id}`, e]));
+
+  // Aggregation buckets keyed by `provider:model` so we can look up pricing.
+  const thisMonth = new Map<string, { tokensIn: number; tokensOut: number }>();
+  const total = new Map<string, { tokensIn: number; tokensOut: number }>();
+
+  for (const sessionId of sessionIdsForAgent(agentGroupId)) {
+    const outboundPath = path.join(sessionsBaseDir(), agentGroupId, sessionId, 'outbound.db');
+    if (!fs.existsSync(outboundPath)) continue;
+    let db: Database.Database | null = null;
+    try {
+      db = new Database(outboundPath, { readonly: true, fileMustExist: true });
+      const rows = db
+        .prepare(
+          `SELECT timestamp, tokens_in, tokens_out, provider, model
+           FROM messages_out
+           WHERE tokens_in IS NOT NULL OR tokens_out IS NOT NULL`,
+        )
+        .all() as { timestamp: string; tokens_in: number | null; tokens_out: number | null; provider: string | null; model: string | null }[];
+      for (const row of rows) {
+        const key = `${row.provider ?? '?'}:${row.model ?? '?'}`;
+        const ti = row.tokens_in ?? 0;
+        const to = row.tokens_out ?? 0;
+        if (!total.has(key)) total.set(key, { tokensIn: 0, tokensOut: 0 });
+        const t = total.get(key)!;
+        t.tokensIn += ti;
+        t.tokensOut += to;
+        if (row.timestamp >= monthStart) {
+          if (!thisMonth.has(key)) thisMonth.set(key, { tokensIn: 0, tokensOut: 0 });
+          const m = thisMonth.get(key)!;
+          m.tokensIn += ti;
+          m.tokensOut += to;
+        }
+      }
+    } catch {
+      /* unreadable/legacy DB — skip */
+    } finally {
+      if (db) db.close();
+    }
+  }
+
+  function build(buckets: Map<string, { tokensIn: number; tokensOut: number }>): UsageBucket {
+    let tokensIn = 0;
+    let tokensOut = 0;
+    const tokensCached = 0;
+    let costUsd = 0;
+    const byModel: UsageBucket['byModel'] = [];
+    for (const [key, v] of buckets) {
+      const [provider, model] = key.split(':');
+      const entry = catalogByKey.get(`${provider}:${model}`);
+      const c = priceFor(entry, v.tokensIn, v.tokensOut, 0);
+      tokensIn += v.tokensIn;
+      tokensOut += v.tokensOut;
+      costUsd += c;
+      byModel.push({ model, provider, tokensIn: v.tokensIn, tokensOut: v.tokensOut, costUsd: c });
+    }
+    byModel.sort((a, b) => b.costUsd - a.costUsd);
+    return { tokensIn, tokensOut, tokensCached, costUsd, byModel };
+  }
+
+  return { thisMonth: build(thisMonth), total: build(total) };
+}
+
+export function handleGetUsage(folder: string): ApiResult<UsageResponse> {
+  const group = getAgentGroupByFolder(folder);
+  if (!group) return { status: 404, body: { error: `no agent group for folder ${folder}` } };
+  const { thisMonth, total } = aggregateAgentUsage(group.id);
+  return {
+    status: 200,
+    body: {
+      agentGroup: { id: group.id, folder: group.folder, name: group.name },
+      thisMonth,
+      total,
+    },
+  };
+}
+
+/**
+ * For the instructor roster: aggregate usage for every agent_group whose
+ * folder starts with `student_`. Reuses aggregateAgentUsage per agent so
+ * the cost-computation rules stay in one place.
+ */
+export function handleGetStudentsUsage(): ApiResult<{ students: (UsageResponse & { agentGroupId: string })[] }> {
+  // Walk sessions root → agent_group_ids that have data. Cross-check the
+  // sessions table for active groups + the agent_groups table for naming.
+  const baseDir = sessionsBaseDir();
+  const agentGroupIds = fs.existsSync(baseDir)
+    ? fs
+        .readdirSync(baseDir, { withFileTypes: true })
+        .filter((e) => e.isDirectory())
+        .map((e) => e.name)
+    : [];
+  // Distinct agent groups appearing in active sessions. Used to make sure we
+  // include rows even when no on-disk session dir survived past TTL.
+  for (const s of getActiveSessions()) {
+    if (!agentGroupIds.includes(s.agent_group_id)) agentGroupIds.push(s.agent_group_id);
+  }
+
+  const students: (UsageResponse & { agentGroupId: string })[] = [];
+  for (const id of agentGroupIds) {
+    // Need a folder to filter on. Look it up via the agent_groups table.
+    // (Avoid importing getAgentGroup directly here to keep this file
+    // dependency-light; we'll fall back to a sessions-table join.)
+    const sessions = getActiveSessions().filter((s) => s.agent_group_id === id);
+    if (sessions.length === 0) continue;
+    // The session table doesn't expose folder; pull from agent_groups via
+    // a follow-up query. Use getAgentGroupByFolder isn't suitable; use
+    // an id lookup instead — re-using the host's DB helper.
+    // (Inline import to dodge a circular dep with usage.ts startup.)
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { getAgentGroup } = require('../../../db/agent-groups.js') as typeof import('../../../db/agent-groups.js');
+    const group = getAgentGroup(id);
+    if (!group || !group.folder.startsWith('student_')) continue;
+    const { thisMonth, total } = aggregateAgentUsage(id);
+    students.push({
+      agentGroupId: id,
+      agentGroup: { id, folder: group.folder, name: group.name },
+      thisMonth,
+      total,
+    });
+  }
+  students.sort((a, b) => a.agentGroup.folder.localeCompare(b.agentGroup.folder));
+  return { status: 200, body: { students } };
+}

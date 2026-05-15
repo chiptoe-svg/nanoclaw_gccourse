@@ -10,8 +10,22 @@ export interface ModelEntry {
   /** "cloud" | "local" — drives card styling and whether host/context/etc. show. */
   origin: 'cloud' | 'local';
 
-  /** Cost per 1k tokens (USD) — 0 for local. */
+  /**
+   * Cost per 1k tokens (USD) — 0 for local. Legacy single-rate field;
+   * still consulted by older surfaces when split rates aren't available.
+   * For accurate cost: use the In/Out/Cached fields below.
+   */
   costPer1kTokensUsd?: number;
+  /** Cost per 1k input tokens (USD). */
+  costPer1kInUsd?: number;
+  /** Cost per 1k output tokens (USD). Typically 4-5× input for cloud models. */
+  costPer1kOutUsd?: number;
+  /**
+   * Cost per 1k cached-input tokens (USD). Anthropic prompt caching is
+   * billed at ~10% of input rate; OpenAI prompt caching at ~50%. Absent
+   * for providers without prompt caching.
+   */
+  costPer1kCachedInUsd?: number;
   /** Average latency in seconds — best-effort estimate. */
   avgLatencySec?: number;
   /** Parameter count display string ("70B", "8B", "?"). */
@@ -48,6 +62,9 @@ const BUILTIN_ENTRIES: ModelEntry[] = [
     provider: 'claude',
     displayName: 'claude-haiku-4-5',
     origin: 'cloud',
+    costPer1kInUsd: 0.001,
+    costPer1kOutUsd: 0.005,
+    costPer1kCachedInUsd: 0.0001,
     costPer1kTokensUsd: 0.0008,
     avgLatencySec: 0.9,
     paramCount: 'not disclosed',
@@ -60,6 +77,9 @@ const BUILTIN_ENTRIES: ModelEntry[] = [
     provider: 'claude',
     displayName: 'claude-sonnet-4-6',
     origin: 'cloud',
+    costPer1kInUsd: 0.003,
+    costPer1kOutUsd: 0.015,
+    costPer1kCachedInUsd: 0.0003,
     costPer1kTokensUsd: 0.012,
     avgLatencySec: 2.1,
     paramCount: 'not disclosed',
@@ -73,6 +93,9 @@ const BUILTIN_ENTRIES: ModelEntry[] = [
     provider: 'codex',
     displayName: 'gpt-5-mini',
     origin: 'cloud',
+    costPer1kInUsd: 0.00025,
+    costPer1kOutUsd: 0.002,
+    costPer1kCachedInUsd: 0.000125,
     costPer1kTokensUsd: 0.0006,
     avgLatencySec: 1.0,
     paramCount: 'not disclosed',
@@ -80,6 +103,21 @@ const BUILTIN_ENTRIES: ModelEntry[] = [
     chips: ['⚡ fast', '$ cheap', '☁ OpenAI'],
     bestFor: 'Quick, broad-knowledge tasks.',
     default: true,
+  },
+  {
+    id: 'gpt-5',
+    provider: 'codex',
+    displayName: 'gpt-5',
+    origin: 'cloud',
+    costPer1kInUsd: 0.00125,
+    costPer1kOutUsd: 0.01,
+    costPer1kCachedInUsd: 0.000625,
+    costPer1kTokensUsd: 0.005,
+    avgLatencySec: 2.5,
+    paramCount: 'not disclosed',
+    modalities: ['text', 'image'],
+    chips: ['☁ OpenAI'],
+    bestFor: 'General-purpose, well-rounded.',
   },
   {
     id: 'Qwen3.6-35B-A3B-UD-MLX-4bit',

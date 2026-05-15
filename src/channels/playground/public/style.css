@@ -821,6 +821,14 @@ select.model-changed {
 .cc-row { display: flex; flex-wrap: wrap; gap: 12px; }
 .cc-check { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; }
 .cc-check input { margin: 0; }
+.usage-rollup { display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+.usage-box { flex: 1; min-width: 140px; display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; background: #f8fafe; border: 1px solid #d6e2f5; border-radius: 6px; }
+.usage-label { font-size: 11px; color: #666; text-transform: uppercase; letter-spacing: 0.3px; }
+.usage-cost { font-size: 18px; font-weight: 700; color: #2b4570; }
+.usage-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 4px; }
+.usage-table th, .usage-table td { padding: 3px 6px; border-bottom: 1px solid #eee; text-align: left; }
+.usage-table th { color: #555; font-weight: 600; font-size: 11px; }
+.small { font-size: 11px; }
 .default-star { margin-left: 8px; background: transparent; border: none; font-size: 16px; color: #b0b0b0; cursor: pointer; padding: 0 2px; line-height: 1; }
 .default-star:hover { color: #c9a227; }
 .default-star.is-default { color: #d4a017; }

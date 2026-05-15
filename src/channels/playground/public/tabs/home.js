@@ -46,10 +46,14 @@ export function mountHome(el) {
         </div>
       </section>
 
+      <section class="home-card" id="usage-card">
+        <h2>API credits</h2>
+        <div id="usage-card-body"><p class="muted">Loading…</p></div>
+      </section>
+
       <section class="home-card">
         <h2>Session</h2>
         <p class="muted">Session started: <strong id="session-start">${new Date().toLocaleString()}</strong></p>
-        <p class="muted">Detailed usage stats (tokens, cost, latency) appear inline under each agent reply in the Chat tab. Session-wide rollups coming in a future iteration.</p>
       </section>
 
       <section class="home-card">
@@ -77,9 +81,73 @@ export function mountHome(el) {
   });
 
   renderTelegramCard(el.querySelector('#telegram-card-body'));
+  renderUsageCard(el.querySelector('#usage-card-body'), agent.folder);
 
   if (isOwner) {
     renderClassControlsCard(el.querySelector('#class-controls-body'));
+  }
+}
+
+function fmtUsd(n) {
+  if (n < 0.01) return `$${n.toFixed(4)}`;
+  if (n < 1) return `$${n.toFixed(3)}`;
+  return `$${n.toFixed(2)}`;
+}
+
+function fmtTokens(n) {
+  if (n < 1000) return String(n);
+  if (n < 1000000) return `${(n / 1000).toFixed(1)}k`;
+  return `${(n / 1000000).toFixed(2)}M`;
+}
+
+async function renderUsageCard(body, folder) {
+  if (!body || !folder || folder === '?') {
+    if (body) body.innerHTML = `<p class="muted">No agent context — usage unavailable.</p>`;
+    return;
+  }
+  try {
+    const res = await fetch(`/api/usage/${folder}`, { credentials: 'same-origin' });
+    if (!res.ok) {
+      body.innerHTML = `<p class="muted">Couldn't load usage (${res.status}).</p>`;
+      return;
+    }
+    const data = await res.json();
+    const tm = data.thisMonth;
+    const tot = data.total;
+    const monthRows = tm.byModel.length === 0
+      ? `<tr><td colspan="4" class="muted">No usage this month yet.</td></tr>`
+      : tm.byModel
+          .map(
+            (m) => `
+            <tr>
+              <td><code>${escapeHtml(m.model)}</code> <span class="muted">(${escapeHtml(m.provider)})</span></td>
+              <td>${fmtTokens(m.tokensIn)}</td>
+              <td>${fmtTokens(m.tokensOut)}</td>
+              <td>${fmtUsd(m.costUsd)}</td>
+            </tr>`,
+          )
+          .join('');
+    body.innerHTML = `
+      <div class="usage-rollup">
+        <div class="usage-box">
+          <span class="usage-label">This month</span>
+          <span class="usage-cost">${fmtUsd(tm.costUsd)}</span>
+          <span class="muted">${fmtTokens(tm.tokensIn)} in · ${fmtTokens(tm.tokensOut)} out</span>
+        </div>
+        <div class="usage-box">
+          <span class="usage-label">All-time</span>
+          <span class="usage-cost">${fmtUsd(tot.costUsd)}</span>
+          <span class="muted">${fmtTokens(tot.tokensIn)} in · ${fmtTokens(tot.tokensOut)} out</span>
+        </div>
+      </div>
+      <table class="usage-table">
+        <thead><tr><th>Model</th><th>In</th><th>Out</th><th>Cost</th></tr></thead>
+        <tbody>${monthRows}</tbody>
+      </table>
+      <p class="muted small">Cost = tokens × per-model rate from catalog. Cached-token billing not yet tracked.</p>
+    `;
+  } catch (err) {
+    body.innerHTML = `<p class="muted">Couldn't load usage: ${escapeHtml(String(err))}</p>`;
   }
 }
 
