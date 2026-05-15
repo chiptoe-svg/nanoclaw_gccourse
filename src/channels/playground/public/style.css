@@ -814,6 +814,8 @@ select.model-changed {
 .model-card.active { box-shadow: 0 0 0 2px #1a7a1a; }
 .active-badge { margin-left: auto; font-size: 12px; color: #1a7a1a; font-weight: 600; }
 .default-badge { margin-left: 8px; font-size: 11px; color: #6b5b1a; background: #fff8dc; padding: 2px 6px; border-radius: 3px; font-weight: 600; }
+.edit-metadata-btn { margin-left: auto; background: transparent; border: 1px solid transparent; color: #888; font-size: 13px; cursor: pointer; padding: 0 4px; border-radius: 3px; }
+.edit-metadata-btn:hover { background: #f0f0f0; color: #222; border-color: #ccc; }
 .add-metadata-btn {
   margin-top: 8px;
   font-size: 13px;

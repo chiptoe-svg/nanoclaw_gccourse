@@ -127,6 +127,7 @@ function buildCard(m) {
       <strong>${escapeHtml(m.displayName || m.id)}</strong>
       ${activeBadge}
       ${defaultBadge}
+      <button type="button" class="edit-metadata-btn" title="Edit metadata">✏</button>
     </label>
     <div class="chips">${chipsHtml}</div>
     <div class="cost-line">${costLine} · ${latencyLine}</div>
@@ -137,6 +138,11 @@ function buildCard(m) {
 
   card.querySelector('input[type="checkbox"]').addEventListener('change', (e) => {
     toggleModel({ provider: m.provider, id: m.id }, e.target.checked, card);
+  });
+  card.querySelector('.edit-metadata-btn').addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    openAddMetadataModal({ provider: m.provider, id: m.id }, m);
   });
   return card;
 }
@@ -234,48 +240,62 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
-// "Add metadata" modal — pops up when the user clicks ＋ Add metadata on a
-// discovered card. Asks for the fields a curated catalog entry needs
-// (displayName, params, modalities, context, notes, etc.) and posts to
-// PUT /api/catalog/local-entries which appends/replaces in
-// config/model-catalog-local.json. Owner-only on the backend.
-function openAddMetadataModal(discovered) {
+// "Add metadata" / "Edit metadata" modal. Discovered-card flow passes
+// only the bare { provider, id } and the form starts blank (with the id
+// pre-filled into displayName). Curated-card edit flow passes the full
+// ModelEntry as a second arg; the form is pre-populated and modalities/
+// modalities checkboxes reflect existing values. Save path is identical
+// either way — PUT /api/catalog/local-entries handles dedupe by
+// provider:id (replace-not-append).
+function openAddMetadataModal(discovered, existing) {
+  const editing = Boolean(existing);
+  const title = editing ? `Edit metadata for <code>${escapeHtml(discovered.id)}</code>` : `Add metadata for <code>${escapeHtml(discovered.id)}</code>`;
+  const subtitle = editing
+    ? 'Updates the curated entry in <code>config/model-catalog-local.json</code>. Save replaces the existing entry by <code>provider:id</code>.'
+    : 'Promotes this discovered model into a curated catalog entry. Saved to <code>config/model-catalog-local.json</code>. Only fill in what you know — required fields are marked.';
+
+  const defaults = existing || {};
+  const initialDisplayName = defaults.displayName || discovered.id;
+  const initialParam = defaults.paramCount || '';
+  const initialContext = defaults.contextSize || '';
+  const initialQuant = defaults.quantization || '';
+  const initialLatency = defaults.avgLatencySec || '';
+  const initialNotes = defaults.notes || '';
+  const initialBestFor = defaults.bestFor || '';
+  const mods = Array.isArray(defaults.modalities) ? defaults.modalities : ['text'];
+
   const overlay = document.createElement('div');
   overlay.className = 'modal-backdrop';
   overlay.innerHTML = `
     <div class="modal" role="dialog" aria-modal="true">
-      <h3>Add metadata for <code>${escapeHtml(discovered.id)}</code></h3>
-      <p class="muted">
-        Promotes this discovered model into a curated catalog entry.
-        Saved to <code>config/model-catalog-local.json</code>.
-        Only fill in what you know — required fields are marked.
-      </p>
+      <h3>${title}</h3>
+      <p class="muted">${subtitle}</p>
       <button type="button" class="btn auto-fill-btn">✨ Auto-fill from ${escapeHtml(discovered.provider === 'local' ? 'HuggingFace' : 'built-in table')}</button>
       <div class="auto-fill-status muted"></div>
       <form id="add-metadata-form" class="add-metadata-form">
         <label>Display name <span class="required">*</span><br>
-          <input name="displayName" required value="${escapeHtml(discovered.id)}" type="text"></label>
+          <input name="displayName" required value="${escapeHtml(initialDisplayName)}" type="text"></label>
         <label>Parameter count<br>
-          <input name="paramCount" type="text" placeholder="e.g. 27B"></label>
+          <input name="paramCount" type="text" placeholder="e.g. 27B" value="${escapeHtml(initialParam)}"></label>
         <fieldset>
           <legend>Modalities</legend>
-          <label><input type="checkbox" name="modalities" value="text" checked> text</label>
-          <label><input type="checkbox" name="modalities" value="image"> image</label>
-          <label><input type="checkbox" name="modalities" value="audio"> audio</label>
+          <label><input type="checkbox" name="modalities" value="text" ${mods.includes('text') ? 'checked' : ''}> text</label>
+          <label><input type="checkbox" name="modalities" value="image" ${mods.includes('image') ? 'checked' : ''}> image</label>
+          <label><input type="checkbox" name="modalities" value="audio" ${mods.includes('audio') ? 'checked' : ''}> audio</label>
         </fieldset>
         <label>Context size (tokens)<br>
-          <input name="contextSize" type="number" placeholder="e.g. 32768"></label>
+          <input name="contextSize" type="number" placeholder="e.g. 32768" value="${escapeHtml(String(initialContext))}"></label>
         <label>Quantization<br>
-          <input name="quantization" type="text" placeholder="e.g. MLX 4-bit"></label>
+          <input name="quantization" type="text" placeholder="e.g. MLX 4-bit" value="${escapeHtml(initialQuant)}"></label>
         <label>Average latency (seconds)<br>
-          <input name="avgLatencySec" type="number" step="0.1" placeholder="e.g. 6"></label>
+          <input name="avgLatencySec" type="number" step="0.1" placeholder="e.g. 6" value="${escapeHtml(String(initialLatency))}"></label>
         <label>Notes<br>
-          <textarea name="notes" rows="3" placeholder="Short user-facing description."></textarea></label>
+          <textarea name="notes" rows="3" placeholder="Short user-facing description.">${escapeHtml(initialNotes)}</textarea></label>
         <label>Best for<br>
-          <input name="bestFor" type="text" placeholder="When should someone pick this?"></label>
+          <input name="bestFor" type="text" placeholder="When should someone pick this?" value="${escapeHtml(initialBestFor)}"></label>
         <div class="modal-actions">
           <button type="button" class="btn cancel-btn">Cancel</button>
-          <button type="submit" class="btn primary">Save</button>
+          <button type="submit" class="btn primary">${editing ? 'Save changes' : 'Save'}</button>
         </div>
       </form>
     </div>
