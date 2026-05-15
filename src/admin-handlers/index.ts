@@ -6,3 +6,6 @@
  * `registerTelegramCommand()` at module scope. Trunk's `src/channels/telegram.ts`
  * imports this barrel once near startup, so no admin tools = no-op import.
  */
+import './auth.js';
+import './model.js';
+import './provider.js';
