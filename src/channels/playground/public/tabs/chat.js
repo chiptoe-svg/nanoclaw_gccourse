@@ -59,10 +59,26 @@ function loadModelDropdowns(el, folder) {
       provSel.innerHTML = '';
       for (const p of providers) provSel.add(new Option(p, p));
 
+      // Pre-select the currently active provider+model returned by the API,
+      // falling back to the first catalog entries when none is set. Without
+      // this the dropdowns default to whatever happens to be first alphabetically
+      // (`claude` / `claude-haiku-4-5`), misrepresenting agents currently
+      // configured for a different provider — confusing AND a footgun, since
+      // clicking elsewhere then `Apply` would silently rewrite the active model.
+      const active = data.activeModel;
+      if (active && providers.includes(active.provider)) {
+        provSel.value = active.provider;
+      }
+
       const renderModels = () => {
         modelSel.innerHTML = '';
         for (const m of visible.filter((mm) => mm.provider === provSel.value)) {
           modelSel.add(new Option(m.displayName || m.id, m.id));
+        }
+        if (active && active.provider === provSel.value) {
+          // Use Array.from to test for membership without triggering a change event.
+          const ids = Array.from(modelSel.options).map((o) => o.value);
+          if (ids.includes(active.model)) modelSel.value = active.model;
         }
       };
       // Track last-confirmed provider so a cancelled switch can revert the select.
