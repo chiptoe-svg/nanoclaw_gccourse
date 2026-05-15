@@ -32,6 +32,14 @@ export interface ModelEntry {
   chips?: string[];
   /** Suggested-use blurb. */
   bestFor?: string;
+  /**
+   * Marks this entry as the recommended default for its provider. Used by
+   * the playground Models tab to visually distinguish "this is the entry
+   * to pick if you have no preference" from "this is the entry the agent
+   * is currently using." At most one per provider; if multiple are flagged
+   * the UI picks the first.
+   */
+  default?: boolean;
 }
 
 const BUILTIN_ENTRIES: ModelEntry[] = [
@@ -58,6 +66,7 @@ const BUILTIN_ENTRIES: ModelEntry[] = [
     modalities: ['text', 'image'],
     chips: ['🐢 slower', '$$ pricier', '☁ Anthropic'],
     bestFor: 'Reasoning, long outputs.',
+    default: true,
   },
   {
     id: 'gpt-5-mini',
@@ -70,6 +79,7 @@ const BUILTIN_ENTRIES: ModelEntry[] = [
     modalities: ['text', 'image'],
     chips: ['⚡ fast', '$ cheap', '☁ OpenAI'],
     bestFor: 'Quick, broad-knowledge tasks.',
+    default: true,
   },
   {
     id: 'Qwen3.6-35B-A3B-UD-MLX-4bit',
@@ -86,6 +96,7 @@ const BUILTIN_ENTRIES: ModelEntry[] = [
     quantization: 'MLX 4-bit',
     chips: ['🆓 free', '💻 mlx local', '🐢 slower'],
     bestFor: 'Comparing local vs cloud cost/latency tradeoffs.',
+    default: true,
   },
 ];
 

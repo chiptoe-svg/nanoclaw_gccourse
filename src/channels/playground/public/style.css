@@ -803,6 +803,26 @@ select.model-changed {
 .model-section-status.status-offline { color: #8a4b00; background: #fff3e0; }
 .model-card.active { box-shadow: 0 0 0 2px #1a7a1a; }
 .active-badge { margin-left: auto; font-size: 12px; color: #1a7a1a; font-weight: 600; }
+.default-badge { margin-left: 8px; font-size: 11px; color: #6b5b1a; background: #fff8dc; padding: 2px 6px; border-radius: 3px; font-weight: 600; }
+.add-metadata-btn {
+  margin-top: 8px;
+  font-size: 13px;
+  padding: 4px 10px;
+  border: 1px dashed #888;
+  background: transparent;
+  color: #555;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.add-metadata-btn:hover { background: #f0f0f0; color: #222; border-color: #555; }
+.add-metadata-form label { display: block; margin: 6px 0; font-size: 13px; color: #333; }
+.add-metadata-form input[type="text"],
+.add-metadata-form input[type="number"],
+.add-metadata-form textarea { width: 100%; padding: 4px 8px; box-sizing: border-box; font-size: 13px; border: 1px solid #ccc; border-radius: 4px; }
+.add-metadata-form fieldset { border: 1px solid #ddd; border-radius: 4px; padding: 6px 10px; margin: 6px 0; }
+.add-metadata-form fieldset legend { font-size: 12px; color: #666; padding: 0 4px; }
+.add-metadata-form fieldset label { display: inline-block; margin-right: 12px; }
+.add-metadata-form .required { color: #c00; }
 .use-now-btn {
   margin-top: 8px;
   font-size: 13px;

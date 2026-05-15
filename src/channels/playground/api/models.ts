@@ -1,3 +1,7 @@
+import fs from 'fs';
+import path from 'path';
+
+import { MODEL_CATALOG_LOCAL_PATH } from '../../../config.js';
 import { readContainerConfig, writeContainerConfig } from '../../../container-config.js';
 import { readEnvFile } from '../../../env.js';
 import { type ModelEntry, getModelCatalog } from '../../../model-catalog.js';
@@ -144,6 +148,65 @@ export function handlePutActiveModel(
     updated.model = model;
     writeContainerConfig(draftFolder, updated);
     return { status: 200, body: { ok: true, activeModel: { provider, model } } };
+  } catch (err) {
+    return { status: 500, body: { error: (err as Error).message } };
+  }
+}
+
+/**
+ * Append (or replace) a curated catalog entry in config/model-catalog-local.json.
+ * Lets the Models tab promote a discovered-only model into a richer card
+ * without hand-editing JSON. Dedupes on `provider:id` — re-saving the same
+ * model replaces the previous entry rather than duplicating.
+ */
+export function handlePutLocalCatalogEntry(body: { entry?: unknown }): ApiResult<{ ok: true; entry: ModelEntry }> {
+  const entry = body.entry as Partial<ModelEntry> | undefined;
+  if (!entry || typeof entry !== 'object') {
+    return { status: 400, body: { error: 'entry object required' } };
+  }
+  if (typeof entry.id !== 'string' || !entry.id) return { status: 400, body: { error: 'entry.id required' } };
+  if (typeof entry.provider !== 'string' || !entry.provider)
+    return { status: 400, body: { error: 'entry.provider required' } };
+  if (typeof entry.displayName !== 'string' || !entry.displayName)
+    return { status: 400, body: { error: 'entry.displayName required' } };
+
+  // Coerce origin from provider if absent: cloud for claude/codex, local for local.
+  const origin: 'cloud' | 'local' = entry.origin === 'local' || entry.origin === 'cloud'
+    ? entry.origin
+    : entry.provider === 'local'
+      ? 'local'
+      : 'cloud';
+
+  const clean: ModelEntry = {
+    id: entry.id,
+    provider: entry.provider,
+    displayName: entry.displayName,
+    origin,
+    ...(typeof entry.paramCount === 'string' ? { paramCount: entry.paramCount } : {}),
+    ...(Array.isArray(entry.modalities) ? { modalities: entry.modalities as ('text' | 'image' | 'audio')[] } : {}),
+    ...(typeof entry.contextSize === 'number' ? { contextSize: entry.contextSize } : {}),
+    ...(typeof entry.quantization === 'string' ? { quantization: entry.quantization } : {}),
+    ...(typeof entry.avgLatencySec === 'number' ? { avgLatencySec: entry.avgLatencySec } : {}),
+    ...(typeof entry.costPer1kTokensUsd === 'number' ? { costPer1kTokensUsd: entry.costPer1kTokensUsd } : {}),
+    ...(typeof entry.host === 'string' ? { host: entry.host } : {}),
+    ...(typeof entry.notes === 'string' ? { notes: entry.notes } : {}),
+    ...(typeof entry.bestFor === 'string' ? { bestFor: entry.bestFor } : {}),
+    ...(Array.isArray(entry.chips) ? { chips: entry.chips as string[] } : {}),
+  };
+
+  try {
+    let arr: ModelEntry[] = [];
+    if (fs.existsSync(MODEL_CATALOG_LOCAL_PATH)) {
+      const raw = fs.readFileSync(MODEL_CATALOG_LOCAL_PATH, 'utf-8');
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) arr = parsed as ModelEntry[];
+    } else {
+      fs.mkdirSync(path.dirname(MODEL_CATALOG_LOCAL_PATH), { recursive: true });
+    }
+    arr = arr.filter((e) => !(e.provider === clean.provider && e.id === clean.id));
+    arr.push(clean);
+    fs.writeFileSync(MODEL_CATALOG_LOCAL_PATH, JSON.stringify(arr, null, 2) + '\n');
+    return { status: 200, body: { ok: true, entry: clean } };
   } catch (err) {
     return { status: 500, body: { error: (err as Error).message } };
   }

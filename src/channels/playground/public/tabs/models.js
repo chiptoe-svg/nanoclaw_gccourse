@@ -119,32 +119,25 @@ function buildCard(m) {
   const activeBadge = isActive({ provider: m.provider, model: m.id })
     ? `<span class="active-badge">● Active</span>`
     : '';
-  const useNowBtn =
-    isAllowed && !isActive({ provider: m.provider, model: m.id })
-      ? `<button class="use-now-btn" type="button">Use now</button>`
-      : '';
+  const defaultBadge = m.default ? `<span class="default-badge" title="Recommended default for this provider">★ Default</span>` : '';
 
   card.innerHTML = `
     <label class="model-head">
       <input type="checkbox" ${isAllowed ? 'checked' : ''}>
       <strong>${escapeHtml(m.displayName || m.id)}</strong>
       ${activeBadge}
+      ${defaultBadge}
     </label>
     <div class="chips">${chipsHtml}</div>
     <div class="cost-line">${costLine} · ${latencyLine}</div>
     <div class="meta-line">${paramsLine} · ${modalitiesLine}</div>
     ${localExtras}
     ${notes}
-    ${useNowBtn}
   `;
 
   card.querySelector('input[type="checkbox"]').addEventListener('change', (e) => {
     toggleModel({ provider: m.provider, id: m.id }, e.target.checked, card);
   });
-  const btn = card.querySelector('.use-now-btn');
-  if (btn) {
-    btn.addEventListener('click', () => useNow({ provider: m.provider, model: m.id }));
-  }
   return card;
 }
 
@@ -160,10 +153,6 @@ function buildDiscoveredCard(d) {
   const activeBadge = isActive({ provider: d.provider, model: d.id })
     ? `<span class="active-badge">● Active</span>`
     : '';
-  const useNowBtn =
-    isAllowed && !isActive({ provider: d.provider, model: d.id })
-      ? `<button class="use-now-btn" type="button">Use now</button>`
-      : '';
 
   card.innerHTML = `
     <label class="model-head">
@@ -173,16 +162,13 @@ function buildDiscoveredCard(d) {
     </label>
     <div class="chips"><span class="chip">${escapeHtml(providerChip)}</span></div>
     <div class="meta-line muted">No curated metadata — bare model id from the provider's /v1/models.</div>
-    ${useNowBtn}
+    <button class="add-metadata-btn" type="button">＋ Add metadata</button>
   `;
 
   card.querySelector('input[type="checkbox"]').addEventListener('change', (e) => {
     toggleModel({ provider: d.provider, id: d.id }, e.target.checked, card);
   });
-  const btn = card.querySelector('.use-now-btn');
-  if (btn) {
-    btn.addEventListener('click', () => useNow({ provider: d.provider, model: d.id }));
-  }
+  card.querySelector('.add-metadata-btn').addEventListener('click', () => openAddMetadataModal(d));
   return card;
 }
 
@@ -211,7 +197,7 @@ async function toggleModel(model, checked, card) {
     if (JSON.stringify(allowedModelsCache) !== JSON.stringify(originalAllowed)) {
       showDraftBanner('Model whitelist changed.');
     }
-    // Re-render so Use-now buttons appear/disappear based on whitelist state.
+    // Re-render so selection styling stays in sync.
     const el = document.querySelector('.models-layout').parentElement;
     renderSections(el);
   } catch {
@@ -223,26 +209,6 @@ async function toggleModel(model, checked, card) {
       card.classList.remove('selected');
       card.querySelector('input[type="checkbox"]').checked = false;
     }
-  }
-}
-
-async function useNow({ provider, model }) {
-  const folder = window.__pg.agent.folder;
-  try {
-    const r = await fetch(`/api/drafts/${folder}/active-model`, {
-      method: 'PUT',
-      headers: { 'content-type': 'application/json' },
-      credentials: 'same-origin',
-      body: JSON.stringify({ provider, model }),
-    });
-    if (!r.ok) throw new Error(`status ${r.status}`);
-    activeModel = { provider, model };
-    // Re-render so badges + Use-now buttons reposition.
-    const el = document.querySelector('.models-layout').parentElement;
-    renderSections(el);
-    showDraftBanner(`Active model: ${model} (${provider}).`);
-  } catch (err) {
-    console.error('useNow failed', err);
   }
 }
 
@@ -266,4 +232,107 @@ function renderLocalServerStatus(el, online) {
 
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// "Add metadata" modal — pops up when the user clicks ＋ Add metadata on a
+// discovered card. Asks for the fields a curated catalog entry needs
+// (displayName, params, modalities, context, notes, etc.) and posts to
+// PUT /api/catalog/local-entries which appends/replaces in
+// config/model-catalog-local.json. Owner-only on the backend.
+function openAddMetadataModal(discovered) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-backdrop';
+  overlay.innerHTML = `
+    <div class="modal" role="dialog" aria-modal="true">
+      <h3>Add metadata for <code>${escapeHtml(discovered.id)}</code></h3>
+      <p class="muted">
+        Promotes this discovered model into a curated catalog entry.
+        Saved to <code>config/model-catalog-local.json</code>.
+        Only fill in what you know — required fields are marked.
+      </p>
+      <form id="add-metadata-form" class="add-metadata-form">
+        <label>Display name <span class="required">*</span><br>
+          <input name="displayName" required value="${escapeHtml(discovered.id)}" type="text"></label>
+        <label>Parameter count<br>
+          <input name="paramCount" type="text" placeholder="e.g. 27B"></label>
+        <fieldset>
+          <legend>Modalities</legend>
+          <label><input type="checkbox" name="modalities" value="text" checked> text</label>
+          <label><input type="checkbox" name="modalities" value="image"> image</label>
+          <label><input type="checkbox" name="modalities" value="audio"> audio</label>
+        </fieldset>
+        <label>Context size (tokens)<br>
+          <input name="contextSize" type="number" placeholder="e.g. 32768"></label>
+        <label>Quantization<br>
+          <input name="quantization" type="text" placeholder="e.g. MLX 4-bit"></label>
+        <label>Average latency (seconds)<br>
+          <input name="avgLatencySec" type="number" step="0.1" placeholder="e.g. 6"></label>
+        <label>Notes<br>
+          <textarea name="notes" rows="3" placeholder="Short user-facing description."></textarea></label>
+        <label>Best for<br>
+          <input name="bestFor" type="text" placeholder="When should someone pick this?"></label>
+        <div class="modal-actions">
+          <button type="button" class="btn cancel-btn">Cancel</button>
+          <button type="submit" class="btn primary">Save</button>
+        </div>
+      </form>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const close = () => overlay.remove();
+  overlay.querySelector('.cancel-btn').addEventListener('click', close);
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) close();
+  });
+
+  overlay.querySelector('#add-metadata-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = e.target;
+    const fd = new FormData(form);
+    const modalities = fd.getAll('modalities');
+    const entry = {
+      id: discovered.id,
+      provider: discovered.provider,
+      displayName: String(fd.get('displayName') || discovered.id),
+      origin: discovered.provider === 'local' ? 'local' : 'cloud',
+    };
+    const paramCount = String(fd.get('paramCount') || '').trim();
+    if (paramCount) entry.paramCount = paramCount;
+    if (modalities.length > 0) entry.modalities = modalities.map(String);
+    const contextSize = Number(fd.get('contextSize'));
+    if (contextSize > 0) entry.contextSize = contextSize;
+    const quantization = String(fd.get('quantization') || '').trim();
+    if (quantization) entry.quantization = quantization;
+    const avgLatencySec = Number(fd.get('avgLatencySec'));
+    if (avgLatencySec > 0) entry.avgLatencySec = avgLatencySec;
+    const notes = String(fd.get('notes') || '').trim();
+    if (notes) entry.notes = notes;
+    const bestFor = String(fd.get('bestFor') || '').trim();
+    if (bestFor) entry.bestFor = bestFor;
+    // Local-only nicety: stamp host from the omlx convention so the card's
+    // local-extras block populates the same way builtin entries do.
+    if (discovered.provider === 'local') entry.host = 'http://localhost:8000';
+
+    try {
+      const r = await fetch('/api/catalog/local-entries', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ entry }),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        alert(`Save failed: ${err.error || r.status}`);
+        return;
+      }
+      close();
+      // Reload models so the freshly-curated card replaces the discovered one.
+      const el = document.querySelector('.models-layout').parentElement;
+      const folder = window.__pg.agent.folder;
+      loadModels(el, folder);
+    } catch (err) {
+      alert(`Save failed: ${String(err)}`);
+    }
+  });
 }

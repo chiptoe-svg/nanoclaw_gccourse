@@ -38,7 +38,8 @@ import type { PlaygroundSession } from './auth-store.js';
 import { readJsonBody, send } from './http-helpers.js';
 import { getLibraryCacheStat, listLibrary, listSkillFiles, readSkillFile } from './library.js';
 import { handlePersonaLayers } from './api/persona-layers.js';
-import { handleGetModels, handlePutActiveModel, handlePutModels } from './api/models.js';
+import { handleGetModels, handlePutActiveModel, handlePutLocalCatalogEntry, handlePutModels } from './api/models.js';
+import { isOwner } from '../../modules/permissions/db/user-roles.js';
 import { handleGetEntry, handleListLibrary, handleSaveMyEntry } from './api/library.js';
 import { handleGetMyAgent, handleLogout, handleLogoutAll } from './api/me.js';
 import { registerSseClient } from './sse.js';
@@ -369,6 +370,18 @@ export async function route(
     }
     const body = await readJsonBody(req);
     const r = handlePutActiveModel(draftFolder, body);
+    return send(res, r.status, r.body);
+  }
+
+  // PUT /api/catalog/local-entries — append/replace a curated entry in
+  // config/model-catalog-local.json. Owner-only because the file is global
+  // (not draft-scoped) and getModelCatalog() reads it on every API call.
+  if (method === 'PUT' && url.pathname === '/api/catalog/local-entries') {
+    if (!session.userId || !isOwner(session.userId)) {
+      return send(res, 403, { error: 'owner role required to edit the model catalog' });
+    }
+    const body = await readJsonBody(req);
+    const r = handlePutLocalCatalogEntry(body);
     return send(res, r.status, r.body);
   }
 
