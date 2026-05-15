@@ -8,11 +8,11 @@
  * Test coverage:
  *   /start — no session → 302 /login
  *   /start — valid session → 302 to accounts.google.com (state + scopes verifiable)
- *   /callback — error=denied → 302 /?google_auth_error=denied
+ *   /callback — error=denied → 302 /playground/?google_auth_error=denied
  *   /callback — no state → 400
  *   /callback — expired/unknown state → 400
  *   /callback — session userId ≠ state userId → 403
- *   /callback — happy path: credentials written, metadata stamped, 302 /?google_connected=1
+ *   /callback — happy path: credentials written, metadata stamped, 302 /playground/?google_connected=1
  *   /callback — refresh_token absent from response BUT exists on disk → re-used
  *   /callback — refresh_token absent AND no existing on disk → 500
  */
@@ -79,7 +79,7 @@ afterEach(() => {
 // ── processGoogleAuthCallback tests ───────────────────────────────────────
 
 describe('processGoogleAuthCallback', () => {
-  it('redirects to /?google_auth_error=denied when error param present', async () => {
+  it('redirects to /playground/?google_auth_error=denied when error param present', async () => {
     const result = await processGoogleAuthCallback({
       code: null,
       state: 'irrelevant',
@@ -87,7 +87,7 @@ describe('processGoogleAuthCallback', () => {
       sessionUserId: 'class:student_03',
     });
     expect(result.status).toBe(302);
-    expect(result.location).toBe('/?google_auth_error=denied');
+    expect(result.location).toBe('/playground/?google_auth_error=denied');
   });
 
   it('returns 400 when state is missing', async () => {
@@ -160,7 +160,7 @@ describe('processGoogleAuthCallback', () => {
     expect(result.status).toBe(403);
   });
 
-  it('happy path: writes credentials, stamps metadata, redirects to /?google_connected=1', async () => {
+  it('happy path: writes credentials, stamps metadata, redirects to /playground/?google_connected=1', async () => {
     upsertRosterEntry({ email: 'alice@school.edu', user_id: 'class:student_03', agent_group_id: 'ag_alice' });
     // Ensure the agent group exists so setAgentGroupMetadataKey has a row to update.
     const db = (await import('../../../db/connection.js')).getDb();
@@ -186,7 +186,7 @@ describe('processGoogleAuthCallback', () => {
     });
 
     expect(result.status).toBe(302);
-    expect(result.location).toBe('/?google_connected=1');
+    expect(result.location).toBe('/playground/?google_connected=1');
 
     // Credentials file written.
     const cred = JSON.parse(
@@ -232,13 +232,13 @@ describe('processGoogleAuthCallback', () => {
     });
 
     expect(result.status).toBe(302);
-    expect(result.location).toBe('/?google_connected=1');
+    expect(result.location).toBe('/playground/?google_connected=1');
 
     const cred = JSON.parse(
       fs.readFileSync(studentGwsCredentialsPath('class:student_07'), 'utf-8'),
     ) as GwsCredentialsJson;
     expect(cred.refresh_token).toBe('existing-refresh-token'); // preserved
-    expect(cred.access_token).toBe('new-access-token');       // updated
+    expect(cred.access_token).toBe('new-access-token'); // updated
   });
 
   it('returns 500 with helpful message when refresh_token absent from response AND no existing on disk', async () => {

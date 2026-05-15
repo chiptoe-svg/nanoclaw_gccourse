@@ -9,7 +9,7 @@
  *   GET /google-auth/callback — verify state + session cookie match, exchange
  *                               the authorization code, write per-student
  *                               credentials, stamp agent_group metadata, then
- *                               redirect to /?google_connected=1.
+ *                               redirect to /playground/?google_connected=1.
  *
  * Structural differences from the PIN-flow (google-oauth.ts):
  *  - /start requires a session cookie — this flow assumes the student is
@@ -76,9 +76,7 @@ function detectPublicBase(): string {
   const override = process.env.PLAYGROUND_PUBLIC_URL || process.env.NANOCLAW_PUBLIC_URL;
   if (override) return override.replace(/\/$/, '');
   const host =
-    PLAYGROUND_BIND_HOST === '0.0.0.0'
-      ? process.env.PLAYGROUND_PUBLIC_HOST || 'localhost'
-      : PLAYGROUND_BIND_HOST;
+    PLAYGROUND_BIND_HOST === '0.0.0.0' ? process.env.PLAYGROUND_PUBLIC_HOST || 'localhost' : PLAYGROUND_BIND_HOST;
   return `http://${host}:${PLAYGROUND_PORT}`;
 }
 
@@ -106,10 +104,7 @@ interface HandlerResult {
  * PIN flow or previous Google OAuth). Redirects unauthenticated requests
  * to /login.
  */
-export async function handleGoogleAuthStart(
-  req: http.IncomingMessage,
-  res: http.ServerResponse,
-): Promise<boolean> {
+export async function handleGoogleAuthStart(req: http.IncomingMessage, res: http.ServerResponse): Promise<boolean> {
   const url = new URL(req.url || '/', 'http://localhost');
   if (url.pathname !== '/google-auth/start') return false;
 
@@ -167,7 +162,7 @@ export async function processGoogleAuthCallback(opts: {
       status: 302,
       contentType: 'text/plain',
       body: '',
-      location: '/?google_auth_error=denied',
+      location: '/playground/?google_auth_error=denied',
     };
   }
 
@@ -310,16 +305,13 @@ export async function processGoogleAuthCallback(opts: {
     status: 302,
     contentType: 'text/plain',
     body: '',
-    location: '/?google_connected=1',
+    location: '/playground/?google_connected=1',
   };
 }
 
 // ── /google-auth/callback HTTP wrapper ────────────────────────────────────
 
-export async function handleGoogleAuthCallback(
-  req: http.IncomingMessage,
-  res: http.ServerResponse,
-): Promise<boolean> {
+export async function handleGoogleAuthCallback(req: http.IncomingMessage, res: http.ServerResponse): Promise<boolean> {
   const url = new URL(req.url || '/', 'http://localhost');
   if (url.pathname !== '/google-auth/callback') return false;
 
