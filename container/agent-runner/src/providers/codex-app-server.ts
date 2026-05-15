@@ -354,7 +354,10 @@ export async function startCodexTurn(server: AppServer, params: TurnParams): Pro
   // codex's interactive CLI uses with --image.
   const input: Array<Record<string, unknown>> = [];
   for (const path of params.localImagePaths ?? []) {
-    input.push({ type: 'local_image', path });
+    // Wire format is camelCase even though the Rust enum has #[serde(rename_all = "snake_case")]
+    // — the deployed codex 0.124.0 protocol uses `localImage` per the error
+    // message it returns for unknown variants.
+    input.push({ type: 'localImage', path });
   }
   input.push({ type: 'text', text: params.inputText });
 
