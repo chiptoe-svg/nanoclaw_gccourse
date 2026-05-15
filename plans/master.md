@@ -51,8 +51,31 @@ this file is the sequencing layer.
 | [classroom-web-multiuser.md](classroom-web-multiuser.md) | The 9-phase classroom web rebuild; phases referenced individually below |
 | [ai-coding-cli-pick.md](ai-coding-cli-pick.md) | AI-coding-CLI picker (A–G all shipped — design record) |
 | [upstream-pr-prep.md](upstream-pr-prep.md) | Per-subsystem PR-readiness tracker for upstream `qwibitai/nanoclaw` |
+| Phase 2 index — design / plan | [`docs/superpowers/specs/2026-05-15-classroom-per-person-mode-design.md`](../docs/superpowers/specs/2026-05-15-classroom-per-person-mode-design.md) + [`docs/superpowers/plans/2026-05-15-classroom-per-person-mode.md`](../docs/superpowers/plans/2026-05-15-classroom-per-person-mode.md) — scope + sequencing layer that ties the per-feature sub-plans above into the Phase 2 phased delivery |
 
 Archived: `agent-playground-v2.md` (SHIPPED — kept as design record).
+
+## Phase 1.5 — post-class polish (shipped 2026-05-15)
+
+Slices discovered and shipped DURING the live class day. None
+pre-planned in Phase 1; recorded here because Phase 2 #8/9 (RAG
+evaluation framework) depends on the per-call trace breakdown
+landed here.
+
+| Slice | Commit |
+|---|---|
+| Per-call `model_call` ProviderEvent — codex multi-tool turns produce N discrete trace entries instead of one summary; client-side renderer in chat.js | `3a10c16` |
+| Auto-refresh codex catalog from `developers.openai.com/codex/models` — 24h cache, drop-on-disappear, falls back to BUILTIN_ENTRIES on failure | `9a1769c` |
+| Claude support in `/api/direct-chat` (Anthropic Messages wire format, system-field extraction, max_tokens default) | `9400e2a` |
+| Provider/model sync on `/provider` switch (resets model to new provider's `default:true` entry); chat-tab model dropdown now PUTs `active-model` + respawn modal; `setModel` kills running containers so changes take effect on next message | `08ae3d1` |
+| Persona refresh: `STUDENT_PERSONA` gains a "Quirk" section asking for a dad joke per reply (discoverability hook), applied to all 12 students via `scripts/refresh-student-personas.ts` | `08ae3d1` |
+| Raccoon-unicycle rebrand: "NanoClaw Playground" → "Agent Playground", new `/agent-playground-icon.png` route | `6d0ecac` |
+| `.gitignore` for `class-roster.csv` + `config/class-controls.json`, removal of `scripts/wire-test-student.ts` | `37dbdad` |
+| Codex provider rewrite: emit `tool_use` / `tool_result` ProviderEvents from `item/started` / `item/completed` (matching Claude provider's trace richness); rename `token_count` → `thread/tokenUsage/updated` (codex v0.124+); rename custom TOML provider `openai` → `openai-custom` (codex now reserves built-in IDs) | `08ae3d1` |
+| InstructorBot's `allowedModels` synced to current BUILTIN_ENTRIES codex list (gpt-5.5 / 5.4 / 5.4-mini / 5.3-codex / 5.2; dropped stale gpt-5-mini / gpt-5.5-pro) | local-only (groups/ is gitignored) |
+
+**Verification:** email-PIN sign-in flow confirmed working
+end-to-end during class with the 10 real Clemson students.
 
 ## Phase 1 — shared-classroom MVP
 
@@ -193,6 +216,15 @@ until OAuth + Mac Studio LAN IP unblock.)
 **Goal.** Layer per-person Google Workspace OAuth (per-person mode) and
 per-person provider OAuth on top of Phase 1, add agent export,
 RAG-driven labs with evaluation framework, and walkaway cloud deploy.
+
+**Design + sequencing.** Detailed scope, architecture summary, and
+sub-plan cross-links live in the Phase 2 index docs:
+[`docs/superpowers/specs/2026-05-15-classroom-per-person-mode-design.md`](../docs/superpowers/specs/2026-05-15-classroom-per-person-mode-design.md)
+(scope + success criteria + open questions) and
+[`docs/superpowers/plans/2026-05-15-classroom-per-person-mode.md`](../docs/superpowers/plans/2026-05-15-classroom-per-person-mode.md)
+(checkbox build order with sub-plan links per slice). The build-order
+list below remains the canonical sequencing layer for cross-Phase
+dependency tracking.
 
 ### Build order
 

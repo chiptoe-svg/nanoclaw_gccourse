@@ -91,8 +91,7 @@ export async function refreshCodexCatalog(force = false): Promise<void> {
         headers: {
           // OpenAI's CDN returns 403 to obvious bot User-Agents (curl/*, node-fetch
           // default). A browser-ish UA passes without further negotiation.
-          'User-Agent':
-            'Mozilla/5.0 (NanoClaw codex-catalog-refresh) AppleWebKit/537.36 (KHTML, like Gecko)',
+          'User-Agent': 'Mozilla/5.0 (NanoClaw codex-catalog-refresh) AppleWebKit/537.36 (KHTML, like Gecko)',
           accept: 'text/html',
         },
       });
