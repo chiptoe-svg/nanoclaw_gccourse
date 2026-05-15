@@ -108,6 +108,142 @@ function recordDirectChatUsage(
   }
 }
 
+/**
+ * Wire-format dispatch — OpenAI Chat Completions path. Used for both
+ * the `codex` provider (cloud OpenAI via /openai/v1) and the `local`
+ * provider (mlx-omni-server via /omlx/v1). Throws with a `status` field
+ * on upstream failure so the caller can pass it through.
+ */
+async function dispatchOpenAI(
+  provider: 'codex' | 'local',
+  model: string,
+  messages: DirectChatMessage[],
+  reasoningEffort: 'low' | 'medium' | 'high' | undefined,
+): Promise<{ text: string; tokensIn: number; tokensOut: number; tokensCached: number; tokensReasoning: number }> {
+  const proxyPrefix = provider === 'codex' ? '/openai/v1' : '/omlx/v1';
+  const url = `http://127.0.0.1:${CREDENTIAL_PROXY_PORT}${proxyPrefix}/chat/completions`;
+  const requestBody: Record<string, unknown> = { model, messages };
+  if (reasoningEffort) requestBody.reasoning_effort = reasoningEffort;
+  const upstream = await fetchOrThrow(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: 'Bearer placeholder' },
+    body: JSON.stringify(requestBody),
+  });
+  const data = (await upstream.json()) as {
+    choices?: { message?: { content?: string } }[];
+    usage?: {
+      prompt_tokens?: number;
+      completion_tokens?: number;
+      prompt_tokens_details?: { cached_tokens?: number };
+      completion_tokens_details?: { reasoning_tokens?: number };
+    };
+  };
+  return {
+    text: data.choices?.[0]?.message?.content ?? '',
+    tokensIn: data.usage?.prompt_tokens ?? 0,
+    tokensOut: data.usage?.completion_tokens ?? 0,
+    tokensCached: data.usage?.prompt_tokens_details?.cached_tokens ?? 0,
+    // OpenAI bills reasoning tokens as part of completion_tokens; we surface
+    // them separately so the UI can show "of these out tokens, N were
+    // reasoning." Models without reasoning return 0 (or omit the field).
+    tokensReasoning: data.usage?.completion_tokens_details?.reasoning_tokens ?? 0,
+  };
+}
+
+/**
+ * Wire-format dispatch — Anthropic Messages path. Used for the `claude`
+ * provider. The credential proxy's default route (no /openai or /omlx
+ * prefix) forwards to api.anthropic.com and injects the x-api-key
+ * header, so we just POST /v1/messages.
+ *
+ * Translation differences from OpenAI Chat Completions:
+ *   - `system` is a top-level field, NOT a role in messages[]. We pull
+ *     system messages out and concatenate into the `system` string.
+ *   - `max_tokens` is required (no default). We pass 4096 — high enough
+ *     for most direct-chat replies, low enough to fit under most
+ *     models' context windows even with long inputs.
+ *   - Response text comes from content[].text (filtered to type='text';
+ *     thinking blocks come back as type='thinking' but are off by default).
+ *   - Usage fields are `input_tokens` / `output_tokens` /
+ *     `cache_read_input_tokens` (the cached-input rate applies to reads;
+ *     `cache_creation_input_tokens` bills at the higher write-rate but
+ *     we surface them as plain input for simplicity — the catalog's
+ *     `costPer1kCachedInUsd` only models reads).
+ */
+async function dispatchAnthropic(
+  model: string,
+  messages: DirectChatMessage[],
+): Promise<{ text: string; tokensIn: number; tokensOut: number; tokensCached: number; tokensReasoning: number }> {
+  const systemParts: string[] = [];
+  const userAndAssistant: { role: 'user' | 'assistant'; content: string }[] = [];
+  for (const m of messages) {
+    if (m.role === 'system') systemParts.push(m.content);
+    else userAndAssistant.push({ role: m.role, content: m.content });
+  }
+  const requestBody: Record<string, unknown> = {
+    model,
+    max_tokens: 4096,
+    messages: userAndAssistant,
+  };
+  if (systemParts.length > 0) requestBody.system = systemParts.join('\n\n');
+
+  const url = `http://127.0.0.1:${CREDENTIAL_PROXY_PORT}/v1/messages`;
+  const upstream = await fetchOrThrow(url, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      // The proxy strips/replaces x-api-key with the real one — but
+      // requires the header to exist so it knows to substitute.
+      'x-api-key': 'placeholder',
+      // Anthropic API version pin — Claude API rejects requests without it.
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify(requestBody),
+  });
+  const data = (await upstream.json()) as {
+    content?: { type: string; text?: string }[];
+    usage?: {
+      input_tokens?: number;
+      output_tokens?: number;
+      cache_read_input_tokens?: number;
+    };
+  };
+  const text = (data.content ?? [])
+    .filter((b) => b.type === 'text')
+    .map((b) => b.text ?? '')
+    .join('');
+  return {
+    text,
+    tokensIn: data.usage?.input_tokens ?? 0,
+    tokensOut: data.usage?.output_tokens ?? 0,
+    tokensCached: data.usage?.cache_read_input_tokens ?? 0,
+    // Claude's API doesn't expose reasoning-token counts in the messages
+    // response (extended-thinking output counts as output_tokens, not
+    // separately). Surface 0; UI omits the "reasoning" breakdown when 0.
+    tokensReasoning: 0,
+  };
+}
+
+/**
+ * fetch() wrapper that throws a structured error (carrying `status` so
+ * the caller can pass it through to the API response) on upstream
+ * failure. Keeps the per-provider dispatchers free of error-translation
+ * boilerplate.
+ */
+async function fetchOrThrow(url: string, init: RequestInit): Promise<Response> {
+  let resp: Response;
+  try {
+    resp = await fetch(url, init);
+  } catch (err) {
+    throw { status: 502, message: `proxy unreachable: ${(err as Error).message}` };
+  }
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => '');
+    throw { status: resp.status, message: `upstream ${resp.status}: ${errText.slice(0, 400)}` };
+  }
+  return resp;
+}
+
 export async function handleDirectChat(body: {
   provider?: unknown;
   model?: unknown;
@@ -126,46 +262,26 @@ export async function handleDirectChat(body: {
   if (!provider || !model) return { status: 400, body: { error: 'provider and model required' } };
   if (messages.length === 0) return { status: 400, body: { error: 'messages array required' } };
 
-  // OpenAI-compatible Chat Completions for codex (cloud) and local
-  // (mlx-omni-server). Claude branch can be added by translating to
-  // Anthropic /v1/messages format — skipped today (OpenAI-only class).
-  const proxyPrefix = provider === 'codex' ? '/openai/v1' : provider === 'local' ? '/omlx/v1' : null;
-  if (!proxyPrefix) return { status: 400, body: { error: `direct-chat doesn't support provider ${provider} yet` } };
-
-  const url = `http://127.0.0.1:${CREDENTIAL_PROXY_PORT}${proxyPrefix}/chat/completions`;
-  const requestBody: Record<string, unknown> = { model, messages };
-  if (reasoningEffort) requestBody.reasoning_effort = reasoningEffort;
-  let upstream: Response;
+  // Three providers, two wire formats:
+  //   codex / local → OpenAI Chat Completions (/openai/v1, /omlx/v1)
+  //   claude        → Anthropic Messages       (/v1/messages, proxy default)
+  // The two formats differ in request structure (system as top-level vs.
+  // first message), token usage field names, and reasoning visibility,
+  // so each gets its own dispatch + parse pair below.
+  let dispatch: { text: string; tokensIn: number; tokensOut: number; tokensCached: number; tokensReasoning: number };
   try {
-    upstream = await fetch(url, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: 'Bearer placeholder' },
-      body: JSON.stringify(requestBody),
-    });
+    if (provider === 'codex' || provider === 'local') {
+      dispatch = await dispatchOpenAI(provider, model, messages, reasoningEffort);
+    } else if (provider === 'claude') {
+      dispatch = await dispatchAnthropic(model, messages);
+    } else {
+      return { status: 400, body: { error: `direct-chat doesn't support provider ${provider} yet` } };
+    }
   } catch (err) {
-    return { status: 502, body: { error: `proxy unreachable: ${(err as Error).message}` } };
+    const e = err as { status?: number; message: string };
+    return { status: e.status ?? 502, body: { error: e.message } };
   }
-  if (!upstream.ok) {
-    const errText = await upstream.text().catch(() => '');
-    return { status: upstream.status, body: { error: `upstream ${upstream.status}: ${errText.slice(0, 400)}` } };
-  }
-  const data = (await upstream.json()) as {
-    choices?: { message?: { content?: string } }[];
-    usage?: {
-      prompt_tokens?: number;
-      completion_tokens?: number;
-      prompt_tokens_details?: { cached_tokens?: number };
-      completion_tokens_details?: { reasoning_tokens?: number };
-    };
-  };
-  const text = data.choices?.[0]?.message?.content ?? '';
-  const tokensIn = data.usage?.prompt_tokens ?? 0;
-  const tokensOut = data.usage?.completion_tokens ?? 0;
-  const tokensCached = data.usage?.prompt_tokens_details?.cached_tokens ?? 0;
-  // OpenAI bills reasoning tokens as part of completion_tokens; we surface
-  // them separately so the UI can show "of these out tokens, N were
-  // reasoning." Models without reasoning return 0 (or omit the field).
-  const tokensReasoning = data.usage?.completion_tokens_details?.reasoning_tokens ?? 0;
+  const { text, tokensIn, tokensOut, tokensCached, tokensReasoning } = dispatch;
 
   const catalog = getModelCatalog();
   const entry = catalog.find((e) => e.provider === provider && e.id === model);
