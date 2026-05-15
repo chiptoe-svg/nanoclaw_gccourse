@@ -300,6 +300,8 @@ function wireChatForm(el, folder) {
       directHistory.push({ role: 'user', content: text });
       const provSel = el.querySelector('#provider-sel');
       const modelSel = el.querySelector('#model-sel');
+      const trace = el.querySelector('#trace-log');
+      const traceLi = appendDirectTraceCall(trace, provSel.value, modelSel.value, directHistory.length);
       try {
         const r = await fetch('/api/direct-chat', {
           method: 'POST',
@@ -315,13 +317,16 @@ function wireChatForm(el, folder) {
         if (!r.ok) {
           const err = await r.json().catch(() => ({}));
           appendSystemNote(log, `Direct chat failed: ${err.error || r.status}`);
+          finalizeDirectTraceCall(traceLi, { error: err.error || `HTTP ${r.status}` });
           return;
         }
         const data = await r.json();
         directHistory.push({ role: 'assistant', content: data.text });
         appendDirectReply(log, data);
+        finalizeDirectTraceCall(traceLi, data);
       } catch (err) {
         appendSystemNote(log, `Direct chat failed: ${String(err)}`);
+        finalizeDirectTraceCall(traceLi, { error: String(err) });
       }
       return;
     }
@@ -519,4 +524,42 @@ function appendChatNote(log, text) {
 
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+/**
+ * Direct-chat trace events. In agent mode the trace is populated by the
+ * SSE stream (tool_use, system events, etc.); in direct mode there's
+ * only one event per turn — the API call itself.
+ */
+function appendDirectTraceCall(trace, provider, model, turnNumber) {
+  if (!trace) return null;
+  const placeholder = trace.querySelector('.trace-empty');
+  if (placeholder) placeholder.remove();
+  const li = document.createElement('li');
+  li.className = 'trace-event trace-direct-call';
+  li.innerHTML = `
+    <div class="trace-event-head">
+      <span class="trace-event-kind">direct call</span>
+      <code>${escapeHtml(provider)}/${escapeHtml(model)}</code>
+    </div>
+    <div class="trace-event-body trace-pending">turn ${turnNumber} · pending…</div>
+  `;
+  trace.appendChild(li);
+  trace.scrollTop = trace.scrollHeight;
+  return li;
+}
+
+function finalizeDirectTraceCall(li, data) {
+  if (!li) return;
+  const body = li.querySelector('.trace-event-body');
+  if (!body) return;
+  body.classList.remove('trace-pending');
+  if (data.error) {
+    body.classList.add('trace-error');
+    body.textContent = `error: ${data.error}`;
+    return;
+  }
+  const cost = data.costUsd < 0.001 ? `$${data.costUsd.toFixed(5)}` : `$${data.costUsd.toFixed(4)}`;
+  const cachedNote = data.tokensCached > 0 ? `, ${data.tokensCached} cached` : '';
+  body.textContent = `${data.tokensIn} in${cachedNote} · ${data.tokensOut} out · ${cost}`;
 }

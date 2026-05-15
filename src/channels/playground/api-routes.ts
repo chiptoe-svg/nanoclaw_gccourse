@@ -521,7 +521,9 @@ export async function route(
   // to anyone authenticated (the agent's own home wants this too).
   const usageMatch = url.pathname.match(/^\/api\/usage\/([A-Za-z0-9_-]+)$/);
   if (method === 'GET' && usageMatch) {
-    const r = handleGetUsage(usageMatch[1]!);
+    const providersParam = url.searchParams.get('providers');
+    const providers = providersParam ? providersParam.split(',').filter(Boolean) : undefined;
+    const r = handleGetUsage(usageMatch[1]!, providers);
     return send(res, r.status, r.body);
   }
   // GET /api/usage/_/students — instructor roster. Owner-only since it
@@ -530,7 +532,9 @@ export async function route(
     if (!session.userId || !isOwner(session.userId)) {
       return send(res, 403, { error: 'owner role required' });
     }
-    const r = handleGetStudentsUsage();
+    const providersParam = url.searchParams.get('providers');
+    const providers = providersParam ? providersParam.split(',').filter(Boolean) : undefined;
+    const r = handleGetStudentsUsage(providers);
     return send(res, r.status, r.body);
   }
 

@@ -380,6 +380,13 @@ html, body {
 .mode-btn:hover:not(.active) { background: #f0f0f0; }
 .bubble-direct { border-left: 3px solid #4a90e2; }
 .bubble-meta { font-size: 11px; color: #777; margin-top: 4px; font-family: ui-monospace, monospace; }
+.trace-event { padding: 6px 8px; margin-bottom: 4px; border-left: 3px solid #ccc; background: #f8f8f8; border-radius: 2px; font-size: 11px; }
+.trace-direct-call { border-left-color: #4a90e2; background: #f4f8fd; }
+.trace-event-head { display: flex; align-items: center; gap: 8px; font-weight: 600; color: #333; }
+.trace-event-kind { text-transform: uppercase; font-size: 10px; letter-spacing: 0.4px; color: #4a90e2; }
+.trace-event-body { color: #555; margin-top: 2px; font-family: ui-monospace, monospace; }
+.trace-pending { color: #999; font-style: italic; }
+.trace-error { color: #c00; }
 
 .trace-panel {
   flex: 1;

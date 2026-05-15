@@ -58,7 +58,10 @@ function sessionIdsForAgent(agentGroupId: string): string[] {
   const dir = path.join(sessionsBaseDir(), agentGroupId);
   if (!fs.existsSync(dir)) return [];
   try {
-    return fs.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name);
+    return fs
+      .readdirSync(dir, { withFileTypes: true })
+      .filter((e) => e.isDirectory())
+      .map((e) => e.name);
   } catch {
     return [];
   }
@@ -86,7 +89,13 @@ export function aggregateAgentUsage(agentGroupId: string): { thisMonth: UsageBuc
            FROM messages_out
            WHERE tokens_in IS NOT NULL OR tokens_out IS NOT NULL`,
         )
-        .all() as { timestamp: string; tokens_in: number | null; tokens_out: number | null; provider: string | null; model: string | null }[];
+        .all() as {
+        timestamp: string;
+        tokens_in: number | null;
+        tokens_out: number | null;
+        provider: string | null;
+        model: string | null;
+      }[];
       for (const row of rows) {
         const key = `${row.provider ?? '?'}:${row.model ?? '?'}`;
         const ti = row.tokens_in ?? 0;
@@ -131,10 +140,19 @@ export function aggregateAgentUsage(agentGroupId: string): { thisMonth: UsageBuc
   return { thisMonth: build(thisMonth), total: build(total) };
 }
 
-export function handleGetUsage(folder: string): ApiResult<UsageResponse> {
+export function handleGetUsage(folder: string, providers?: string[]): ApiResult<UsageResponse> {
   const group = getAgentGroupByFolder(folder);
   if (!group) return { status: 404, body: { error: `no agent group for folder ${folder}` } };
   const { thisMonth, total } = aggregateAgentUsage(group.id);
+  if (providers && providers.length > 0) {
+    const allow = new Set(providers);
+    for (const bucket of [thisMonth, total]) {
+      bucket.byModel = bucket.byModel.filter((m) => m.provider !== null && allow.has(m.provider));
+      bucket.tokensIn = bucket.byModel.reduce((s, m) => s + m.tokensIn, 0);
+      bucket.tokensOut = bucket.byModel.reduce((s, m) => s + m.tokensOut, 0);
+      bucket.costUsd = bucket.byModel.reduce((s, m) => s + m.costUsd, 0);
+    }
+  }
   return {
     status: 200,
     body: {
@@ -150,7 +168,7 @@ export function handleGetUsage(folder: string): ApiResult<UsageResponse> {
  * folder starts with `student_`. Reuses aggregateAgentUsage per agent so
  * the cost-computation rules stay in one place.
  */
-export function handleGetStudentsUsage(): ApiResult<{ students: (UsageResponse & { agentGroupId: string })[] }> {
+export function handleGetStudentsUsage(providers?: string[]): ApiResult<{ students: (UsageResponse & { agentGroupId: string })[] }> {
   // Walk sessions root → agent_group_ids that have data. Cross-check the
   // sessions table for active groups + the agent_groups table for naming.
   const baseDir = sessionsBaseDir();
@@ -164,6 +182,19 @@ export function handleGetStudentsUsage(): ApiResult<{ students: (UsageResponse &
   // include rows even when no on-disk session dir survived past TTL.
   for (const s of getActiveSessions()) {
     if (!agentGroupIds.includes(s.agent_group_id)) agentGroupIds.push(s.agent_group_id);
+  }
+
+  const allow = providers && providers.length > 0 ? new Set(providers) : null;
+  function filterBucket(b: UsageBucket): UsageBucket {
+    if (!allow) return b;
+    const byModel = b.byModel.filter((m) => m.provider !== null && allow.has(m.provider));
+    return {
+      byModel,
+      tokensIn: byModel.reduce((s, m) => s + m.tokensIn, 0),
+      tokensOut: byModel.reduce((s, m) => s + m.tokensOut, 0),
+      tokensCached: 0,
+      costUsd: byModel.reduce((s, m) => s + m.costUsd, 0),
+    };
   }
 
   const students: (UsageResponse & { agentGroupId: string })[] = [];
@@ -181,12 +212,12 @@ export function handleGetStudentsUsage(): ApiResult<{ students: (UsageResponse &
     const { getAgentGroup } = require('../../../db/agent-groups.js') as typeof import('../../../db/agent-groups.js');
     const group = getAgentGroup(id);
     if (!group || !group.folder.startsWith('student_')) continue;
-    const { thisMonth, total } = aggregateAgentUsage(id);
+    const usage = aggregateAgentUsage(id);
     students.push({
       agentGroupId: id,
       agentGroup: { id, folder: group.folder, name: group.name },
-      thisMonth,
-      total,
+      thisMonth: filterBucket(usage.thisMonth),
+      total: filterBucket(usage.total),
     });
   }
   students.sort((a, b) => a.agentGroup.folder.localeCompare(b.agentGroup.folder));

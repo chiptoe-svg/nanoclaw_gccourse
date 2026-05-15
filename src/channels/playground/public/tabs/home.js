@@ -102,7 +102,7 @@ export function mountHome(el) {
 async function renderStudentsRosterCard(body) {
   if (!body) return;
   try {
-    const res = await fetch('/api/usage/_/students', { credentials: 'same-origin' });
+    const res = await fetch('/api/usage/_/students?providers=codex', { credentials: 'same-origin' });
     if (!res.ok) {
       body.innerHTML = `<p class="muted">Couldn't load roster (${res.status}).</p>`;
       return;
@@ -154,7 +154,11 @@ async function renderUsageCard(body, folder) {
     return;
   }
   try {
-    const res = await fetch(`/api/usage/${folder}`, { credentials: 'same-origin' });
+    // Class scope: only OpenAI/codex usage counts for billing this term.
+    // Strip claude + local rows so the rollup matches what shows up on
+    // platform.openai.com → usage. Change ?providers= here when you
+    // start charging multiple backends.
+    const res = await fetch(`/api/usage/${folder}?providers=codex`, { credentials: 'same-origin' });
     if (!res.ok) {
       body.innerHTML = `<p class="muted">Couldn't load usage (${res.status}).</p>`;
       return;
