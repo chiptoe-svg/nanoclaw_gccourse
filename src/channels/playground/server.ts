@@ -295,6 +295,9 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
   if (method === 'GET' && url.pathname === '/nanoclaw-icon.png') {
     return serveStatic(res, 'nanoclaw-icon.png', 'image/png');
   }
+  if (method === 'GET' && url.pathname === '/agent-playground-icon.png') {
+    return serveStatic(res, 'agent-playground-icon.png', 'image/png');
+  }
   if (method === 'POST' && url.pathname === '/login/recover') {
     void handleLostLinkRecover(req, res).catch((err) => {
       log.error('Lost-link recover error', { err });

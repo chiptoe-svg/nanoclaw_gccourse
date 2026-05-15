@@ -57,7 +57,7 @@ export function mountPersona(el) {
   wireDraftDetection(el);
   wireFilter(el);
   prefetchLayerExistence(el, folder); // dim Global if absent
-  document.title = `Persona — ${agentName} · NanoClaw Playground`;
+  document.title = `Persona — ${agentName} · Agent Playground`;
 }
 
 function loadLibrary(el) {
