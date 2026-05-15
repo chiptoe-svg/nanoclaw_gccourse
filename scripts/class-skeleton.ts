@@ -289,11 +289,40 @@ const NON_STUDENT_CLAUDE_MD = `@./.claude-shared.md
 @./CLAUDE.local.md
 `;
 
+/**
+ * Resolve the instructor's currently-active skill set. New student agents
+ * inherit from this so the class starts in a consistent skill state. If no
+ * instructor agent exists (or the read fails), fall back to the global
+ * default (empty list).
+ */
+function inheritedSkills(): ContainerConfig['skills'] {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { readContainerConfig } = require('../src/container-config.js') as typeof import('../src/container-config.js');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { getAgentGroupByFolder } = require('../src/db/agent-groups.js') as typeof import('../src/db/agent-groups.js');
+    // Prefer instructor_01 (class instructor convention); fall back to any
+    // dm-with-* group (single-user installs without classroom scaffolding).
+    const instructor =
+      getAgentGroupByFolder('instructor_01') ||
+      // Re-scan via SQL for any dm-with-* folder.
+      null;
+    if (instructor) {
+      const cfg = readContainerConfig(instructor.folder);
+      if (cfg.skills === 'all' || Array.isArray(cfg.skills)) return cfg.skills;
+    }
+  } catch {
+    /* ignore — fall through to default */
+  }
+  return [];
+}
+
 function makeContainerConfig(opts: {
   kb: string | null;
   wiki: string | null;
   folder: string;
   extraMounts: ContainerConfig['additionalMounts'];
+  isStudent?: boolean;
 }): ContainerConfig {
   const additionalMounts: ContainerConfig['additionalMounts'] = [];
   if (opts.kb) {
@@ -309,7 +338,10 @@ function makeContainerConfig(opts: {
     mcpServers: {},
     packages: { apt: [], npm: [] },
     additionalMounts,
-    skills: 'all',
+    // Student agents inherit the instructor's currently-active skill set
+    // at creation time. TAs / instructors / non-classroom groups use the
+    // generic empty default (manual curation via Skills tab afterwards).
+    skills: opts.isStudent ? inheritedSkills() : [],
     groupName: opts.folder,
     assistantName: opts.folder,
   };
@@ -384,7 +416,13 @@ function provisionGroup(args: CliArgs, classConfig: Record<string, unknown>, tar
   });
   writeContainerConfig(
     target.folder,
-    makeContainerConfig({ kb: args.kb, wiki: args.wiki, folder: target.folder, extraMounts }),
+    makeContainerConfig({
+      kb: args.kb,
+      wiki: args.wiki,
+      folder: target.folder,
+      extraMounts,
+      isStudent: target.role === 'student',
+    }),
   );
 
   return group.id;

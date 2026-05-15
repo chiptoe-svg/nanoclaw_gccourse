@@ -360,6 +360,9 @@ async function* runOneTurn(
   const turnState: { error: Error | null } = { error: null };
   let resultText = '';
   let turnDone = false;
+  let tokensIn = 0;
+  let tokensOut = 0;
+  let tokensCached = 0;
 
   // Buffered event queue so we can `yield` across the async notification
   // callback. Each notification pushes zero or more ProviderEvents; the
@@ -402,6 +405,28 @@ async function* runOneTurn(
       case 'turn/completed':
         turnDone = true;
         break;
+      case 'token_count': {
+        // Codex's session-log token_count event surfaces total_token_usage
+        // (cumulative for the turn — input_tokens, cached_input_tokens,
+        // output_tokens, reasoning_output_tokens). We take the last event's
+        // values since they're the most complete count for the turn.
+        const info = params.info as
+          | {
+              total_token_usage?: {
+                input_tokens?: number;
+                cached_input_tokens?: number;
+                output_tokens?: number;
+              };
+            }
+          | undefined;
+        const u = info?.total_token_usage;
+        if (u) {
+          if (typeof u.input_tokens === 'number') tokensIn = u.input_tokens;
+          if (typeof u.cached_input_tokens === 'number') tokensCached = u.cached_input_tokens;
+          if (typeof u.output_tokens === 'number') tokensOut = u.output_tokens;
+        }
+        break;
+      }
       case 'turn/failed': {
         const e = params.error as { message?: string } | undefined;
         turnState.error = new Error(e?.message || 'Turn failed');
@@ -462,8 +487,10 @@ async function* runOneTurn(
     yield {
       type: 'result',
       text: resultText || null,
-      // The Codex app-server protocol does not expose token usage in its
-      // turn/completed notification — tokens remain best-effort / absent.
+      // Token counts come from the token_count notification stream (see
+      // handler above). Cached-input tokens aren't yet plumbed through
+      // ProviderEvent — captured in `tokensCached` for future surfacing.
+      ...(tokensIn > 0 || tokensOut > 0 ? { tokens: { input: tokensIn, output: tokensOut } } : {}),
       latencyMs: Date.now() - startedAt,
       provider: 'codex',
       ...(model ? { model } : {}),
