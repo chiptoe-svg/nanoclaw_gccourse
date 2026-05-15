@@ -48,6 +48,7 @@ export interface DocReadResult {
   fileId: string;
   markdown: string;
   bytes: number;
+  principal: GwsPrincipal;
 }
 
 export interface DocWriteResult {
@@ -55,6 +56,7 @@ export interface DocWriteResult {
   fileId: string;
   bytes: number;
   created: boolean;
+  principal: GwsPrincipal;
 }
 
 // Exported so extension modules (e.g., src/gws-ownership-ext.ts) can
@@ -148,7 +150,7 @@ export async function driveDocReadAsMarkdown(
   try {
     const res = await drive.files.export({ fileId: args.file_id, mimeType: 'text/markdown' }, { responseType: 'text' });
     const markdown = typeof res.data === 'string' ? res.data : String(res.data ?? '');
-    return { ok: true, fileId: args.file_id, markdown, bytes: Buffer.byteLength(markdown) };
+    return { ok: true, fileId: args.file_id, markdown, bytes: Buffer.byteLength(markdown), principal: tokenOrError.principal };
   } catch (err) {
     const status = (err as { code?: number; status?: number }).code ?? (err as { status?: number }).status;
     log.warn('drive_doc_read_as_markdown failed', { fileId: args.file_id, status, err: String(err) });
@@ -205,6 +207,7 @@ export async function driveDocWriteFromMarkdown(
       fileId: res.data.id || args.file_id,
       bytes: Buffer.byteLength(args.markdown),
       created: false,
+      principal: tokenOrError.principal,
     };
   } catch (err) {
     const status = (err as { code?: number; status?: number }).code ?? (err as { status?: number }).status;
@@ -239,6 +242,7 @@ export async function driveDocWriteFromMarkdown(
           fileId: newId,
           bytes: Buffer.byteLength(args.markdown),
           created: true,
+          principal: tokenOrError.principal,
         };
       } catch (createErr) {
         log.warn('drive_doc_write_from_markdown create fallback failed', {
@@ -275,6 +279,7 @@ export interface SheetReadResult {
   range: string;
   values: string[][];
   cells: number;
+  principal: GwsPrincipal;
 }
 
 export interface SheetWriteResult {
@@ -282,6 +287,7 @@ export interface SheetWriteResult {
   spreadsheetId: string;
   range: string;
   updatedCells: number;
+  principal: GwsPrincipal;
 }
 
 function buildSheetsClient(accessToken: string): ReturnType<typeof sheetsApi> {
@@ -312,7 +318,7 @@ export async function sheetReadRange(
       row.map((cell) => (cell === null || cell === undefined ? '' : String(cell))),
     );
     const cells = values.reduce((sum, row) => sum + row.length, 0);
-    return { ok: true, spreadsheetId: args.spreadsheet_id, range: args.range, values, cells };
+    return { ok: true, spreadsheetId: args.spreadsheet_id, range: args.range, values, cells, principal: tokenOrError.principal };
   } catch (err) {
     const status = (err as { code?: number; status?: number }).code ?? (err as { status?: number }).status;
     log.warn('sheet_read_range failed', { spreadsheetId: args.spreadsheet_id, range: args.range, err: String(err) });
@@ -367,6 +373,7 @@ export async function sheetWriteRange(
       spreadsheetId: args.spreadsheet_id,
       range: args.range,
       updatedCells: res.data.updatedCells ?? 0,
+      principal: tokenOrError.principal,
     };
   } catch (err) {
     const status = (err as { code?: number; status?: number }).code ?? (err as { status?: number }).status;
@@ -392,18 +399,21 @@ export interface SlidesCreateResult {
   ok: true;
   presentationId: string;
   webViewLink: string | null;
+  principal: GwsPrincipal;
 }
 
 export interface SlidesAppendResult {
   ok: true;
   presentationId: string;
   slideId: string;
+  principal: GwsPrincipal;
 }
 
 export interface SlidesReplaceTextResult {
   ok: true;
   presentationId: string;
   occurrencesChanged: number;
+  principal: GwsPrincipal;
 }
 
 function buildSlidesClient(accessToken: string): ReturnType<typeof slidesApi> {
@@ -443,7 +453,7 @@ export async function slidesCreateDeck(
         log.warn('slides_create_deck: post-create hook threw', { presentationId, err: String(hookErr) });
       }
     }
-    return { ok: true, presentationId, webViewLink: res.data.webViewLink ?? null };
+    return { ok: true, presentationId, webViewLink: res.data.webViewLink ?? null, principal: tokenOrError.principal };
   } catch (err) {
     const status = (err as { code?: number; status?: number }).code ?? (err as { status?: number }).status;
     log.warn('slides_create_deck failed', { title: args.title, err: String(err) });
@@ -493,7 +503,7 @@ export async function slidesAppendSlide(
     });
     const reply = res.data.replies?.[0];
     const slideId = reply?.createSlide?.objectId ?? '';
-    return { ok: true, presentationId: args.presentation_id, slideId };
+    return { ok: true, presentationId: args.presentation_id, slideId, principal: tokenOrError.principal };
   } catch (err) {
     const status = (err as { code?: number; status?: number }).code ?? (err as { status?: number }).status;
     log.warn('slides_append_slide failed', { presentationId: args.presentation_id, err: String(err) });
@@ -543,7 +553,7 @@ export async function slidesReplaceText(
     });
     const reply = res.data.replies?.[0];
     const occurrencesChanged = reply?.replaceAllText?.occurrencesChanged ?? 0;
-    return { ok: true, presentationId: args.presentation_id, occurrencesChanged };
+    return { ok: true, presentationId: args.presentation_id, occurrencesChanged, principal: tokenOrError.principal };
   } catch (err) {
     const status = (err as { code?: number; status?: number }).code ?? (err as { status?: number }).status;
     log.warn('slides_replace_text failed', { presentationId: args.presentation_id, err: String(err) });
