@@ -1,6 +1,7 @@
 import fs from 'fs';
 
 import { MODEL_CATALOG_LOCAL_PATH } from './config.js';
+import { readCachedCodexModels, refreshCodexCatalog } from './model-catalog-refresh.js';
 
 export interface ModelEntry {
   /** Stable id, used in container.json allowedModels and chat-tab dropdowns. */
@@ -199,6 +200,36 @@ export function getModelCatalog(): ModelEntry[] {
   // (used by the Models tab's edit / set-default flows).
   const localEntries = readLocalEntries();
   const localIds = new Set(localEntries.map((e) => `${e.provider}:${e.id}`));
-  const builtins = BUILTIN_ENTRIES.filter((e) => !localIds.has(`${e.provider}:${e.id}`));
+
+  // Refresh layer: drop-on-disappear for codex models that have aged out of
+  // OpenAI's docs page, plus surface newly-listed IDs as minimal entries
+  // (no pricing — they're still hand-curated by editing BUILTIN_ENTRIES or
+  // the Models-tab local override flow when prices need to attach).
+  // Fires the background fetch as a side effect on every catalog read so
+  // the cache stays warm without a dedicated scheduler. The refresh module
+  // self-rate-limits via its 24h cache + in-flight guard, so this is cheap.
+  refreshCodexCatalog().catch(() => {});
+  const refreshed = readCachedCodexModels();
+  let builtins = BUILTIN_ENTRIES;
+  if (refreshed && refreshed.length > 0) {
+    const allowedCodex = new Set(refreshed);
+    builtins = builtins.filter((e) => e.provider !== 'codex' || allowedCodex.has(e.id));
+    for (const id of refreshed) {
+      const inBuiltins = builtins.some((e) => e.provider === 'codex' && e.id === id);
+      const inLocal = localIds.has(`codex:${id}`);
+      if (!inBuiltins && !inLocal) {
+        builtins.push({
+          id,
+          provider: 'codex',
+          displayName: id,
+          origin: 'cloud',
+          modalities: ['text'],
+          notes: `Auto-discovered from developers.openai.com/codex/models on ${new Date().toISOString().slice(0, 10)}. Pricing not yet curated — edit src/model-catalog.ts BUILTIN_ENTRIES or use the Models tab to set rates.`,
+        });
+      }
+    }
+  }
+
+  builtins = builtins.filter((e) => !localIds.has(`${e.provider}:${e.id}`));
   return [...builtins, ...localEntries];
 }
