@@ -48,13 +48,105 @@ proxy.ts`, `src/channels/playground/public/`, and the
 
 Order matches `plans/master.md` §"Phase 2 — Full classroom capability".
 
-- [ ] **Phase 14 — per-person GWS OAuth.** Magic-link flow on the
-      student-auth-server, per-user credentials at
-      `data/student-google-auth/<id>/`, `/gauth` Telegram command.
-      Resolver tier ahead of instructor pool, indexed by
-      agent_group_id. Partly blocked on GCP redirect URI
-      registration (`project_gcp_oauth_pending` memory).
-      Detail: [`plans/gws-mcp.md` §Phase 14](../../../plans/gws-mcp.md)
+- [ ] **Phase 14 — per-person GWS OAuth.** Per-student Google
+      account connection from the playground home tab. UX pattern
+      mirrors the existing Telegram "Connect Telegram" card. PIN
+      stays as the identity path; this is opt-in resource auth.
+      Instructor bearer remains as fallback for anyone who hasn't
+      connected. Detail expanded below; legacy text in
+      [`plans/gws-mcp.md` §Phase 14](../../../plans/gws-mcp.md).
+
+  **Prereqs (operator, GCP Console — ~5 min, blocking):**
+    - [ ] Add redirect URI `http://130.127.162.180:3002/google-auth/callback`
+          to the existing OAuth client (identified by `client_id`
+          in `~/.config/gws/client_secret.json`).
+    - [ ] OAuth consent screen: scopes include `drive`,
+          `gmail.modify`, `calendar`. (Drive already there from
+          the original install; gmail + calendar are new.)
+    - [ ] OAuth consent screen → Test users: add the 10
+          `@clemson.edu` student addresses (Restricted scopes
+          require allowlisting until app is verified — out of
+          scope for 10 students).
+
+  **Tier A — Foundation (no behavior change for unconnected
+  students; connected students get per-student token routing
+  on existing Drive tools):**
+    - [ ] `src/student-google-auth.ts` — writer side: store
+          per-student credentials at
+          `data/student-google-auth/<sanitized_user_id>/credentials.json`.
+          Reader side already exists at `src/student-creds-paths.ts`
+          and `src/gws-token.ts:159`. Functions:
+          `writeStudentCredentials(userId, tokens)`,
+          `hasStudentCredentials(userId)`,
+          `loadStudentCredentials(userId): GwsTokens | null`,
+          `clearStudentCredentials(userId)` (for revoke flow).
+    - [ ] `src/gws-token.ts` — extend `getGoogleAccessTokenForAgentGroup`
+          to resolve user_id from `classroom_roster` by
+          agent_group_id, then try per-student credentials first
+          (refreshing as needed) and fall back to instructor
+          bearer on miss. Update returned `principal` field to
+          `"student:<user_id>"` or `"instructor"` accordingly so
+          per-call attribution surfaces correctly in proxy logs
+          and usage aggregation.
+    - [ ] `src/channels/playground/api/google-auth.ts` — new
+          handler module with two HTTP routes:
+          `GET /google-auth/start` — verify session cookie,
+          mint a state token bound to the user_id, build
+          Google's consent URL with state + scopes
+          (drive + gmail.modify + calendar), redirect.
+          `GET /google-auth/callback` — verify state, exchange
+          authorization code via `gws-auth.ts:exchangeCodeForTokens`,
+          call `writeStudentCredentials(userId, tokens)`,
+          redirect back to home tab with `?google_connected=1`.
+    - [ ] `src/channels/playground/server.ts` — register the two
+          new routes (alongside the existing `/oauth/google/*`
+          PIN-flow routes which serve a different purpose).
+    - [ ] `src/channels/playground/public/tabs/home.js` — new
+          "Google" card mirroring `renderTelegramCard`. States:
+          *not connected* → "Connect Google" button; *connected*
+          → "Connected as `<email>` · Disconnect". Wire button
+          to navigate to `/google-auth/start`; render
+          `?google_connected=1` query-param as a transient
+          success note.
+    - [ ] `src/admin-handlers/gauth.ts` (gitignored — `/add-admintools`-
+          installed) — new `/gauth` Telegram command. DMs the
+          requester a one-click `/google-auth/start` link. Mirror
+          of the existing `/playground` magic-link command.
+    - [ ] Update `data/class-shared-students.md` — point students
+          at the home-tab "Connect Google" card. No mention of
+          required connection (it's optional).
+
+  **Tier B — Drive uses per-student token (no new code):**
+    - [ ] Verify existing `drive_doc_read_as_markdown` /
+          `drive_doc_write_from_markdown` / `sheet_*` /
+          `slides_*` tools route through the per-student
+          credential when present. Should fall out of Tier A's
+          `gws-token.ts` change automatically. Add an
+          integration test that exercises both
+          (connected-student token, unconnected-student
+          fallback) paths.
+
+  **Tier C — Gmail tools:**
+    - [ ] Add `gmail_search`, `gmail_read_thread`,
+          `gmail_send_draft` to `src/gws-mcp-server.ts`. Draft
+          tool returns a draft ID + compose URL; never
+          auto-sends (UI-only confirmation).
+    - [ ] Add container-side shim in
+          `container/agent-runner/src/mcp-tools/gws.ts`.
+    - [ ] Add `@googleapis/gmail` to host package.json (pinned).
+    - [ ] Smoke test from a connected student's agent.
+
+  **Tier D — Calendar tools:**
+    - [ ] Add `calendar_list_events`, `calendar_create_event`,
+          `calendar_find_free_slot` to `src/gws-mcp-server.ts`.
+    - [ ] Container-side shim + `@googleapis/calendar` pinned.
+    - [ ] Smoke test from a connected student's agent.
+
+  **Open question (revisit before Tier C):** auto-send or
+  draft-only for Gmail? Drafts-only is the conservative
+  default; the agent presents the composed draft + a compose
+  URL the student opens to send manually. Auto-send would
+  require its own confirmation pattern (approval primitive?).
 - [ ] **credential-proxy Phase X.7 — per-student provider OAuth +
       temp-password fallback.** Same shape as the GWS resolver — a
       per-student tier ahead of the instructor pool, with a
