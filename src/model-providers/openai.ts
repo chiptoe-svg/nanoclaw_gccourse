@@ -28,11 +28,36 @@ const NOTES: Record<string, string> = {
   '5.3codex': 'older codex-tuned',
 };
 
+/**
+ * Codex-accepted model ids. The bare `gpt-5`, `gpt-5-mini`, etc. line up
+ * with what codex CLI 0.124+ actually targets; the dotted-decimal
+ * variants are codex-internal aliases for the same underlying upstream
+ * models (translated by codex-app-server when forwarding).
+ *
+ * OpenAI's /v1/models returns its full catalog (gpt-4o, embeddings,
+ * dall-e, whisper, etc.) — most of those aren't valid codex `model`
+ * values. We filter discovery to this whitelist so the Models tab
+ * surfaces only ids the user can actually pick.
+ *
+ * To allow a new id: append here and either ship via BUILTIN_ENTRIES
+ * (for everyone) or add to config/model-catalog-local.json with full
+ * pricing metadata (per-install).
+ */
+const CODEX_WHITELIST = new Set<string>([
+  'gpt-5',
+  'gpt-5-mini',
+  'gpt-5-codex',
+  'gpt-5-codex-mini',
+  'gpt-5.5',
+  'gpt-5.4',
+  'gpt-5.4-mini',
+  'gpt-5.3-codex',
+]);
+
 const STATIC_FALLBACK: ModelHint[] = [
-  { id: 'gpt-5.5', alias: '5.5', note: NOTES['5.5'] },
-  { id: 'gpt-5.4', alias: '5.4', note: NOTES['5.4'] },
-  { id: 'gpt-5.4-mini', alias: '5.4mini', note: NOTES['5.4mini'] },
-  { id: 'gpt-5.3-codex', alias: '5.3codex', note: NOTES['5.3codex'] },
+  { id: 'gpt-5-codex', alias: '5codex', note: 'codex default — code-tuned GPT-5' },
+  { id: 'gpt-5', alias: '5', note: 'general-purpose GPT-5' },
+  { id: 'gpt-5-mini', alias: '5mini', note: 'fast/cheap variant' },
 ];
 
 function getAuth(): AuthHeader | null {
@@ -42,19 +67,35 @@ function getAuth(): AuthHeader | null {
 }
 
 function parseId(id: string): ParsedModel | null {
-  // Single optional `-<variant>` suffix — rejects multi-segment legacy ids.
-  const m = id.match(/^gpt-(\d+)\.(\d+)(?:-([a-z]+))?$/);
-  if (!m) return null;
-  const major = parseInt(m[1], 10);
-  const minor = parseInt(m[2], 10);
-  const variant = m[3] ?? '';
-  const alias = `${m[1]}.${m[2]}${variant}`;
-  return {
-    id,
-    alias,
-    // Within same version, base before mini/codex variants (variant === '' sorts highest)
-    rank: [major, minor, variant === '' ? 1 : 0],
-  };
+  // Whitelist-gated: only ids codex actually accepts. The two id shapes
+  // we encounter — `gpt-5[-variant]` (current codex CLI) and dotted
+  // `gpt-N.M[-variant]` (codex-internal aliases) — both flow through
+  // this single regex and are then checked against CODEX_WHITELIST.
+  if (!CODEX_WHITELIST.has(id)) return null;
+  // Dotted: `gpt-5.4-mini` → alias `5.4mini`. Bare: `gpt-5-mini` → `5mini`.
+  const dotted = id.match(/^gpt-(\d+)\.(\d+)(?:-([a-z]+(?:-[a-z]+)?))?$/);
+  if (dotted) {
+    const major = parseInt(dotted[1], 10);
+    const minor = parseInt(dotted[2], 10);
+    const variant = dotted[3] ?? '';
+    return {
+      id,
+      alias: `${dotted[1]}.${dotted[2]}${variant}`,
+      rank: [major, minor, variant === '' ? 1 : 0],
+    };
+  }
+  const bare = id.match(/^gpt-(\d+)(?:-([a-z]+(?:-[a-z]+)?))?$/);
+  if (bare) {
+    const major = parseInt(bare[1], 10);
+    const variant = bare[2] ?? '';
+    return {
+      id,
+      // Display as `5codex` / `5mini` etc. — drop the gpt- prefix + dash.
+      alias: `${bare[1]}${variant}`,
+      rank: [major, 0, variant === '' ? 1 : 0],
+    };
+  }
+  return null;
 }
 
 function pickTop(parsed: ParsedModel[], maxCount: number): ParsedModel[] {
