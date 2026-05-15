@@ -52,7 +52,13 @@ import { handleDirectChat } from './api/direct-chat.js';
 import { handleGetStudentsUsage, handleGetUsage } from './api/usage.js';
 import { isOwner } from '../../modules/permissions/db/user-roles.js';
 import { handleGetEntry, handleListLibrary, handleSaveMyEntry } from './api/library.js';
-import { handleGetMyAgent, handleLogout, handleLogoutAll } from './api/me.js';
+import {
+  handleGetMyAgent,
+  handleGetGoogleStatus,
+  handleGoogleDisconnect,
+  handleLogout,
+  handleLogoutAll,
+} from './api/me.js';
 import { registerSseClient } from './sse.js';
 
 export async function route(
@@ -319,6 +325,18 @@ export async function route(
   // POST /api/me/logout-all — revoke all sessions for this user
   if (method === 'POST' && url.pathname === '/api/me/logout-all') {
     const r = handleLogoutAll(session);
+    return send(res, r.status, r.body);
+  }
+
+  // GET /api/me/google — per-student Google connection status.
+  if (method === 'GET' && url.pathname === '/api/me/google') {
+    const r = handleGetGoogleStatus(session);
+    return send(res, r.status, r.body);
+  }
+
+  // POST /api/me/google/disconnect — clear per-student Google credentials.
+  if (method === 'POST' && url.pathname === '/api/me/google/disconnect') {
+    const r = handleGoogleDisconnect(session);
     return send(res, r.status, r.body);
   }
 

@@ -2,6 +2,16 @@ export function mountHome(el) {
   const { agent, user } = window.__pg || { agent: { name: '?', folder: '?' }, user: { id: '?' } };
   const isOwner = user && user.role === 'owner';
 
+  const params = new URLSearchParams(location.search);
+  const googleConnected = params.get('google_connected') === '1';
+  const googleDenied = params.get('google_auth_error') === 'denied';
+  if (googleConnected || googleDenied) {
+    const cleaned = new URL(location.href);
+    cleaned.searchParams.delete('google_connected');
+    cleaned.searchParams.delete('google_auth_error');
+    history.replaceState({}, '', cleaned.pathname + (cleaned.search === '?' ? '' : cleaned.search));
+  }
+
   // Owner-only "Class controls" card. Toggles tabs/providers/auth modes
   // for non-owners. Inserted just below Profile so it's the first thing
   // the instructor sees when they land. Hidden entirely for students.
@@ -56,6 +66,15 @@ export function mountHome(el) {
         </div>
       </section>
 
+      <section class="home-card" id="google-card">
+        <h2>Google</h2>
+        ${googleConnected ? `<p class="muted" id="google-connected-banner">Google account connected.</p>` : ''}
+        ${googleDenied ? `<p class="muted" id="google-denied-banner">Connection cancelled.</p>` : ''}
+        <div id="google-card-body">
+          <p class="muted">Checking status…</p>
+        </div>
+      </section>
+
       <section class="home-card" id="usage-card">
         <h2>API credits</h2>
         <div id="usage-card-body"><p class="muted">Loading…</p></div>
@@ -91,6 +110,7 @@ export function mountHome(el) {
   });
 
   renderTelegramCard(el.querySelector('#telegram-card-body'));
+  renderGoogleCard(el.querySelector('#google-card-body'));
   renderUsageCard(el.querySelector('#usage-card-body'), agent.folder);
 
   if (isOwner) {
@@ -344,6 +364,46 @@ async function issueAndShowCode(body, botUsername) {
     `;
   } catch (err) {
     target.innerHTML = `<p class="muted">Couldn't mint a code: ${escapeHtml(String(err))}</p>`;
+  }
+}
+
+async function renderGoogleCard(body) {
+  if (!body) return;
+  try {
+    const res = await fetch('/api/me/google', { credentials: 'same-origin' });
+    if (!res.ok) {
+      body.innerHTML = `<p class="muted">Google connection status unavailable (${res.status}).</p>`;
+      return;
+    }
+    const data = await res.json();
+    if (data.connected) {
+      body.innerHTML = `
+        <p>✅ Connected as <code>${escapeHtml(data.email || '?')}</code>.</p>
+        <p class="muted">Your agent's Drive / Sheets / Slides tools now use YOUR Google Drive instead of the instructor's shared one. Disconnect to revert to the class-shared Drive.</p>
+        <div class="home-actions">
+          <button id="google-disconnect-btn" class="btn btn-danger">Disconnect</button>
+        </div>
+      `;
+      body.querySelector('#google-disconnect-btn').addEventListener('click', async () => {
+        if (
+          !confirm(
+            'Disconnect your Google account? Your agent will fall back to the class-shared Drive for new operations. Existing Docs/Sheets in YOUR Drive remain in YOUR Drive — only future writes change destination.',
+          )
+        )
+          return;
+        await fetch('/api/me/google/disconnect', { method: 'POST', credentials: 'same-origin' });
+        renderGoogleCard(body);
+      });
+      return;
+    }
+    body.innerHTML = `
+      <p class="muted">Connect your Google account so your agent operates against YOUR Drive (not the instructor's). Optional — until you connect, Drive tools work via the shared class-Drive (Mode A). Gmail and Calendar tools (coming soon) will require connection.</p>
+      <div class="home-actions">
+        <a class="btn" href="/google-auth/start">Connect Google</a>
+      </div>
+    `;
+  } catch (err) {
+    body.innerHTML = `<p class="muted">Couldn't reach the Google status endpoint: ${escapeHtml(String(err))}</p>`;
   }
 }
 
