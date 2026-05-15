@@ -1,4 +1,4 @@
-import { findByName, getAllDestinations, type DestinationEntry } from './destinations.js';
+import { findByName, findByRouting, getAllDestinations, type DestinationEntry } from './destinations.js';
 import { getPendingMessages, markProcessing, markCompleted, type MessageInRow } from './db/messages-in.js';
 import { writeMessageOut } from './db/messages-out.js';
 import { getInboundDb, touchHeartbeat, clearStaleProcessingAcks } from './db/connection.js';
@@ -546,11 +546,23 @@ export function dispatchResultText(text: string, routing: RoutingContext, cost?:
 
   if (sent === 0 && text.trim()) {
     const bareText = stripInternalTags(bareParts.join('')).trim();
-    const destinations = getAllDestinations();
-    if (bareText && destinations.length === 1) {
-      log(`Single-destination fallback: delivering ${bareText.length}-char bare text to "${destinations[0].name}"`);
-      sendToDestination(destinations[0], bareText, routing, cost);
-      sent++;
+    if (bareText) {
+      const destinations = getAllDestinations();
+      // Prefer to reply on the channel the message came from, matching
+      // routing fields. Falls back to the lone destination only when
+      // routing is unset (system message, scheduler tick, etc.).
+      const replyDest =
+        findByRouting(routing.channelType, routing.platformId) ??
+        (destinations.length === 1 ? destinations[0] : undefined);
+      if (replyDest) {
+        log(`Bare-text fallback: delivering ${bareText.length}-char text to "${replyDest.name}"`);
+        sendToDestination(replyDest, bareText, routing, cost);
+        sent++;
+      } else {
+        log(
+          `WARNING: agent output had no <message to="..."> blocks and inbound routing didn't match any destination — nothing sent`,
+        );
+      }
     } else {
       log(`WARNING: agent output had no <message to="..."> blocks — nothing was sent`);
     }

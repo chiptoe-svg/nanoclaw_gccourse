@@ -315,7 +315,23 @@ describe('dispatchResultText single-destination fallback', () => {
     expect(JSON.parse(out[0].content).text).toBe('The site is up — top story is X.');
   });
 
-  it('does NOT fall back when group has multiple destinations', async () => {
+  it('routes bare text to the destination matching the inbound routing when multiple destinations exist', async () => {
+    seedDestination('telegram-mg-17787', 'telegram', 'telegram:user-1');
+    seedDestination('dm-with-chiptonkin', 'playground', 'playground:dm-with-chiptonkin');
+    const { dispatchResultText } = await import('./poll-loop.js');
+    dispatchResultText('Hello', {
+      inReplyTo: 'm1',
+      platformId: 'telegram:user-1',
+      channelType: 'telegram',
+      threadId: null,
+    });
+    const out = getUndeliveredMessages();
+    expect(out).toHaveLength(1);
+    expect(out[0].platform_id).toBe('telegram:user-1');
+    expect(JSON.parse(out[0].content).text).toBe('Hello');
+  });
+
+  it('drops bare text when multiple destinations exist and routing is unknown', async () => {
     seedDestination('telegram-mg-17787', 'telegram', 'telegram:user-1');
     seedDestination('discord-main', 'discord', 'discord:chan-1');
     const { dispatchResultText } = await import('./poll-loop.js');
