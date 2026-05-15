@@ -37,9 +37,10 @@ If all nine are true, skip to **Configure**.
 
 ```bash
 mkdir -p src/install-handoff
-cp -n .claude/skills/install-handoff/add/src/install-handoff/server.ts    src/install-handoff/
-cp -n .claude/skills/install-handoff/add/src/install-handoff/bundler.ts   src/install-handoff/
-cp -n .claude/skills/install-handoff/add/src/install-handoff/store.ts     src/install-handoff/
+cp -n .claude/skills/install-handoff/add/src/install-handoff/server.ts             src/install-handoff/
+cp -n .claude/skills/install-handoff/add/src/install-handoff/bundler.ts            src/install-handoff/
+cp -n .claude/skills/install-handoff/add/src/install-handoff/store.ts              src/install-handoff/
+cp -n .claude/skills/install-handoff/add/src/install-handoff/install-template.html src/install-handoff/
 ```
 
 ### 2. Copy CLI resource

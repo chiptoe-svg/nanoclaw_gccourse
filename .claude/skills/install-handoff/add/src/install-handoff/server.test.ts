@@ -132,18 +132,27 @@ function writeBundleFile(token: string, filename: string, content = 'fake-conten
 // ---------------------------------------------------------------------------
 
 describe('GET /handoff/:token/install.html', () => {
-  it('returns 200 with placeholder HTML for a valid token', async () => {
+  it('returns 200 with rendered install template for a valid token', async () => {
     const { server, store } = await startTestServer();
     const issued = store.issueHandoff({
       ttlMs: 60_000,
-      maxUses: 1,
+      maxUses: 3,
       files: [{ name: 'env', size: 10 }],
     });
 
     const res = await get(server, `/handoff/${issued.token}/install.html`);
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toMatch(/text\/html/);
-    expect(res.body).toBeTruthy();
+    // Template substitution happened: token fingerprint, max-uses, file count, curl block.
+    expect(res.body).toContain(`${issued.token.slice(0, 8)}`);
+    expect(res.body).toContain('Uses left:');
+    // Curl block: URL= line carries the full token; downloads use $URL/<file>
+    expect(res.body).toContain(`/handoff/${issued.token}`);
+    expect(res.body).toContain('$URL/env');
+    expect(res.body).toContain('git clone');
+    expect(res.body).toContain('bash nanoclaw.sh');
+    expect(res.body).toContain('data-platform="mac"');
+    expect(res.body).toContain('data-platform="linux"');
   });
 
   it('does NOT decrement uses when install.html is fetched (second fetch still 200)', async () => {

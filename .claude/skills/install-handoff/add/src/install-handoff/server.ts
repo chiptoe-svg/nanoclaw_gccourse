@@ -34,10 +34,117 @@ import { consumeHandoff, getHandoff } from './store.js';
 let activeServer: http.Server | null = null;
 
 // ---------------------------------------------------------------------------
-// Install page placeholder (Phase 5 will replace this)
+// Install template — read once, fill placeholders per request
 // ---------------------------------------------------------------------------
 
-const INSTALL_HTML_PLACEHOLDER = 'install template — populated by Phase 5';
+const TEMPLATE_PATH = path.join(import.meta.dirname, 'install-template.html');
+let templateCache: string | null = null;
+
+function getTemplate(): string {
+  if (templateCache === null) {
+    templateCache = fs.readFileSync(TEMPLATE_PATH, 'utf8');
+  }
+  return templateCache;
+}
+
+/**
+ * Render install.html for a specific handoff. The template has placeholders
+ * the server fills at request time so the URL embedded in the curl block
+ * matches the host/port/token the operator hit.
+ */
+function renderInstallHtml(opts: {
+  token: string;
+  hostUrl: string;
+  expiresAt: string;
+  maxUses: number;
+  currentUses: number;
+  files: { name: string; size: number }[];
+}): string {
+  // Token fingerprint: first 8 chars of the token. Safe to display (the full
+  // token is in the URL anyway; the fingerprint is just an at-a-glance ID).
+  const fingerprint = `${opts.token.slice(0, 8)}…`;
+
+  // Build the curl block. One line per file, mapping bundle filenames to their
+  // canonical destination paths on the new machine.
+  const dest: Record<string, string> = {
+    env: '~/nanoclaw/.env',
+    'gws-credentials.json': '~/.config/gws/credentials.json',
+    'gws-client_secret.json': '~/.config/gws/client_secret.json',
+    'codex-auth.json': '~/.codex/auth.json',
+    'codex-config.toml': '~/.codex/config.toml',
+    'claude-credentials.json': '~/.claude/.credentials.json',
+    'groups.tar.gz': '/tmp/groups.tar.gz',
+  };
+  const mkdirs = new Set<string>();
+  const lines: string[] = [];
+  lines.push(`URL=${opts.hostUrl}/handoff/${opts.token}`);
+  lines.push('');
+  for (const f of opts.files) {
+    const target = dest[f.name] ?? `~/${f.name}`;
+    const dir = target.replace(/\/[^/]+$/, '');
+    if (dir && dir !== '~') mkdirs.add(dir);
+  }
+  if (mkdirs.size > 0) {
+    lines.push(`mkdir -p ${[...mkdirs].sort().join(' ')}`);
+    lines.push('');
+  }
+  for (const f of opts.files) {
+    const target = dest[f.name] ?? `~/${f.name}`;
+    lines.push(`curl -fsSLo ${target} "$URL/${f.name}"`);
+  }
+  lines.push('');
+  lines.push('chmod 600 \\');
+  const sensitiveTargets = opts.files
+    .map((f) => dest[f.name])
+    .filter((t): t is string => Boolean(t) && t !== '/tmp/groups.tar.gz');
+  lines.push(sensitiveTargets.map((t) => `  ${t}`).join(' \\\n'));
+  if (opts.files.some((f) => f.name === 'groups.tar.gz')) {
+    lines.push('');
+    lines.push('# Untar groups/ overlay into the cloned repo');
+    lines.push('mkdir -p ~/nanoclaw && tar xzf /tmp/groups.tar.gz -C ~/nanoclaw && rm /tmp/groups.tar.gz');
+  }
+  lines.push('');
+  lines.push('# Verify');
+  lines.push(`ls -la ${sensitiveTargets.join(' ')}`);
+  const curlBlock = lines.join('\n');
+
+  return getTemplate()
+    .replace(/{{TOKEN_FINGERPRINT}}/g, escapeHtml(fingerprint))
+    .replace(/{{EXPIRES_AT}}/g, escapeHtml(opts.expiresAt))
+    .replace(/{{USES_LEFT}}/g, String(opts.maxUses - opts.currentUses))
+    .replace(/{{MAX_USES}}/g, String(opts.maxUses))
+    .replace(/{{FILES_COUNT}}/g, String(opts.files.length))
+    .replace(/{{REPO_URL}}/g, escapeHtml(REPO_URL))
+    .replace(/{{CURL_BLOCK}}/g, escapeHtml(curlBlock));
+}
+
+const REPO_URL = 'https://github.com/qwibitai/nanoclaw.git';
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/** Test hook — drop the cached template so a test can swap install-template.html. */
+export function _resetTemplateCacheForTest(): void {
+  templateCache = null;
+}
+
+/**
+ * Decide what URL the operator on the new machine will hit. INSTALL_HANDOFF_PUBLIC_URL
+ * (operator-set in .env) wins so LAN/Tailscale hostnames work. Fallback: reconstruct
+ * from the request's Host header — works for localhost smoke tests.
+ */
+function resolveHostUrl(req: http.IncomingMessage): string {
+  const fromEnv = process.env.INSTALL_HANDOFF_PUBLIC_URL?.trim();
+  if (fromEnv) return fromEnv.replace(/\/$/, '');
+  const host = req.headers.host || `localhost:${INSTALL_HANDOFF_PORT}`;
+  return `http://${host}`;
+}
 
 // ---------------------------------------------------------------------------
 // Route helpers
@@ -95,8 +202,17 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
   // Route: install.html (not counted)
   // -------------------------------------------------------------------------
   if (file === 'install.html') {
+    const hostUrl = resolveHostUrl(req);
+    const html = renderInstallHtml({
+      token,
+      hostUrl,
+      expiresAt: handoff.expires_at,
+      maxUses: handoff.max_uses,
+      currentUses: handoff.current_uses,
+      files: handoff.files,
+    });
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-    res.end(INSTALL_HTML_PLACEHOLDER);
+    res.end(html);
     return;
   }
 
