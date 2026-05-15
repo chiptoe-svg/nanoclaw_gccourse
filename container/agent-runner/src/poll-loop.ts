@@ -479,22 +479,35 @@ interface ResultCost {
 /**
  * Parse the agent's final text for <message to="name">...</message> blocks
  * and dispatch each one to its resolved destination. Text outside of blocks
- * (including <internal>...</internal>) is scratchpad — logged but not sent.
+ * (including <internal>...</internal>) is normally scratchpad — logged but
+ * not sent.
  *
- * The agent must always wrap output in <message to="name">...</message>
- * blocks, even with a single destination. Bare text is scratchpad only.
+ * Exception: single-destination groups have a bare-text fallback. When the
+ * group has exactly one destination wired and the agent emitted no valid
+ * <message> blocks, the bare text outside <internal> is delivered to that
+ * one destination. This lets smaller or less-instruction-following models
+ * (e.g. Qwen3.6 via the `local` provider) work as drop-in providers without
+ * the user seeing silent drops every time the model skips the wrapping.
+ * Multi-destination groups still require explicit wrapping — there's no
+ * sensible default when more than one destination is in play.
  */
-function dispatchResultText(text: string, routing: RoutingContext, cost?: ResultCost): void {
+export function dispatchResultText(text: string, routing: RoutingContext, cost?: ResultCost): void {
   const MESSAGE_RE = /<message\s+to="([^"]+)"\s*>([\s\S]*?)<\/message>/g;
 
   let match: RegExpExecArray | null;
   let sent = 0;
   let lastIndex = 0;
   const scratchpadParts: string[] = [];
+  // Bare text outside any <message> block, accumulated separately from
+  // scratchpadParts so the fallback can use it without including
+  // "[dropped: unknown destination …]" debug markers from rejected blocks.
+  const bareParts: string[] = [];
 
   while ((match = MESSAGE_RE.exec(text)) !== null) {
     if (match.index > lastIndex) {
-      scratchpadParts.push(text.slice(lastIndex, match.index));
+      const between = text.slice(lastIndex, match.index);
+      scratchpadParts.push(between);
+      bareParts.push(between);
     }
     const toName = match[1];
     const body = match[2].trim();
@@ -510,7 +523,9 @@ function dispatchResultText(text: string, routing: RoutingContext, cost?: Result
     sent++;
   }
   if (lastIndex < text.length) {
-    scratchpadParts.push(text.slice(lastIndex));
+    const tail = text.slice(lastIndex);
+    scratchpadParts.push(tail);
+    bareParts.push(tail);
   }
 
   const scratchpad = stripInternalTags(scratchpadParts.join(''));
@@ -520,7 +535,15 @@ function dispatchResultText(text: string, routing: RoutingContext, cost?: Result
   }
 
   if (sent === 0 && text.trim()) {
-    log(`WARNING: agent output had no <message to="..."> blocks — nothing was sent`);
+    const bareText = stripInternalTags(bareParts.join('')).trim();
+    const destinations = getAllDestinations();
+    if (bareText && destinations.length === 1) {
+      log(`Single-destination fallback: delivering ${bareText.length}-char bare text to "${destinations[0].name}"`);
+      sendToDestination(destinations[0], bareText, routing, cost);
+      sent++;
+    } else {
+      log(`WARNING: agent output had no <message to="..."> blocks — nothing was sent`);
+    }
   }
 }
 

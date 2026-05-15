@@ -264,6 +264,63 @@ describe('mock provider', () => {
   });
 });
 
+describe('dispatchResultText single-destination fallback', () => {
+  function seedDestination(name: string, channelType: string, platformId: string): void {
+    getInboundDb()
+      .prepare(
+        `INSERT INTO destinations (name, display_name, type, channel_type, platform_id, agent_group_id)
+         VALUES (?, ?, 'channel', ?, ?, NULL)`,
+      )
+      .run(name, name, channelType, platformId);
+  }
+
+  it('delivers bare text to the sole destination when no <message> blocks present', async () => {
+    seedDestination('telegram-mg-17787', 'telegram', 'telegram:user-1');
+    const { dispatchResultText } = await import('./poll-loop.js');
+    dispatchResultText('Hello from the model', { inReplyTo: 'm1', platformId: null, channelType: null, threadId: null });
+    const out = getUndeliveredMessages();
+    expect(out).toHaveLength(1);
+    expect(JSON.parse(out[0].content).text).toBe('Hello from the model');
+    expect(out[0].platform_id).toBe('telegram:user-1');
+  });
+
+  it('strips <internal> tags from bare-text fallback', async () => {
+    seedDestination('telegram-mg-17787', 'telegram', 'telegram:user-1');
+    const { dispatchResultText } = await import('./poll-loop.js');
+    dispatchResultText('<internal>thinking…</internal>Visible reply.', {
+      inReplyTo: 'm1',
+      platformId: null,
+      channelType: null,
+      threadId: null,
+    });
+    const out = getUndeliveredMessages();
+    expect(out).toHaveLength(1);
+    expect(JSON.parse(out[0].content).text).toBe('Visible reply.');
+  });
+
+  it('does NOT fall back when group has multiple destinations', async () => {
+    seedDestination('telegram-mg-17787', 'telegram', 'telegram:user-1');
+    seedDestination('discord-main', 'discord', 'discord:chan-1');
+    const { dispatchResultText } = await import('./poll-loop.js');
+    dispatchResultText('Hello', { inReplyTo: 'm1', platformId: null, channelType: null, threadId: null });
+    expect(getUndeliveredMessages()).toHaveLength(0);
+  });
+
+  it('does NOT fall back when valid <message to> blocks already routed', async () => {
+    seedDestination('telegram-mg-17787', 'telegram', 'telegram:user-1');
+    const { dispatchResultText } = await import('./poll-loop.js');
+    dispatchResultText('<message to="telegram-mg-17787">Wrapped reply</message>', {
+      inReplyTo: 'm1',
+      platformId: null,
+      channelType: null,
+      threadId: null,
+    });
+    const out = getUndeliveredMessages();
+    expect(out).toHaveLength(1);
+    expect(JSON.parse(out[0].content).text).toBe('Wrapped reply');
+  });
+});
+
 describe('end-to-end with mock provider', () => {
   it('should read messages_in, process with mock provider, write messages_out', async () => {
     // Insert a chat message into inbound DB

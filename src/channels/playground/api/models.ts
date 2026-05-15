@@ -1,6 +1,7 @@
 import { readContainerConfig, writeContainerConfig } from '../../../container-config.js';
 import { type ModelEntry, getModelCatalog } from '../../../model-catalog.js';
 import { listAllForProvider } from '../../../model-discovery.js';
+import { setModel } from '../../../model-switch.js';
 import { setProvider } from '../../../provider-switch.js';
 
 export interface ApiResult<T> {
@@ -104,7 +105,16 @@ export function handlePutActiveModel(
         return { status: 500, body: { error: `provider switch failed: ${result.reason}` } };
       }
     }
-    // Re-read after potential setProvider write, then update model.
+    // Persist model to the DB — agent_groups.model is the source of truth that
+    // ensureRuntimeFields syncs into container.json on every spawn. Writing
+    // only to container.json (as this handler used to) gets silently clobbered
+    // on the next container start when the DB-driven sync runs.
+    if (!setModel(draftFolder, model)) {
+      return { status: 500, body: { error: 'setModel failed (agent group not found by folder)' } };
+    }
+    // Re-read after potential setProvider write, then mirror the model into
+    // container.json so the current on-disk state matches the DB without
+    // waiting for the next spawn-time sync.
     const updated = readContainerConfig(draftFolder);
     updated.model = model;
     writeContainerConfig(draftFolder, updated);

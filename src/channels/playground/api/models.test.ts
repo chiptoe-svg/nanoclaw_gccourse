@@ -69,4 +69,23 @@ describe('models API', () => {
       400,
     );
   });
+
+  it('PUT /active-model persists model to DB (not just container.json)', async () => {
+    const setModelCalls: { folder: string; model: string | null }[] = [];
+    vi.doMock('../../../container-config.js', () => ({
+      readContainerConfig: () => ({ provider: 'local' }),
+      writeContainerConfig: () => {},
+    }));
+    vi.doMock('../../../model-switch.js', () => ({
+      setModel: (folder: string, model: string | null) => {
+        setModelCalls.push({ folder, model });
+        return true;
+      },
+    }));
+    vi.doMock('../../../provider-switch.js', () => ({ setProvider: () => ({ ok: true, reason: 'no-change' }) }));
+    const { handlePutActiveModel } = await import('./models.js');
+    const result = handlePutActiveModel('draft_demo', { provider: 'local', model: 'Qwen3.6-35B' });
+    expect(result.status).toBe(200);
+    expect(setModelCalls).toEqual([{ folder: 'draft_demo', model: 'Qwen3.6-35B' }]);
+  });
 });
