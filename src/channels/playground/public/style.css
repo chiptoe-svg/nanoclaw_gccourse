@@ -713,6 +713,8 @@ select.model-changed {
 }
 .active-cost { margin-left: auto; color: #888; font-size: 11px; }
 .skill-builtin { background: #fbf6e6; }
+.active-all-banner { padding: 6px 8px; background: #fff8dc; border: 1px solid #e8d780; border-radius: 4px; font-size: 12px; color: #6b5b1a; margin-bottom: 6px; }
+.active-entry-builtin { background: #fbf6e6; border-color: #ddd09a; }
 .active-remove {
   background: none;
   border: none;

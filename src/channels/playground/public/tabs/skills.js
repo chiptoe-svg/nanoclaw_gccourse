@@ -160,30 +160,44 @@ function loadActiveSkills(el, folder) {
 function renderActiveList(el) {
   const ul = el.querySelector('#active-skills');
   ul.innerHTML = '';
-  if (currentSkills === 'all') {
-    const li = document.createElement('li');
-    li.className = 'active-all';
-    li.textContent = 'All skills enabled (container default). Remove any to switch to explicit mode.';
-    ul.appendChild(li);
-    return;
+
+  // "all" mode means every library entry is implicitly enabled. Render the
+  // full list anyway so the user can SEE what their agent has and remove any
+  // they don't want. Clicking × on any one transitions to explicit mode with
+  // that one omitted (we materialize the rest of the library as the new set).
+  const isAllMode = currentSkills === 'all';
+  const activeNames = isAllMode ? libraryCache.map((e) => e.name) : currentSkills;
+
+  if (isAllMode) {
+    const banner = document.createElement('li');
+    banner.className = 'active-all-banner';
+    banner.textContent = `All ${activeNames.length} skills enabled (container default). Remove any to switch to explicit mode.`;
+    ul.appendChild(banner);
   }
-  for (const skill of currentSkills) {
+
+  for (const skill of activeNames) {
     const entry = libraryCache.find((e) => e.name === skill);
     const li = document.createElement('li');
-    li.className = 'active-entry';
+    li.className = entry && entry.builtin ? 'active-entry active-entry-builtin' : 'active-entry';
+    const icon = entry && entry.builtin ? '📦' : '🔧';
     const costText = entry && entry.costTokens != null ? `+~${entry.costTokens} tok` : '';
     li.innerHTML = `
-      <span>🔧 ${escapeHtml(skill)}</span>
+      <span>${icon} ${escapeHtml(skill)}</span>
       <span class="active-cost">${costText}</span>
       <button class="active-remove" title="Remove">×</button>
     `;
     li.querySelector('.active-remove').addEventListener('click', () => {
-      currentSkills = currentSkills.filter((s) => s !== skill);
+      if (isAllMode) {
+        // Transition from "all" → explicit list, sans this skill.
+        currentSkills = libraryCache.map((e) => e.name).filter((n) => n !== skill);
+      } else {
+        currentSkills = currentSkills.filter((s) => s !== skill);
+      }
       saveActive(el);
     });
     ul.appendChild(li);
   }
-  if (currentSkills.length === 0) {
+  if (!isAllMode && currentSkills.length === 0) {
     const li = document.createElement('li');
     li.className = 'active-empty';
     li.textContent = '(no skills enabled — agent has no extra tools)';
