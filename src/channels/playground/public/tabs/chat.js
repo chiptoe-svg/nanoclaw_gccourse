@@ -47,13 +47,19 @@ function loadModelDropdowns(el, folder) {
       const provSel = el.querySelector('#provider-sel');
       const modelSel = el.querySelector('#model-sel');
 
-      // If allowedModels whitelist is set, filter the catalog to those entries.
-      // If not, show every catalog entry (no restriction).
+      // Merge curated catalog entries with live-discovered entries
+      // (provider /v1/models that aren't in BUILTIN_ENTRIES — e.g. extra
+      // mlx-omni-server models like Qwen3.6-27B or gemma-4-31B). Without
+      // this merge, a whitelisted discovered model would silently fail
+      // to appear in the dropdown — the user checked it in the Models tab
+      // but couldn't actually select it for chat.
       const catalog = data.catalog || [];
+      const discovered = (data.discovered || []).map((d) => ({ provider: d.provider, id: d.id }));
+      const combined = [...catalog, ...discovered];
       const allow = (data.allowedModels && data.allowedModels.length > 0)
         ? new Set(data.allowedModels.map((a) => `${a.provider}/${a.model}`))
         : null;
-      const visible = allow ? catalog.filter((m) => allow.has(`${m.provider}/${m.id}`)) : catalog;
+      const visible = allow ? combined.filter((m) => allow.has(`${m.provider}/${m.id}`)) : combined;
 
       const providers = [...new Set(visible.map((m) => m.provider))];
       provSel.innerHTML = '';
