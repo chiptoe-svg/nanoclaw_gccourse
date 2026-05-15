@@ -353,8 +353,12 @@ function buildMounts(
     mounts.push(...providerContribution.mounts);
   }
 
-  // Mount web hosting directory so agents can create and deploy websites
-  const sitesDir = '/var/www/sites';
+  // Mount web hosting directory so agents can create and deploy websites.
+  // Host path lives under /opt/homebrew/var/www/sites — user-writable
+  // (no sudo needed), served by the user-level Homebrew Caddy on :8080.
+  // Container path stays /var/www/sites so the make-website skill keeps
+  // one canonical in-container path regardless of host OS conventions.
+  const sitesDir = '/opt/homebrew/var/www/sites';
   if (fs.existsSync(sitesDir)) {
     mounts.push({
       hostPath: sitesDir,
