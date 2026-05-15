@@ -257,6 +257,18 @@ dependency tracking.
    `nanoclaw / claude-code / codex / json` formats; `GET
    /api/draft/<folder>/export?format=…`. Spec in
    [classroom-web-multiuser.md §Phase 5](classroom-web-multiuser.md).
+7b. **NEW: classroom Phase 5b — Agent library + save/swap UX
+   (UNPLANNED).** Distinct from §5 (which is one-direction export
+   for take-home). 5b is the in-playground File-menu-for-agents:
+   Save current agent state as a named library entry, Save As to
+   create a new entry, Open to swap the active agent, optional
+   versioning / branching. `library/default-agents/*.json` is the
+   seed storage but the wrapping UX is undesigned. Needs a spec +
+   plan pair under `docs/superpowers/` before execution. Probably
+   slots before Phase 5 (export) since export depends on the
+   "what's the current agent" notion being clearly addressable
+   — though both could land independently and reuse the same
+   underlying `groups/<folder>/` source of truth.
 8. **classroom Phase 7 — expert system builder + RAG strategies.**
    Pipeline framework + named strategies + UI. Cost-economical only
    after Phase 1 #8 (local-LLM runbook) lands. Spec in
