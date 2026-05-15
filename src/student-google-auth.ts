@@ -31,7 +31,7 @@ export function writeStudentCredentials(userId: string, creds: GwsCredentialsJso
   const p = studentGwsCredentialsPath(userId);
   const dir = path.dirname(p);
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-  fs.chmodSync(dir, 0o700);  // enforce: mkdirSync doesn't tighten an existing dir
+  fs.chmodSync(dir, 0o700); // enforce: mkdirSync doesn't tighten an existing dir
   const tmp = `${p}.tmp-${process.pid}`;
   fs.writeFileSync(tmp, JSON.stringify(creds, null, 2) + '\n', { mode: 0o600 });
   fs.renameSync(tmp, p);

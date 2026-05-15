@@ -2,7 +2,13 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { closeDb, initTestDb } from './connection.js';
 import { runMigrations } from './migrations/index.js';
-import { listRoster, lookupRosterByEmail, lookupRosterByUserId, removeRosterEntry, upsertRosterEntry } from './classroom-roster.js';
+import {
+  listRoster,
+  lookupRosterByEmail,
+  lookupRosterByUserId,
+  removeRosterEntry,
+  upsertRosterEntry,
+} from './classroom-roster.js';
 
 describe('classroom_roster', () => {
   beforeEach(() => {
