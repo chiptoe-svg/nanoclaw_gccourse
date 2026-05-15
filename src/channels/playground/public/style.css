@@ -829,6 +829,10 @@ select.model-changed {
 .usage-table th, .usage-table td { padding: 3px 6px; border-bottom: 1px solid #eee; text-align: left; }
 .usage-table th { color: #555; font-weight: 600; font-size: 11px; }
 .small { font-size: 11px; }
+.roster-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.roster-table th, .roster-table td { padding: 4px 8px; border-bottom: 1px solid #eee; text-align: left; }
+.roster-table th { color: #555; font-weight: 600; font-size: 11px; }
+.roster-table tr:hover { background: #f6f9ff; }
 .default-star { margin-left: 8px; background: transparent; border: none; font-size: 16px; color: #b0b0b0; cursor: pointer; padding: 0 2px; line-height: 1; }
 .default-star:hover { color: #c9a227; }
 .default-star.is-default { color: #d4a017; }

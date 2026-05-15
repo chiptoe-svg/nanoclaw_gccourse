@@ -14,6 +14,14 @@ export function mountHome(el) {
       </section>`
     : '';
 
+  const studentsRosterCard = isOwner
+    ? `
+      <section class="home-card" id="students-roster-card">
+        <h2>Students</h2>
+        <div id="students-roster-body"><p class="muted">Loading…</p></div>
+      </section>`
+    : '';
+
   el.innerHTML = `
     <div class="home-layout">
       <section class="home-card">
@@ -29,6 +37,8 @@ export function mountHome(el) {
       </section>
 
       ${classControlsCard}
+
+      ${studentsRosterCard}
 
       <section class="home-card">
         <h2>Settings</h2>
@@ -85,6 +95,44 @@ export function mountHome(el) {
 
   if (isOwner) {
     renderClassControlsCard(el.querySelector('#class-controls-body'));
+    renderStudentsRosterCard(el.querySelector('#students-roster-body'));
+  }
+}
+
+async function renderStudentsRosterCard(body) {
+  if (!body) return;
+  try {
+    const res = await fetch('/api/usage/_/students', { credentials: 'same-origin' });
+    if (!res.ok) {
+      body.innerHTML = `<p class="muted">Couldn't load roster (${res.status}).</p>`;
+      return;
+    }
+    const data = await res.json();
+    if (!data.students || data.students.length === 0) {
+      body.innerHTML = `<p class="muted">No student agents yet. Add students via the classroom flow.</p>`;
+      return;
+    }
+    const rows = data.students
+      .map(
+        (s) => `
+          <tr>
+            <td><code>${escapeHtml(s.agentGroup.folder)}</code></td>
+            <td>${escapeHtml(s.agentGroup.name || '?')}</td>
+            <td>${fmtUsd(s.thisMonth.costUsd)}</td>
+            <td>${fmtUsd(s.total.costUsd)}</td>
+            <td>${fmtTokens(s.total.tokensIn)} in · ${fmtTokens(s.total.tokensOut)} out</td>
+          </tr>`,
+      )
+      .join('');
+    body.innerHTML = `
+      <table class="roster-table">
+        <thead><tr><th>Folder</th><th>Agent</th><th>This month</th><th>All-time</th><th>Tokens (lifetime)</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <p class="muted small">Cost computed from token counts × per-model rate. Refresh the page for updated numbers.</p>
+    `;
+  } catch (err) {
+    body.innerHTML = `<p class="muted">Couldn't load roster: ${escapeHtml(String(err))}</p>`;
   }
 }
 
