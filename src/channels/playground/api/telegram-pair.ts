@@ -51,8 +51,22 @@ async function resolveBotUsername(): Promise<string | null> {
 export async function handleGetTelegramStatus(session: PlaygroundSession): Promise<ApiResult<TelegramStatusBody>> {
   const userId = session.userId;
   if (!userId) return { status: 401, body: { error: 'not signed in' } };
-  const pairing = getTelegramPairingFor(userId);
   const botUsername = await resolveBotUsername();
+
+  // Sign-in via Telegram /playground magic link: the session user_id IS the
+  // Telegram identity (`telegram:<handle>`). No class pair-code row exists
+  // — and one isn't needed, the sign-in itself proves the link. Without
+  // this short-circuit the UI would offer "Connect Telegram" to a user
+  // who is already signed in via Telegram, which is confusing.
+  if (userId.startsWith('telegram:')) {
+    const handle = userId.slice('telegram:'.length);
+    return {
+      status: 200,
+      body: { paired: true, botUsername, telegramUserId: handle, telegramHandle: handle },
+    };
+  }
+
+  const pairing = getTelegramPairingFor(userId);
   if (!pairing) {
     return { status: 200, body: { paired: false, botUsername } };
   }
