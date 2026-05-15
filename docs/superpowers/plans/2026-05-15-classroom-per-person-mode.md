@@ -68,9 +68,37 @@ Order matches `plans/master.md` §"Phase 2 — Full classroom capability".
           require allowlisting until app is verified — out of
           scope for 10 students).
 
-  **Tier A — Foundation (no behavior change for unconnected
-  students; connected students get per-student token routing
-  on existing Drive tools):**
+  **Policy for unconnected students:** Personal-data tools
+  refuse to fire until the student has connected their Google
+  account. Specifically:
+    - `drive_doc_read_as_markdown`, `drive_doc_write_from_markdown`,
+      `sheet_read_range`, `sheet_write_range`, `slides_*` →
+      personal Drive only, **gated**.
+    - `gmail_*` (Tier C, all variants) → **gated**.
+    - `calendar_create_event`, `calendar_update_event` (Tier D
+      write side) → **gated**.
+    - `calendar_list_events` (Tier D read side) → also gated
+      since there's no class-shared calendar to fall back to.
+    - The existing `/workspace/drive/` rclone bind mount
+      (per-student folder inside the instructor's shared Drive)
+      is **unaffected** — that's a filesystem mount, not an
+      MCP tool, and class-shared artifacts remain accessible
+      via the same instructor-bearer path Mode A established.
+    - Chat, wiki commits, persona editing, skills — all
+      **unaffected**; the agent itself is fully usable without a
+      Google connection.
+
+  When a gated tool fires for an unconnected student, the tool
+  returns a structured error: `connect_required` with a
+  human-readable message pointing them at the home-tab "Connect
+  Google" card. The agent surfaces this verbatim to the user
+  rather than retrying.
+
+  **Tier A — Foundation (no agent-runner behavior change yet;
+  this tier wires the credential writer + UI + resolver but
+  doesn't introduce the gate. The gate lands per-tool in
+  Tier B/C/D so each tool ships with its own policy enforcement
+  test):**
     - [ ] `src/student-google-auth.ts` — writer side: store
           per-student credentials at
           `data/student-google-auth/<sanitized_user_id>/credentials.json`.
@@ -81,13 +109,18 @@ Order matches `plans/master.md` §"Phase 2 — Full classroom capability".
           `loadStudentCredentials(userId): GwsTokens | null`,
           `clearStudentCredentials(userId)` (for revoke flow).
     - [ ] `src/gws-token.ts` — extend `getGoogleAccessTokenForAgentGroup`
-          to resolve user_id from `classroom_roster` by
-          agent_group_id, then try per-student credentials first
-          (refreshing as needed) and fall back to instructor
-          bearer on miss. Update returned `principal` field to
-          `"student:<user_id>"` or `"instructor"` accordingly so
-          per-call attribution surfaces correctly in proxy logs
-          and usage aggregation.
+          with an `options.requirePersonal: boolean` flag. When
+          true, resolve user_id from `classroom_roster` by
+          agent_group_id, try per-student credentials, return
+          null if absent (no instructor fallback). When false
+          (existing call sites), keep current behavior: try
+          per-student first, fall back to instructor. Personal-
+          data tools call with `requirePersonal: true`; the
+          rclone bind mount keeps calling with the default.
+          Update returned `principal` to `"student:<user_id>"`,
+          `"instructor"`, or `null` accordingly so per-call
+          attribution surfaces correctly in proxy logs and usage
+          aggregation.
     - [ ] `src/channels/playground/api/google-auth.ts` — new
           handler module with two HTTP routes:
           `GET /google-auth/start` — verify session cookie,
@@ -116,31 +149,47 @@ Order matches `plans/master.md` §"Phase 2 — Full classroom capability".
           at the home-tab "Connect Google" card. No mention of
           required connection (it's optional).
 
-  **Tier B — Drive uses per-student token (no new code):**
-    - [ ] Verify existing `drive_doc_read_as_markdown` /
-          `drive_doc_write_from_markdown` / `sheet_*` /
-          `slides_*` tools route through the per-student
-          credential when present. Should fall out of Tier A's
-          `gws-token.ts` change automatically. Add an
-          integration test that exercises both
-          (connected-student token, unconnected-student
-          fallback) paths.
+  **Tier B — Drive tools gated on personal connection:**
+    - [ ] Update `src/gws-mcp-server.ts` Drive / Sheets / Slides
+          handlers to call `getGoogleAccessTokenForAgentGroup(id,
+          { requirePersonal: true })`. On null return, respond
+          with the `connect_required` error envelope (new
+          shared helper) carrying the human message and a link
+          to the home-tab card.
+    - [ ] Container-side shim in
+          `container/agent-runner/src/mcp-tools/gws.ts` —
+          translate `connect_required` HTTP response into a
+          tool-result whose text is the friendly message, so the
+          agent reads it directly. Set `isError: false` so the
+          agent treats it as guidance rather than a tool crash.
+    - [ ] Integration test: simulate an unconnected student
+          invoking `drive_doc_read_as_markdown` → expect
+          structured error; connect the student via the writer
+          API; expect success on retry.
 
-  **Tier C — Gmail tools:**
+  **Tier C — Gmail tools (gated on personal connection):**
     - [ ] Add `gmail_search`, `gmail_read_thread`,
-          `gmail_send_draft` to `src/gws-mcp-server.ts`. Draft
-          tool returns a draft ID + compose URL; never
+          `gmail_send_draft` to `src/gws-mcp-server.ts`. All
+          three call the resolver with `requirePersonal: true`;
+          return `connect_required` for unconnected students.
+          Draft tool returns a draft ID + compose URL; never
           auto-sends (UI-only confirmation).
     - [ ] Add container-side shim in
           `container/agent-runner/src/mcp-tools/gws.ts`.
     - [ ] Add `@googleapis/gmail` to host package.json (pinned).
-    - [ ] Smoke test from a connected student's agent.
+    - [ ] Smoke test from a connected student's agent + verify
+          unconnected-student gate fires.
 
-  **Tier D — Calendar tools:**
+  **Tier D — Calendar tools (gated on personal connection,
+  read + write both):**
     - [ ] Add `calendar_list_events`, `calendar_create_event`,
           `calendar_find_free_slot` to `src/gws-mcp-server.ts`.
+          All three gated with `requirePersonal: true` —
+          there's no class-shared calendar to fall back to so
+          even reads require the student's own connection.
     - [ ] Container-side shim + `@googleapis/calendar` pinned.
-    - [ ] Smoke test from a connected student's agent.
+    - [ ] Smoke test from a connected student's agent + verify
+          unconnected-student gate fires.
 
   **Open question (revisit before Tier C):** auto-send or
   draft-only for Gmail? Drafts-only is the conservative
