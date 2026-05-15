@@ -490,6 +490,10 @@ async function* runOneTurn(
   let tokensIn = 0;
   let tokensOut = 0;
   let tokensCached = 0;
+  // Dedup guard: thread/tokenUsage/updated may fire twice for the same LLM
+  // response (we saw consecutive identical totals in the empirical capture).
+  // Emit a model_call ProviderEvent only when `last.totalTokens` advances.
+  let lastSeenCallTotal = 0;
 
   // Buffered event queue so we can `yield` across the async notification
   // callback. Each notification pushes zero or more ProviderEvents; the
@@ -559,13 +563,38 @@ async function* runOneTurn(
         //                         reasoningOutputTokens, totalTokens},
         //                 last:  {…same fields, scoped to most recent response},
         //                 modelContextWindow }
-        // We use `total` (cumulative for the turn) so the displayed count
-        // grows across tool-call iterations rather than resetting per round.
-        const tu = (params.tokenUsage as { total?: Record<string, number> } | undefined)?.total;
-        if (tu) {
-          if (typeof tu.inputTokens === 'number') tokensIn = tu.inputTokens;
-          if (typeof tu.cachedInputTokens === 'number') tokensCached = tu.cachedInputTokens;
-          if (typeof tu.outputTokens === 'number') tokensOut = tu.outputTokens;
+        // We use `total` (cumulative for the turn) for the end-of-turn
+        // `result` event so the displayed count grows across tool iterations.
+        // We also emit a `model_call` trace ProviderEvent per LLM response
+        // by reading `last` (this call's delta) so the playground shows N
+        // discrete entries for an N-call turn rather than one cumulative
+        // summary. Deduped on last.totalTokens since the notification can
+        // fire twice with the same values.
+        const usage = params.tokenUsage as
+          | { total?: Record<string, number>; last?: Record<string, number> }
+          | undefined;
+        const tot = usage?.total;
+        if (tot) {
+          if (typeof tot.inputTokens === 'number') tokensIn = tot.inputTokens;
+          if (typeof tot.cachedInputTokens === 'number') tokensCached = tot.cachedInputTokens;
+          if (typeof tot.outputTokens === 'number') tokensOut = tot.outputTokens;
+        }
+        const last = usage?.last;
+        if (
+          last &&
+          typeof last.totalTokens === 'number' &&
+          last.totalTokens > 0 &&
+          last.totalTokens !== lastSeenCallTotal
+        ) {
+          lastSeenCallTotal = last.totalTokens;
+          buffer.push({
+            type: 'model_call',
+            tokensIn: typeof last.inputTokens === 'number' ? last.inputTokens : 0,
+            tokensCached: typeof last.cachedInputTokens === 'number' ? last.cachedInputTokens : 0,
+            tokensOut: typeof last.outputTokens === 'number' ? last.outputTokens : 0,
+            tokensReasoning:
+              typeof last.reasoningOutputTokens === 'number' ? last.reasoningOutputTokens : 0,
+          });
         }
         break;
       }

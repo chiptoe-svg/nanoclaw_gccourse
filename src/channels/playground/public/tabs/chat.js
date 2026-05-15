@@ -507,6 +507,13 @@ function appendAgentReply(log, data) {
 }
 
 function appendTraceEvent(trace, data) {
+  // model_call has its own renderer — it carries token deltas not an
+  // input/content payload, so it doesn't fit the tool envelope template
+  // below. Split off early.
+  if (data.type === 'model_call') {
+    return appendModelCallTrace(trace, data);
+  }
+
   const li = document.createElement('li');
   const kind = data.kind || data.eventType || 'event';
   li.className = `trace trace-${kind}`;
@@ -668,6 +675,45 @@ function escapeHtml(s) {
  * computed client-side by looking up the catalog entry stashed at
  * window.__pg.catalog (populated by loadModelDropdowns).
  */
+/**
+ * Renders a single LLM call mid-turn — emitted by the agent-runner each
+ * time the underlying model responds (per thread/tokenUsage/updated.last
+ * for codex). Sits between tool_use/tool_result entries, so a multi-tool
+ * turn shows N model_call entries instead of one cumulative summary.
+ * Provider/model isn't carried in the event payload (the agent-runner
+ * doesn't include them per-call); we pull them from the chat tab's
+ * current dropdown selection, which matches the running container.
+ */
+function appendModelCallTrace(trace, data) {
+  if (!trace) return;
+  const li = document.createElement('li');
+  li.className = 'trace trace-model_call';
+  const provSel = document.getElementById('provider-sel');
+  const modelSel = document.getElementById('model-sel');
+  const provider = provSel ? provSel.value : '';
+  const model = modelSel ? modelSel.value : '';
+  const tokensIn = typeof data.tokensIn === 'number' ? data.tokensIn : 0;
+  const tokensOut = typeof data.tokensOut === 'number' ? data.tokensOut : 0;
+  const cached = typeof data.tokensCached === 'number' ? data.tokensCached : 0;
+  const reasoning = typeof data.tokensReasoning === 'number' ? data.tokensReasoning : 0;
+  const cachedNote = cached > 0 ? `, ${cached} cached` : '';
+  const outBreakdown = reasoning > 0 ? `${tokensOut} out (${reasoning} reasoning)` : `${tokensOut} out`;
+  // Cost: use the same client-side helper as appendAgentTraceCall, but
+  // bill cached input at the cheaper rate (mirrors direct-chat.ts:priceFor).
+  const cost = computeAgentCallCost(provider, model, tokensIn, tokensOut, cached);
+  const costText = cost != null ? (cost < 0.001 ? `$${cost.toFixed(5)}` : `$${cost.toFixed(4)}`) : '';
+  const summary = `${tokensIn} in${cachedNote} · ${outBreakdown}${costText ? ` · ${costText}` : ''}`;
+  li.innerHTML = `
+    <div class="trace-event-head">
+      <span class="trace-event-kind">model call</span>
+      <code>${escapeHtml(provider)}/${escapeHtml(model)}</code>
+    </div>
+    <div class="trace-event-body">${escapeHtml(summary)}</div>
+  `;
+  trace.appendChild(li);
+  trace.scrollTop = trace.scrollHeight;
+}
+
 function appendAgentTraceCall(trace, data) {
   if (!trace) return;
   const li = document.createElement('li');
@@ -701,13 +747,20 @@ function appendAgentTraceCall(trace, data) {
  * cost field entirely rather than showing "$0" (which is misleading for
  * cloud models we just don't have prices for).
  */
-function computeAgentCallCost(provider, model, tokensIn, tokensOut) {
+function computeAgentCallCost(provider, model, tokensIn, tokensOut, tokensCached = 0) {
   if (tokensIn == null || tokensOut == null) return null;
   const catalog = (window.__pg && window.__pg.catalog) || [];
   const entry = catalog.find((e) => e.provider === provider && e.id === model);
   if (!entry) return null;
   if (entry.costPer1kInUsd != null || entry.costPer1kOutUsd != null) {
-    return (tokensIn / 1000) * (entry.costPer1kInUsd || 0) + (tokensOut / 1000) * (entry.costPer1kOutUsd || 0);
+    // Cached input bills at a discounted rate (when the catalog exposes it).
+    // Falls back to the regular input rate if costPer1kCachedInUsd is unset.
+    const billedIn = Math.max(0, tokensIn - tokensCached);
+    return (
+      (billedIn / 1000) * (entry.costPer1kInUsd || 0) +
+      (tokensCached / 1000) * (entry.costPer1kCachedInUsd ?? entry.costPer1kInUsd ?? 0) +
+      (tokensOut / 1000) * (entry.costPer1kOutUsd || 0)
+    );
   }
   if (entry.costPer1kTokensUsd != null) {
     return ((tokensIn + tokensOut) / 1000) * entry.costPer1kTokensUsd;

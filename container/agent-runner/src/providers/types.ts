@@ -123,4 +123,19 @@ export type ProviderEvent =
    * "the tool reported a failure logically" — that's domain-specific
    * and lives in the content).
    */
-  | { type: 'tool_result'; toolUseId: string; content: unknown; isError?: boolean };
+  | { type: 'tool_result'; toolUseId: string; content: unknown; isError?: boolean }
+  /**
+   * One round-trip to the underlying LLM (one OpenAI/Anthropic API call).
+   * Codex turns may make several of these in sequence — one per agent
+   * message, separated by tool execution. Providers SHOULD emit this so
+   * the playground trace pane can show per-call breakdowns, not just the
+   * cumulative `result` summary at end-of-turn. Tokens are this call's
+   * delta, NOT cumulative.
+   */
+  | {
+      type: 'model_call';
+      tokensIn: number;
+      tokensCached: number;
+      tokensOut: number;
+      tokensReasoning: number;
+    };
