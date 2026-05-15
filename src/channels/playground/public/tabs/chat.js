@@ -9,6 +9,10 @@ export function mountChat(el) {
   el.innerHTML = `
     <div class="chat-toolbar">
       <span>Chat with: <strong>${escapeHtml(agentName)}</strong></span>
+      <div class="mode-toggle" role="tablist" aria-label="Chat mode">
+        <button type="button" id="mode-agent" class="mode-btn active" role="tab" aria-selected="true">Agent</button>
+        <button type="button" id="mode-direct" class="mode-btn" role="tab" aria-selected="false" title="Direct LLM call — no agent system prompt, skills, or tools">Chat (no agent)</button>
+      </div>
       <span class="spacer"></span>
       <label>provider <select id="provider-sel"></select></label>
       <label>model <select id="model-sel"></select></label>
@@ -179,6 +183,24 @@ function wireChatForm(el, folder) {
   const input = el.querySelector('#chat-input');
   const log = el.querySelector('#chat-log');
 
+  // Chat mode toggle. Agent = existing playground flow (POST messages → SSE
+  // back). Direct = POST /api/direct-chat with conversation history,
+  // synchronous reply with token usage inline.
+  let currentMode = 'agent';
+  const directHistory = []; // [{ role: 'user'|'assistant', content }]
+  const modeAgentBtn = el.querySelector('#mode-agent');
+  const modeDirectBtn = el.querySelector('#mode-direct');
+  function setMode(mode) {
+    currentMode = mode;
+    modeAgentBtn.classList.toggle('active', mode === 'agent');
+    modeAgentBtn.setAttribute('aria-selected', mode === 'agent');
+    modeDirectBtn.classList.toggle('active', mode === 'direct');
+    modeDirectBtn.setAttribute('aria-selected', mode === 'direct');
+    input.placeholder = mode === 'agent' ? 'ask your agent…' : 'direct LLM call — no agent, no skills, no tools';
+  }
+  modeAgentBtn.addEventListener('click', () => setMode('agent'));
+  modeDirectBtn.addEventListener('click', () => setMode('direct'));
+
   // ↵ submits, Shift+↵ inserts a newline. Matches the convention in
   // Telegram, Slack, iMessage. ⌘↵ / Ctrl-↵ also still submits for muscle
   // memory from the previous behavior.
@@ -254,6 +276,45 @@ function wireChatForm(el, folder) {
     appendUserBubble(log, text || `(${attached.length} attachment${attached.length === 1 ? '' : 's'})`);
     input.value = '';
 
+    if (currentMode === 'direct') {
+      // Direct LLM mode — bypass the agent entirely. No system prompt, no
+      // skills, no tools. Attachments are not yet supported in direct
+      // mode (would need to be forwarded as image_url content blocks);
+      // skip them with a note if the user dropped files in here.
+      if (attached.length > 0) {
+        appendSystemNote(log, 'Attachments are not yet wired in direct mode — text-only sends through.');
+        attached.length = 0;
+        renderChips();
+      }
+      directHistory.push({ role: 'user', content: text });
+      const provSel = el.querySelector('#provider-sel');
+      const modelSel = el.querySelector('#model-sel');
+      try {
+        const r = await fetch('/api/direct-chat', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({
+            provider: provSel.value,
+            model: modelSel.value,
+            messages: directHistory,
+            agentFolder: folder,
+          }),
+        });
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          appendSystemNote(log, `Direct chat failed: ${err.error || r.status}`);
+          return;
+        }
+        const data = await r.json();
+        directHistory.push({ role: 'assistant', content: data.text });
+        appendDirectReply(log, data);
+      } catch (err) {
+        appendSystemNote(log, `Direct chat failed: ${String(err)}`);
+      }
+      return;
+    }
+
     // Read pending files to base64. Done at send time, not at attach time,
     // to avoid double-buffering for files the user might immediately remove.
     let files;
@@ -294,6 +355,26 @@ function wireChatForm(el, folder) {
       appendSystemNote(log, 'Send failed — check connection.');
     }
   });
+}
+
+function appendDirectReply(log, data) {
+  const li = document.createElement('li');
+  li.className = 'bubble bubble-agent bubble-direct';
+  const text = data.text || '(empty reply)';
+  const cost =
+    data.costUsd < 0.001 ? `$${data.costUsd.toFixed(5)}` : `$${data.costUsd.toFixed(4)}`;
+  const cachedNote = data.tokensCached > 0 ? ` (${data.tokensCached} cached)` : '';
+  li.innerHTML = `
+    <div class="bubble-text"></div>
+    <div class="bubble-meta">
+      <code>${escapeHtml(data.model)}</code> ·
+      ${data.tokensIn} in${escapeHtml(cachedNote)} · ${data.tokensOut} out ·
+      <strong>${cost}</strong>
+    </div>
+  `;
+  li.querySelector('.bubble-text').textContent = text;
+  log.appendChild(li);
+  log.scrollTop = log.scrollHeight;
 }
 
 function wireTraceClear(el) {

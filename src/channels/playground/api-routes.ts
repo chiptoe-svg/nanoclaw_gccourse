@@ -48,6 +48,7 @@ import {
   handleToggleDefaultModel,
 } from './api/models.js';
 import { handleGetClassControls, handlePutClassControls } from './api/class-controls.js';
+import { handleDirectChat } from './api/direct-chat.js';
 import { handleGetStudentsUsage, handleGetUsage } from './api/usage.js';
 import { isOwner } from '../../modules/permissions/db/user-roles.js';
 import { handleGetEntry, handleListLibrary, handleSaveMyEntry } from './api/library.js';
@@ -505,6 +506,14 @@ export async function route(
     }
     const body = await readJsonBody(req);
     const r = handlePutClassControls(body);
+    return send(res, r.status, r.body);
+  }
+
+  // POST /api/direct-chat — bypass agent, call upstream directly via the
+  // credential proxy. Used by the Chat tab's "Chat (no agent)" mode.
+  if (method === 'POST' && url.pathname === '/api/direct-chat') {
+    const body = await readJsonBody(req, { maxBytes: 1_000_000 });
+    const r = await handleDirectChat(body);
     return send(res, r.status, r.body);
   }
 

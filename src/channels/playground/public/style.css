@@ -374,6 +374,12 @@ html, body {
 .attach-chip .attach-size { color: #888; }
 .attach-chip .attach-remove { background: transparent; border: none; cursor: pointer; color: #666; font-size: 14px; padding: 0 2px; line-height: 1; }
 .attach-chip .attach-remove:hover { color: #c00; }
+.mode-toggle { display: inline-flex; border: 1px solid #ccc; border-radius: 999px; overflow: hidden; margin-left: 12px; }
+.mode-btn { background: transparent; border: none; padding: 4px 12px; font-size: 12px; cursor: pointer; color: #555; }
+.mode-btn.active { background: #2b4570; color: #fff; }
+.mode-btn:hover:not(.active) { background: #f0f0f0; }
+.bubble-direct { border-left: 3px solid #4a90e2; }
+.bubble-meta { font-size: 11px; color: #777; margin-top: 4px; font-family: ui-monospace, monospace; }
 
 .trace-panel {
   flex: 1;
