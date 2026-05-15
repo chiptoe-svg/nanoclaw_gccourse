@@ -165,9 +165,11 @@ function wireChatForm(el, folder) {
   const input = el.querySelector('#chat-input');
   const log = el.querySelector('#chat-log');
 
-  // ⌘↵ / Ctrl-↵ submits.
+  // ↵ submits, Shift+↵ inserts a newline. Matches the convention in
+  // Telegram, Slack, iMessage. ⌘↵ / Ctrl-↵ also still submits for muscle
+  // memory from the previous behavior.
   input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+    if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       form.requestSubmit();
     }
