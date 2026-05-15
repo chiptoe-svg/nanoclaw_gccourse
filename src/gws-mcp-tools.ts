@@ -150,7 +150,13 @@ export async function driveDocReadAsMarkdown(
   try {
     const res = await drive.files.export({ fileId: args.file_id, mimeType: 'text/markdown' }, { responseType: 'text' });
     const markdown = typeof res.data === 'string' ? res.data : String(res.data ?? '');
-    return { ok: true, fileId: args.file_id, markdown, bytes: Buffer.byteLength(markdown), principal: tokenOrError.principal };
+    return {
+      ok: true,
+      fileId: args.file_id,
+      markdown,
+      bytes: Buffer.byteLength(markdown),
+      principal: tokenOrError.principal,
+    };
   } catch (err) {
     const status = (err as { code?: number; status?: number }).code ?? (err as { status?: number }).status;
     log.warn('drive_doc_read_as_markdown failed', { fileId: args.file_id, status, err: String(err) });
@@ -318,7 +324,14 @@ export async function sheetReadRange(
       row.map((cell) => (cell === null || cell === undefined ? '' : String(cell))),
     );
     const cells = values.reduce((sum, row) => sum + row.length, 0);
-    return { ok: true, spreadsheetId: args.spreadsheet_id, range: args.range, values, cells, principal: tokenOrError.principal };
+    return {
+      ok: true,
+      spreadsheetId: args.spreadsheet_id,
+      range: args.range,
+      values,
+      cells,
+      principal: tokenOrError.principal,
+    };
   } catch (err) {
     const status = (err as { code?: number; status?: number }).code ?? (err as { status?: number }).status;
     log.warn('sheet_read_range failed', { spreadsheetId: args.spreadsheet_id, range: args.range, err: String(err) });
