@@ -18,7 +18,10 @@
  * The 1h grace window preserves recently-exhausted rows for log correlation.
  */
 import crypto from 'crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 
+import { DATA_DIR } from '../config.js';
 import { getDb } from '../db/connection.js';
 import { log } from '../log.js';
 
@@ -289,5 +292,35 @@ export function sweepExpiredHandoffs(): number {
              OR (revoked_at IS NOT NULL AND revoked_at < ?)`,
     )
     .run(now, oneHourAgo);
-  return result.changes;
+  // Also clean up orphaned filesystem dirs whose DB row is gone (either via
+  // the DELETE above, or via prior failed-mid-bundle attempts). Each dir is
+  // named by the raw token; hash and check if a row still exists.
+  const orphans = sweepOrphanBundleDirs();
+  if (result.changes > 0 || orphans > 0) {
+    log.info('install-handoff: sweep', { rowsDeleted: result.changes, orphanDirsDeleted: orphans });
+  }
+  return result.changes + orphans;
+}
+
+/**
+ * Scan data/handoffs/ for dirs whose DB row no longer exists and remove them.
+ * Returns the number of dirs deleted.
+ */
+function sweepOrphanBundleDirs(): number {
+  const handoffsRoot = path.join(DATA_DIR, 'handoffs');
+  if (!fs.existsSync(handoffsRoot)) return 0;
+
+  const db = getDb();
+  let deleted = 0;
+  for (const name of fs.readdirSync(handoffsRoot)) {
+    // Token-named dirs are 32-char hex. Skip anything else.
+    if (!/^[a-f0-9]{32}$/.test(name)) continue;
+    const tokenHash = hashToken(name);
+    const row = db.prepare('SELECT 1 FROM install_handoffs WHERE token_hash = ?').get(tokenHash);
+    if (!row) {
+      fs.rmSync(path.join(handoffsRoot, name), { recursive: true, force: true });
+      deleted++;
+    }
+  }
+  return deleted;
 }

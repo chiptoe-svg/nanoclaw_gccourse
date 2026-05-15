@@ -46,8 +46,12 @@ Delete the sentinel-bounded block:
 
 ```typescript
     // install-handoff:sweep START
-    const { sweepExpiredHandoffs } = await import('./install-handoff/store.js');
-    sweepExpiredHandoffs();
+    try {
+      const { sweepExpiredHandoffs } = await import('./install-handoff/store.js');
+      sweepExpiredHandoffs();
+    } catch (err) {
+      log.warn('install-handoff sweep failed', { err });
+    }
     // install-handoff:sweep END
 ```
 

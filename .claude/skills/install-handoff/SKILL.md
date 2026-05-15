@@ -118,18 +118,20 @@ Check first:
 grep -q 'install-handoff:sweep START' src/host-sweep.ts
 ```
 
-If not found, locate the `// 5. Recurrence fanout` comment block in `src/host-sweep.ts` (inside `sweepSession`) and add the following block **after** the `// MODULE-HOOK:scheduling-recurrence:end` line, still inside the `finally`-less outer `try` block:
+If not found, locate the `sweep()` function in `src/host-sweep.ts` (around line 133, NOT `sweepSession`) and add the following block **after** the `await backupCentralDb();` line and **before** the `getActiveSessions()` call. Once-per-tick is the right cadence — the store function is fast and idempotent, but doesn't need per-session invocation:
 
 ```typescript
     // install-handoff:sweep START
-    const { sweepExpiredHandoffs } = await import('./install-handoff/store.js');
-    sweepExpiredHandoffs();
+    try {
+      const { sweepExpiredHandoffs } = await import('./install-handoff/store.js');
+      sweepExpiredHandoffs();
+    } catch (err) {
+      log.warn('install-handoff sweep failed', { err });
+    }
     // install-handoff:sweep END
 ```
 
-The sweep call is session-independent — it only needs to run once per sweep tick, not once per session. The `sweepSession` function is a convenient hook; the store function is idempotent.
-
-> **Known follow-up (Phase 7 of `plans/install-handoff-skill.md`):** the proper hook is at the top of `sweep()` itself (once per tick), not inside `sweepSession()` (once per active session per tick). Idempotency makes the current placement functionally correct but wasteful under N-active-session load. Phase 7 will move the call and update this step accordingly.
+The dynamic import keeps trunk's `host-sweep.ts` free of a hard dependency on the install-handoff module — if the skill is uninstalled (REMOVE.md run), the sweep block goes away with it; if the skill files are present but the module fails to load for some reason, sweep continues running for sessions.
 
 ### 8. Verify lockfile
 
