@@ -357,11 +357,9 @@ export async function startCodexTurn(server: AppServer, params: TurnParams): Pro
 // proxy. The two responsibilities share one file, so they're written together
 // to avoid the "second writer clobbers the first" trap.
 //
-// Why `wire_api = "chat"`: the default `responses` wire protocol opens a
-// WebSocket to the provider, which mlx-omni-server (and any other local
-// OpenAI-compat server that only implements REST) rejects with 401. Forcing
-// the chat-completions transport keeps the codex container compatible with
-// every OpenAI-shaped backend.
+// wire_api: codex-app-server ≥ 0.x dropped support for "chat" and requires
+// "responses". mlx-omni-server and recent OpenAI-compatible servers support
+// the responses API over standard HTTP (no WebSocket required for most paths).
 
 export interface CodexMcpServer {
   command: string;
@@ -434,7 +432,7 @@ export function writeCodexConfigToml(input: CodexConfigTomlInput): void {
   lines.push(`[model_providers.${spec.name}]`);
   lines.push(`name = ${tomlBasicString(spec.name)}`);
   lines.push(`base_url = ${tomlBasicString(baseUrl)}`);
-  lines.push('wire_api = "chat"');
+  lines.push('wire_api = "responses"');
   lines.push(`env_key = ${tomlBasicString(spec.envKey)}`);
   lines.push('');
 

@@ -422,3 +422,5 @@ async function* runOneTurn(
 }
 
 registerProvider('codex', (opts) => new CodexProvider(opts));
+// 'local' is codex-app-server pointed at mlx-omni-server; same runtime, different config.toml.
+registerProvider('local', (opts) => new CodexProvider(opts));
