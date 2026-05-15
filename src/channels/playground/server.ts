@@ -39,6 +39,7 @@ import {
   stopIdleSweep,
 } from './auth-store.js';
 import { handleIssue as handleLoginPinIssue, handleVerify as handleLoginPinVerify } from './api/login-pin.js';
+import { handleGoogleAuthCallback, handleGoogleAuthStart } from './api/google-auth.js';
 import { handleOAuthCallback, handleOAuthStart } from './google-oauth.js';
 import { parseCookie, readJsonBody, send } from './http-helpers.js';
 
@@ -278,6 +279,20 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
     void handleOAuthCallback(url, res).catch((err) => {
       log.error('OAuth callback error', { err });
       if (!res.headersSent) send(res, 500, { error: String(err) });
+    });
+    return;
+  }
+  if (method === 'GET' && url.pathname === '/google-auth/start') {
+    void handleGoogleAuthStart(req, res).catch((err) => {
+      log.error('Google-auth start handler crashed', { err });
+      if (!res.headersSent) send(res, 500, { error: 'Google auth start failed' });
+    });
+    return;
+  }
+  if (method === 'GET' && url.pathname === '/google-auth/callback') {
+    void handleGoogleAuthCallback(req, res).catch((err) => {
+      log.error('Google-auth callback handler crashed', { err });
+      if (!res.headersSent) send(res, 500, { error: 'Google auth callback failed' });
     });
     return;
   }
