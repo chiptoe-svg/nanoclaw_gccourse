@@ -190,7 +190,14 @@ function renderActiveList(el) {
 }
 
 function addSkillToActive(el, name) {
-  if (currentSkills === 'all') currentSkills = [];
+  // When transitioning from the implicit "all" sentinel to an explicit
+  // list, seed the list with every currently-known library skill before
+  // appending the new one. The old behavior (reset to []) silently
+  // *removed* every skill except the one being added — surprising and
+  // destructive when "+ Add to active" reads as additive.
+  if (currentSkills === 'all') {
+    currentSkills = libraryCache.map((e) => e.name).filter((n) => typeof n === 'string');
+  }
   if (currentSkills.includes(name)) return;
   currentSkills.push(name);
   saveActive(el);
