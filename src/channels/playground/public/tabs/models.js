@@ -107,7 +107,21 @@ function buildCard(m) {
   if (isActive({ provider: m.provider, model: m.id })) card.classList.add('active');
 
   const chipsHtml = (m.chips || []).map((c) => `<span class="chip">${escapeHtml(c)}</span>`).join('');
-  const costLine = m.costPer1kTokensUsd != null ? `$${m.costPer1kTokensUsd} / 1k tokens` : '$0 (local)';
+  // Prefer split rates when available (codex catalog uses these now); fall
+  // back to the legacy single-rate field; only call it "$0 (local)" when
+  // truly no pricing is set on the entry.
+  let costLine;
+  if (m.costPer1kInUsd != null || m.costPer1kOutUsd != null) {
+    const parts = [];
+    if (m.costPer1kInUsd != null) parts.push(`$${m.costPer1kInUsd} in`);
+    if (m.costPer1kCachedInUsd != null) parts.push(`$${m.costPer1kCachedInUsd} cached`);
+    if (m.costPer1kOutUsd != null) parts.push(`$${m.costPer1kOutUsd} out`);
+    costLine = `${parts.join(' · ')} / 1k tokens`;
+  } else if (m.costPer1kTokensUsd != null) {
+    costLine = `$${m.costPer1kTokensUsd} / 1k tokens`;
+  } else {
+    costLine = m.origin === 'local' ? '$0 (local)' : '(pricing not set)';
+  }
   const latencyLine = m.avgLatencySec != null ? `${m.avgLatencySec}s avg` : '? s';
   const paramsLine = `params: ${escapeHtml(m.paramCount || '?')}`;
   const modalitiesLine = `modalities: ${(m.modalities || ['?']).join(' + ')}`;
