@@ -14,12 +14,10 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 // All variables used inside vi.mock factories must be created with vi.hoisted
 // so they exist before the factories run (factories are hoisted to file top).
 const { mockExistsSync, mockReadFileSync, mockGetAgentGroupMetadata } = vi.hoisted(() => ({
-  mockExistsSync: vi.fn<[string | Buffer | URL, fs.StatSyncOptions?], boolean>(),
-  mockReadFileSync: vi.fn<unknown[], unknown>(),
-  mockGetAgentGroupMetadata: vi.fn<[string], Record<string, unknown>>(),
+  mockExistsSync: vi.fn(),
+  mockReadFileSync: vi.fn(),
+  mockGetAgentGroupMetadata: vi.fn(),
 }));
-
-import type fs from 'fs';
 
 // --- module mocks -------------------------------------------------------------
 
