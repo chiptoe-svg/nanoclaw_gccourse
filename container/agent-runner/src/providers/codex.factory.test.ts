@@ -7,7 +7,13 @@ import { describe, it, expect } from 'bun:test';
 import type { ProviderEvent } from './types.js';
 
 import { createProvider } from './factory.js';
-import { CodexProvider, composeAvailableSkills, resolveClaudeImports, resolveCodexModel } from './codex.js';
+import {
+  CodexProvider,
+  composeAvailableSkills,
+  composeRuntimeIdentity,
+  resolveClaudeImports,
+  resolveCodexModel,
+} from './codex.js';
 
 describe('ProviderEvent result extensions (codex)', () => {
   it('result variant carries latencyMs and provider from codex', () => {
@@ -195,5 +201,18 @@ describe('composeAvailableSkills', () => {
     const zIdx = out.indexOf('**zulu**');
     expect(aIdx).toBeLessThan(mIdx);
     expect(mIdx).toBeLessThan(zIdx);
+  });
+});
+
+describe('composeRuntimeIdentity', () => {
+  it('produces a one-line identity block when model is set', () => {
+    const out = composeRuntimeIdentity('local', 'Qwen3.6-35B-A3B-UD-MLX-4bit');
+    expect(out).toContain('Qwen3.6-35B-A3B-UD-MLX-4bit');
+    expect(out).toContain('local');
+    expect(out).toMatch(/do not guess/i);
+  });
+
+  it('returns undefined when model is undefined', () => {
+    expect(composeRuntimeIdentity('codex', undefined)).toBeUndefined();
   });
 });

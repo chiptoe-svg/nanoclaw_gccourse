@@ -152,10 +152,34 @@ function parseFrontmatter(content: string): Record<string, string> {
   return out;
 }
 
-function composeBaseInstructions(promptAddendum: string | undefined): string | undefined {
+/**
+ * Build the one-line runtime identity block prepended to base_instructions.
+ *
+ * Codex's app-server only puts the model name into the *routing* layer (the
+ * `model` field on each API request to the upstream and in turn_context's
+ * collaboration_mode). It does NOT surface that name into the LLM-visible
+ * system prompt. The cloud-OpenAI path doesn't need this — OpenAI models
+ * recognize their own identity from training — but local models like
+ * Qwen3.6 confabulate ("I'm a GPT-5 model") because the only model names
+ * they see in their prompt are the codex default skill descriptions
+ * (openai-docs, etc.).
+ *
+ * The value below is the same string that drives config.toml's `model =`
+ * line and the upstream API request body, so the identity is accurate by
+ * construction — there's no separate source of truth to drift from.
+ */
+export function composeRuntimeIdentity(provider: string, model: string | undefined): string | undefined {
+  if (!model) return undefined;
+  return `Runtime context: you are running on model "${model}" via the "${provider}" provider. If asked which model you are, answer with the model identifier above — do not guess.`;
+}
+
+function composeBaseInstructions(
+  promptAddendum: string | undefined,
+  runtimeIdentity: string | undefined,
+): string | undefined {
   const claudeMd = readAgentAndGlobalClaudeMd();
   const skills = composeAvailableSkills();
-  const pieces = [claudeMd, skills, promptAddendum].filter((s): s is string => Boolean(s));
+  const pieces = [runtimeIdentity, claudeMd, skills, promptAddendum].filter((s): s is string => Boolean(s));
   return pieces.length > 0 ? pieces.join('\n\n---\n\n') : undefined;
 }
 
@@ -204,10 +228,12 @@ export class CodexProvider implements AgentProvider {
         : {};
       const proxyBaseUrl = (process.env.OPENAI_BASE_URL ?? 'http://host.docker.internal:3001/openai/v1')
         .replace(/\/(openai|omlx)\/v1$/, '');
+      const activeProvider = containerJson.provider ?? 'codex';
+      const effectiveModel = containerJson.model ?? self.model;
       writeCodexConfigToml({
         mcpServers: self.mcpServers,
-        activeProvider: containerJson.provider ?? 'codex',
-        model: containerJson.model ?? self.model,
+        activeProvider,
+        model: effectiveModel,
         proxyBaseUrl,
       });
       const server = spawnCodexAppServer(createCodexConfigOverrides());
@@ -225,7 +251,10 @@ export class CodexProvider implements AgentProvider {
           sandbox: 'danger-full-access',
           approvalPolicy: 'never',
           personality: 'friendly',
-          baseInstructions: composeBaseInstructions(input.systemContext?.instructions),
+          baseInstructions: composeBaseInstructions(
+            input.systemContext?.instructions,
+            composeRuntimeIdentity(activeProvider, effectiveModel),
+          ),
         };
 
         threadId = await startOrResumeCodexThread(server, threadId, threadParams);
