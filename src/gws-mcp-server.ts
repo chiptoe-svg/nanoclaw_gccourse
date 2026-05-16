@@ -25,6 +25,9 @@ import {
   gmailSearch,
   gmailReadThread,
   gmailSendDraft,
+  calendarListEvents,
+  calendarCreateEvent,
+  calendarFindFreeSlot,
   type ToolContext,
   type ToolError,
   type DocReadResult,
@@ -46,7 +49,10 @@ export type ToolName =
   | 'slides_replace_text'
   | 'gmail_search'
   | 'gmail_read_thread'
-  | 'gmail_send_draft';
+  | 'gmail_send_draft'
+  | 'calendar_list_events'
+  | 'calendar_create_event'
+  | 'calendar_find_free_slot';
 
 /**
  * Result shape returned by `dispatchTool`. The dispatcher forwards
@@ -237,15 +243,15 @@ function validateGmailReadThread(raw: unknown): { thread_id: string } | string {
   return { thread_id: threadId };
 }
 
-function validateGmailSendDraft(
-  raw: unknown,
-): {
-  to: string | string[];
-  subject: string;
-  body: string;
-  cc?: string | string[];
-  in_reply_to_thread_id?: string;
-} | string {
+function validateGmailSendDraft(raw: unknown):
+  | {
+      to: string | string[];
+      subject: string;
+      body: string;
+      cc?: string | string[];
+      in_reply_to_thread_id?: string;
+    }
+  | string {
   const o = asObject(raw);
   if (!o) return 'arguments must be an object';
 
@@ -299,6 +305,106 @@ registerGwsTool('gmail_read_thread', {
 registerGwsTool('gmail_send_draft', {
   handler: gmailSendDraft,
   validate: validateGmailSendDraft as (raw: unknown) => unknown | string,
+});
+
+// ── Calendar validators ────────────────────────────────────────────────────────
+
+function validateCalendarListEvents(
+  raw: unknown,
+): { time_min: string; time_max: string; max_results?: number } | string {
+  const o = asObject(raw);
+  if (!o) return 'arguments must be an object';
+  const timeMin = asString(o, 'time_min');
+  if (!timeMin) return '`time_min` (ISO-8601 string) is required';
+  const timeMax = asString(o, 'time_max');
+  if (!timeMax) return '`time_max` (ISO-8601 string) is required';
+  const maxResults = o.max_results;
+  if (maxResults !== undefined && (typeof maxResults !== 'number' || !Number.isInteger(maxResults) || maxResults < 1)) {
+    return '`max_results`, when provided, must be a positive integer';
+  }
+  return { time_min: timeMin, time_max: timeMax, max_results: typeof maxResults === 'number' ? maxResults : undefined };
+}
+
+function validateCalendarCreateEvent(
+  raw: unknown,
+):
+  | {
+      start: string;
+      end: string;
+      summary: string;
+      description?: string;
+      location?: string;
+      attendees?: Array<{ email: string } | string>;
+    }
+  | string {
+  const o = asObject(raw);
+  if (!o) return 'arguments must be an object';
+  const start = asString(o, 'start');
+  if (!start) return '`start` (ISO-8601 string) is required';
+  const end = asString(o, 'end');
+  if (!end) return '`end` (ISO-8601 string) is required';
+  const summary = asString(o, 'summary');
+  if (!summary) return '`summary` (string) is required';
+
+  // attendees: optional, string[] or { email: string }[]
+  let attendees: Array<{ email: string } | string> | undefined;
+  const rawAttendees = o.attendees;
+  if (rawAttendees !== undefined) {
+    if (!Array.isArray(rawAttendees)) return '`attendees`, when provided, must be an array';
+    for (const a of rawAttendees) {
+      if (typeof a !== 'string' && !(a && typeof a === 'object' && typeof (a as { email?: unknown }).email === 'string')) {
+        return '`attendees` entries must be strings or objects with an `email` string field';
+      }
+    }
+    attendees = rawAttendees as Array<{ email: string } | string>;
+  }
+
+  return {
+    start,
+    end,
+    summary,
+    description: asString(o, 'description') ?? undefined,
+    location: asString(o, 'location') ?? undefined,
+    attendees,
+  };
+}
+
+function validateCalendarFindFreeSlot(
+  raw: unknown,
+): { duration_minutes: number; time_min: string; time_max: string; max_slots?: number } | string {
+  const o = asObject(raw);
+  if (!o) return 'arguments must be an object';
+  const durationMinutes = o.duration_minutes;
+  if (typeof durationMinutes !== 'number' || !Number.isInteger(durationMinutes) || durationMinutes < 1) {
+    return '`duration_minutes` (positive integer) is required';
+  }
+  const timeMin = asString(o, 'time_min');
+  if (!timeMin) return '`time_min` (ISO-8601 string) is required';
+  const timeMax = asString(o, 'time_max');
+  if (!timeMax) return '`time_max` (ISO-8601 string) is required';
+  const maxSlots = o.max_slots;
+  if (maxSlots !== undefined && (typeof maxSlots !== 'number' || !Number.isInteger(maxSlots) || maxSlots < 1)) {
+    return '`max_slots`, when provided, must be a positive integer';
+  }
+  return {
+    duration_minutes: durationMinutes,
+    time_min: timeMin,
+    time_max: timeMax,
+    max_slots: typeof maxSlots === 'number' ? maxSlots : undefined,
+  };
+}
+
+registerGwsTool('calendar_list_events', {
+  handler: calendarListEvents,
+  validate: validateCalendarListEvents as (raw: unknown) => unknown | string,
+});
+registerGwsTool('calendar_create_event', {
+  handler: calendarCreateEvent,
+  validate: validateCalendarCreateEvent as (raw: unknown) => unknown | string,
+});
+registerGwsTool('calendar_find_free_slot', {
+  handler: calendarFindFreeSlot,
+  validate: validateCalendarFindFreeSlot as (raw: unknown) => unknown | string,
 });
 
 /** Names of every registered tool — used by the relay's introspection

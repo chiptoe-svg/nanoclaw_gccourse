@@ -21,6 +21,8 @@ const {
   mockMessagesGetFn,
   mockThreadsGetFn,
   mockDraftsCreateFn,
+  mockCalendarEventsListFn,
+  mockCalendarEventsInsertFn,
 } = vi.hoisted(() => ({
   mockGetGoogleAccessTokenForAgentGroup: vi.fn(),
   mockFilesExport: vi.fn(),
@@ -28,6 +30,8 @@ const {
   mockMessagesGetFn: vi.fn(),
   mockThreadsGetFn: vi.fn(),
   mockDraftsCreateFn: vi.fn(),
+  mockCalendarEventsListFn: vi.fn(),
+  mockCalendarEventsInsertFn: vi.fn(),
 }));
 
 // ── module mocks ──────────────────────────────────────────────────────────────
@@ -85,9 +89,28 @@ vi.mock('@googleapis/gmail', () => {
   };
 });
 
+vi.mock('@googleapis/calendar', () => {
+  return {
+    calendar: vi.fn(() => ({
+      events: {
+        list: mockCalendarEventsListFn,
+        insert: mockCalendarEventsInsertFn,
+      },
+    })),
+  };
+});
+
 // ── import SUT after mocks ────────────────────────────────────────────────────
 
-import { driveDocReadAsMarkdown, gmailSearch, gmailReadThread, gmailSendDraft } from './gws-mcp-tools.js';
+import {
+  driveDocReadAsMarkdown,
+  gmailSearch,
+  gmailReadThread,
+  gmailSendDraft,
+  calendarListEvents,
+  calendarCreateEvent,
+  calendarFindFreeSlot,
+} from './gws-mcp-tools.js';
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -426,5 +449,439 @@ describe('gmailSendDraft', () => {
     expect(result.ok).toBe(true);
     // The raw message should have been built — check the draft was created
     expect(mockDraftsCreateFn).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── Tier D: Calendar tests ────────────────────────────────────────────────────
+
+describe('calendarListEvents', () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+  });
+
+  it('happy path — returns events with principal', async () => {
+    mockGetGoogleAccessTokenForAgentGroup.mockResolvedValue({ token: 'student-tok', principal: 'self' });
+    mockCalendarEventsListFn.mockResolvedValue({
+      data: {
+        items: [
+          {
+            id: 'evt1',
+            summary: 'Team standup',
+            description: 'Daily sync',
+            location: 'Zoom',
+            start: { dateTime: '2026-05-20T09:00:00Z' },
+            end: { dateTime: '2026-05-20T09:30:00Z' },
+            htmlLink: 'https://calendar.google.com/evt1',
+            attendees: [
+              { email: 'alice@example.com', responseStatus: 'accepted' },
+              { email: 'bob@example.com', responseStatus: 'needsAction' },
+            ],
+          },
+          {
+            id: 'evt2',
+            summary: 'Lunch',
+            start: { dateTime: '2026-05-20T12:00:00Z' },
+            end: { dateTime: '2026-05-20T13:00:00Z' },
+            htmlLink: 'https://calendar.google.com/evt2',
+          },
+        ],
+      },
+    });
+
+    const result = await calendarListEvents(CTX, {
+      time_min: '2026-05-20T00:00:00Z',
+      time_max: '2026-05-21T00:00:00Z',
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.principal).toBe('self');
+    expect(result.events).toHaveLength(2);
+    expect(result.events[0]).toMatchObject({
+      id: 'evt1',
+      summary: 'Team standup',
+      start: '2026-05-20T09:00:00Z',
+      end: '2026-05-20T09:30:00Z',
+      description: 'Daily sync',
+      location: 'Zoom',
+      htmlLink: 'https://calendar.google.com/evt1',
+    });
+    expect(result.events[0].attendees).toHaveLength(2);
+    expect(result.events[0].attendees![0]).toMatchObject({ email: 'alice@example.com', responseStatus: 'accepted' });
+    // Second event has no description/location — they should be absent
+    expect('description' in result.events[1]).toBe(false);
+    expect('location' in result.events[1]).toBe(false);
+  });
+
+  it('maps all-day events (date only) to midnight-Z strings', async () => {
+    mockGetGoogleAccessTokenForAgentGroup.mockResolvedValue({ token: 'tok', principal: 'self' });
+    mockCalendarEventsListFn.mockResolvedValue({
+      data: {
+        items: [
+          {
+            id: 'allday1',
+            summary: 'Conference',
+            start: { date: '2026-05-22' },
+            end: { date: '2026-05-23' },
+            htmlLink: 'https://calendar.google.com/allday1',
+          },
+        ],
+      },
+    });
+
+    const result = await calendarListEvents(CTX, {
+      time_min: '2026-05-22T00:00:00Z',
+      time_max: '2026-05-23T00:00:00Z',
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.events[0].start).toBe('2026-05-22T00:00:00Z');
+    expect(result.events[0].end).toBe('2026-05-23T00:00:00Z');
+  });
+
+  it('returns connect_required when resolver returns null', async () => {
+    mockGetGoogleAccessTokenForAgentGroup.mockResolvedValue(null);
+
+    const result = await calendarListEvents(CTX, {
+      time_min: '2026-05-20T00:00:00Z',
+      time_max: '2026-05-21T00:00:00Z',
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe('connect_required');
+    expect(result.status).toBe(403);
+  });
+
+  it('respects default and cap for max_results', async () => {
+    mockGetGoogleAccessTokenForAgentGroup.mockResolvedValue({ token: 'tok', principal: 'self' });
+    mockCalendarEventsListFn.mockResolvedValue({ data: { items: [] } });
+
+    await calendarListEvents(CTX, { time_min: '2026-05-20T00:00:00Z', time_max: '2026-05-21T00:00:00Z' });
+    expect(mockCalendarEventsListFn).toHaveBeenCalledWith(expect.objectContaining({ maxResults: 50 }));
+
+    await calendarListEvents(CTX, {
+      time_min: '2026-05-20T00:00:00Z',
+      time_max: '2026-05-21T00:00:00Z',
+      max_results: 500,
+    });
+    expect(mockCalendarEventsListFn).toHaveBeenCalledWith(expect.objectContaining({ maxResults: 250 }));
+  });
+});
+
+describe('calendarCreateEvent', () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+  });
+
+  it('happy path — returns eventId and htmlLink with principal', async () => {
+    mockGetGoogleAccessTokenForAgentGroup.mockResolvedValue({ token: 'student-tok', principal: 'self' });
+    mockCalendarEventsInsertFn.mockResolvedValue({
+      data: {
+        id: 'new_evt_abc',
+        htmlLink: 'https://calendar.google.com/new_evt_abc',
+      },
+    });
+
+    const result = await calendarCreateEvent(CTX, {
+      start: '2026-05-25T14:00:00Z',
+      end: '2026-05-25T15:00:00Z',
+      summary: 'Project review',
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.eventId).toBe('new_evt_abc');
+    expect(result.htmlLink).toBe('https://calendar.google.com/new_evt_abc');
+    expect(result.principal).toBe('self');
+  });
+
+  it('sends dateTime in requestBody for timed events', async () => {
+    mockGetGoogleAccessTokenForAgentGroup.mockResolvedValue({ token: 'tok', principal: 'self' });
+    mockCalendarEventsInsertFn.mockResolvedValue({ data: { id: 'e1', htmlLink: '' } });
+
+    await calendarCreateEvent(CTX, {
+      start: '2026-05-25T14:00:00Z',
+      end: '2026-05-25T15:00:00Z',
+      summary: 'Meeting',
+    });
+
+    const callArg = mockCalendarEventsInsertFn.mock.calls[0][0] as {
+      requestBody: { start: { dateTime?: string; date?: string }; end: { dateTime?: string; date?: string } };
+    };
+    expect(callArg.requestBody.start.dateTime).toBe('2026-05-25T14:00:00Z');
+    expect(callArg.requestBody.start.date).toBeUndefined();
+    expect(callArg.requestBody.end.dateTime).toBe('2026-05-25T15:00:00Z');
+    expect(callArg.requestBody.end.date).toBeUndefined();
+  });
+
+  it('sends date (not dateTime) in requestBody for all-day events', async () => {
+    mockGetGoogleAccessTokenForAgentGroup.mockResolvedValue({ token: 'tok', principal: 'self' });
+    mockCalendarEventsInsertFn.mockResolvedValue({ data: { id: 'e2', htmlLink: '' } });
+
+    await calendarCreateEvent(CTX, {
+      start: '2026-05-25T00:00:00Z',
+      end: '2026-05-26T00:00:00Z',
+      summary: 'All-day event',
+    });
+
+    const callArg = mockCalendarEventsInsertFn.mock.calls[0][0] as {
+      requestBody: { start: { date?: string; dateTime?: string }; end: { date?: string; dateTime?: string } };
+    };
+    expect(callArg.requestBody.start.date).toBe('2026-05-25');
+    expect(callArg.requestBody.start.dateTime).toBeUndefined();
+    expect(callArg.requestBody.end.date).toBe('2026-05-26');
+    expect(callArg.requestBody.end.dateTime).toBeUndefined();
+  });
+
+  it('accepts attendees as array of strings and normalizes to objects', async () => {
+    mockGetGoogleAccessTokenForAgentGroup.mockResolvedValue({ token: 'tok', principal: 'self' });
+    mockCalendarEventsInsertFn.mockResolvedValue({ data: { id: 'e3', htmlLink: '' } });
+
+    await calendarCreateEvent(CTX, {
+      start: '2026-05-25T14:00:00Z',
+      end: '2026-05-25T15:00:00Z',
+      summary: 'Meeting with strings',
+      attendees: ['alice@example.com', 'bob@example.com'],
+    });
+
+    const callArg = mockCalendarEventsInsertFn.mock.calls[0][0] as {
+      requestBody: { attendees?: Array<{ email: string }> };
+    };
+    expect(callArg.requestBody.attendees).toEqual([
+      { email: 'alice@example.com' },
+      { email: 'bob@example.com' },
+    ]);
+  });
+
+  it('accepts attendees as array of objects', async () => {
+    mockGetGoogleAccessTokenForAgentGroup.mockResolvedValue({ token: 'tok', principal: 'self' });
+    mockCalendarEventsInsertFn.mockResolvedValue({ data: { id: 'e4', htmlLink: '' } });
+
+    await calendarCreateEvent(CTX, {
+      start: '2026-05-25T14:00:00Z',
+      end: '2026-05-25T15:00:00Z',
+      summary: 'Meeting with objects',
+      attendees: [{ email: 'alice@example.com' }, { email: 'bob@example.com' }],
+    });
+
+    const callArg = mockCalendarEventsInsertFn.mock.calls[0][0] as {
+      requestBody: { attendees?: Array<{ email: string }> };
+    };
+    expect(callArg.requestBody.attendees).toEqual([
+      { email: 'alice@example.com' },
+      { email: 'bob@example.com' },
+    ]);
+  });
+
+  it('passes sendUpdates: "all" to notify attendees', async () => {
+    mockGetGoogleAccessTokenForAgentGroup.mockResolvedValue({ token: 'tok', principal: 'self' });
+    mockCalendarEventsInsertFn.mockResolvedValue({ data: { id: 'e5', htmlLink: '' } });
+
+    await calendarCreateEvent(CTX, {
+      start: '2026-05-25T14:00:00Z',
+      end: '2026-05-25T15:00:00Z',
+      summary: 'Notify test',
+    });
+
+    const callArg = mockCalendarEventsInsertFn.mock.calls[0][0] as { sendUpdates: string };
+    expect(callArg.sendUpdates).toBe('all');
+  });
+
+  it('returns connect_required when resolver returns null', async () => {
+    mockGetGoogleAccessTokenForAgentGroup.mockResolvedValue(null);
+
+    const result = await calendarCreateEvent(CTX, {
+      start: '2026-05-25T14:00:00Z',
+      end: '2026-05-25T15:00:00Z',
+      summary: 'Test',
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe('connect_required');
+    expect(result.status).toBe(403);
+  });
+});
+
+describe('calendarFindFreeSlot', () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+  });
+
+  it('correctly identifies a gap between two events', async () => {
+    mockGetGoogleAccessTokenForAgentGroup.mockResolvedValue({ token: 'tok', principal: 'self' });
+    // Window: 09:00–17:00. Events: 09:00–10:00, 11:00–12:00.
+    // Gaps: [10:00–11:00] (60 min), [12:00–17:00] (300 min).
+    mockCalendarEventsListFn.mockResolvedValue({
+      data: {
+        items: [
+          {
+            id: 'e1',
+            summary: 'Morning meeting',
+            start: { dateTime: '2026-05-20T09:00:00Z' },
+            end: { dateTime: '2026-05-20T10:00:00Z' },
+          },
+          {
+            id: 'e2',
+            summary: 'Lunch talk',
+            start: { dateTime: '2026-05-20T11:00:00Z' },
+            end: { dateTime: '2026-05-20T12:00:00Z' },
+          },
+        ],
+      },
+    });
+
+    const result = await calendarFindFreeSlot(CTX, {
+      duration_minutes: 30,
+      time_min: '2026-05-20T09:00:00Z',
+      time_max: '2026-05-20T17:00:00Z',
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.principal).toBe('self');
+    // Should find at least two slots: [10:00–11:00] and [12:00–17:00]
+    expect(result.slots.length).toBeGreaterThanOrEqual(2);
+    expect(result.slots[0].start).toBe('2026-05-20T10:00:00.000Z');
+    expect(result.slots[0].end).toBe('2026-05-20T11:00:00.000Z');
+    expect(result.slots[1].start).toBe('2026-05-20T12:00:00.000Z');
+    expect(result.slots[1].end).toBe('2026-05-20T17:00:00.000Z');
+  });
+
+  it('filters out gaps shorter than duration_minutes', async () => {
+    mockGetGoogleAccessTokenForAgentGroup.mockResolvedValue({ token: 'tok', principal: 'self' });
+    // Window: 09:00–17:00. Events: 09:00–10:00, 10:15–17:00.
+    // Gap: [10:00–10:15] = 15 min. If duration=60, this should be filtered.
+    mockCalendarEventsListFn.mockResolvedValue({
+      data: {
+        items: [
+          {
+            id: 'e1',
+            summary: 'Morning',
+            start: { dateTime: '2026-05-20T09:00:00Z' },
+            end: { dateTime: '2026-05-20T10:00:00Z' },
+          },
+          {
+            id: 'e2',
+            summary: 'Afternoon',
+            start: { dateTime: '2026-05-20T10:15:00Z' },
+            end: { dateTime: '2026-05-20T17:00:00Z' },
+          },
+        ],
+      },
+    });
+
+    const result = await calendarFindFreeSlot(CTX, {
+      duration_minutes: 60,
+      time_min: '2026-05-20T09:00:00Z',
+      time_max: '2026-05-20T17:00:00Z',
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // 15-minute gap is too short; no trailing gap either — should be empty
+    expect(result.slots).toHaveLength(0);
+  });
+
+  it('skips transparent (free/unblocking) events', async () => {
+    mockGetGoogleAccessTokenForAgentGroup.mockResolvedValue({ token: 'tok', principal: 'self' });
+    // Window: 09:00–17:00. Events: 09:00–10:00 (transparent = free), 11:00–12:00 (opaque).
+    // The transparent event should be skipped; only [09:00–11:00] and [12:00–17:00] are gaps.
+    mockCalendarEventsListFn.mockResolvedValue({
+      data: {
+        items: [
+          {
+            id: 'e1',
+            summary: 'OOO (free)',
+            transparency: 'transparent',
+            start: { dateTime: '2026-05-20T09:00:00Z' },
+            end: { dateTime: '2026-05-20T10:00:00Z' },
+          },
+          {
+            id: 'e2',
+            summary: 'Real meeting',
+            start: { dateTime: '2026-05-20T11:00:00Z' },
+            end: { dateTime: '2026-05-20T12:00:00Z' },
+          },
+        ],
+      },
+    });
+
+    const result = await calendarFindFreeSlot(CTX, {
+      duration_minutes: 30,
+      time_min: '2026-05-20T09:00:00Z',
+      time_max: '2026-05-20T17:00:00Z',
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // transparent event ignored → gap at 09:00–11:00 surfaces first
+    expect(result.slots[0].start).toBe('2026-05-20T09:00:00.000Z');
+    expect(result.slots[0].end).toBe('2026-05-20T11:00:00.000Z');
+  });
+
+  it('all-day event blocks the entire day', async () => {
+    mockGetGoogleAccessTokenForAgentGroup.mockResolvedValue({ tok: 'tok', principal: 'self' } as never);
+    // Simulate mockResolvedValue properly
+    mockGetGoogleAccessTokenForAgentGroup.mockResolvedValue({ token: 'tok', principal: 'self' });
+    // Window: 2026-05-20 00:00Z–2026-05-20 23:59Z. All-day event on 2026-05-20.
+    // After clamping to window, the all-day interval [00:00–00:00 next day] covers everything.
+    mockCalendarEventsListFn.mockResolvedValue({
+      data: {
+        items: [
+          {
+            id: 'e_allday',
+            summary: 'Holiday',
+            start: { date: '2026-05-20' },
+            end: { date: '2026-05-21' },
+          },
+        ],
+      },
+    });
+
+    const result = await calendarFindFreeSlot(CTX, {
+      duration_minutes: 30,
+      time_min: '2026-05-20T00:00:00Z',
+      time_max: '2026-05-20T23:59:00Z',
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // All-day event covers the whole window → no free slots
+    expect(result.slots).toHaveLength(0);
+  });
+
+  it('respects max_slots cap', async () => {
+    mockGetGoogleAccessTokenForAgentGroup.mockResolvedValue({ token: 'tok', principal: 'self' });
+    // No events → entire window is one gap, but max_slots=1 means only one slot returned
+    mockCalendarEventsListFn.mockResolvedValue({ data: { items: [] } });
+
+    const result = await calendarFindFreeSlot(CTX, {
+      duration_minutes: 30,
+      time_min: '2026-05-20T09:00:00Z',
+      time_max: '2026-05-20T17:00:00Z',
+      max_slots: 1,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.slots).toHaveLength(1);
+  });
+
+  it('returns connect_required when resolver returns null', async () => {
+    mockGetGoogleAccessTokenForAgentGroup.mockResolvedValue(null);
+
+    const result = await calendarFindFreeSlot(CTX, {
+      duration_minutes: 60,
+      time_min: '2026-05-20T09:00:00Z',
+      time_max: '2026-05-20T17:00:00Z',
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe('connect_required');
+    expect(result.status).toBe(403);
   });
 });

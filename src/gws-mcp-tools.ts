@@ -26,6 +26,7 @@
  */
 import { Readable } from 'stream';
 
+import { calendar as calendarApi } from '@googleapis/calendar';
 import { drive as driveApi, auth as gAuth } from '@googleapis/drive';
 import { gmail as gmailApi } from '@googleapis/gmail';
 import { sheets as sheetsApi } from '@googleapis/sheets';
@@ -692,7 +693,7 @@ function extractBody(part: {
 
   // Multipart: recurse and collect
   if (Array.isArray(part.parts)) {
-    const subParts = part.parts as typeof part[];
+    const subParts = part.parts as (typeof part)[];
     // Prefer plain text first
     for (const sub of subParts) {
       if (sub.mimeType === 'text/plain' && sub.body?.data) {
@@ -736,7 +737,12 @@ export async function gmailSearch(
       const chunk = rawMessages.slice(i, i + MAX_CONCURRENT_FETCHES);
       const details = await Promise.all(
         chunk.map((m) =>
-          gmail.users.messages.get({ userId: 'me', id: m.id!, format: 'metadata', metadataHeaders: ['Subject', 'From', 'Date'] }),
+          gmail.users.messages.get({
+            userId: 'me',
+            id: m.id!,
+            format: 'metadata',
+            metadataHeaders: ['Subject', 'From', 'Date'],
+          }),
         ),
       );
       for (const detail of details) {
@@ -781,7 +787,7 @@ export async function gmailReadThread(
 
     const messages: GmailThreadMessage[] = rawMsgs.map((msg) => {
       const headers = msg.payload?.headers ?? [];
-      const body = extractBody(msg.payload as Parameters<typeof extractBody>[0] ?? { mimeType: undefined });
+      const body = extractBody((msg.payload as Parameters<typeof extractBody>[0]) ?? { mimeType: undefined });
       const cc = extractHeader(headers, 'Cc');
       const result: GmailThreadMessage = {
         id: msg.id ?? '',
@@ -832,6 +838,305 @@ function buildRawMessage(opts: {
   lines.push('', opts.body);
   const raw = lines.join('\r\n');
   return Buffer.from(raw).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Calendar (Phase 14 Tier D)
+//
+// All three tools require the student's personal Google account
+// (requirePersonal: true). No instructor fallback — same gate as Gmail.
+// ────────────────────────────────────────────────────────────────────
+
+function buildCalendarClient(accessToken: string): ReturnType<typeof calendarApi> {
+  const oauth = new gAuth.OAuth2();
+  oauth.setCredentials({ access_token: accessToken });
+  return calendarApi({ version: 'v3', auth: oauth });
+}
+
+/** A single event returned by calendar_list_events. */
+export interface CalendarEvent {
+  id: string;
+  summary: string;
+  description?: string;
+  location?: string;
+  start: string;
+  end: string;
+  attendees?: Array<{ email: string; responseStatus?: string }>;
+  htmlLink: string;
+}
+
+export interface CalendarListEventsResult {
+  ok: true;
+  events: CalendarEvent[];
+  principal: GwsPrincipal;
+}
+
+export interface CalendarCreateEventResult {
+  ok: true;
+  eventId: string;
+  htmlLink: string;
+  principal: GwsPrincipal;
+}
+
+export interface CalendarFreeSlot {
+  start: string;
+  end: string;
+}
+
+export interface CalendarFindFreeSlotResult {
+  ok: true;
+  slots: CalendarFreeSlot[];
+  principal: GwsPrincipal;
+}
+
+/** Map Google's { dateTime?, date? } to a single ISO-8601 string. */
+function resolveEventTime(
+  t: { dateTime?: string | null; date?: string | null } | null | undefined,
+): string {
+  if (!t) return '';
+  if (t.dateTime) return t.dateTime;
+  if (t.date) return `${t.date}T00:00:00Z`;
+  return '';
+}
+
+const CALENDAR_DEFAULT_MAX_RESULTS = 50;
+const CALENDAR_MAX_RESULTS_CAP = 250;
+
+/**
+ * List events on the student's primary calendar in a time window.
+ */
+export async function calendarListEvents(
+  ctx: ToolContext,
+  args: { time_min: string; time_max: string; max_results?: number },
+): Promise<CalendarListEventsResult | ToolError> {
+  const tokenOrError = await resolveTokenOrError(ctx, { requirePersonal: true });
+  if (!('principal' in tokenOrError)) return tokenOrError;
+  const cal = buildCalendarClient(tokenOrError.token);
+
+  const maxResults = Math.min(args.max_results ?? CALENDAR_DEFAULT_MAX_RESULTS, CALENDAR_MAX_RESULTS_CAP);
+
+  try {
+    const res = await cal.events.list({
+      calendarId: 'primary',
+      timeMin: args.time_min,
+      timeMax: args.time_max,
+      maxResults,
+      singleEvents: true,
+      orderBy: 'startTime',
+    });
+
+    const rawItems = res.data.items ?? [];
+    const events: CalendarEvent[] = rawItems.map((item) => {
+      const event: CalendarEvent = {
+        id: item.id ?? '',
+        summary: item.summary ?? '',
+        start: resolveEventTime(item.start),
+        end: resolveEventTime(item.end),
+        htmlLink: item.htmlLink ?? '',
+      };
+      if (item.description) event.description = item.description;
+      if (item.location) event.location = item.location;
+      if (item.attendees && item.attendees.length > 0) {
+        event.attendees = item.attendees
+          .filter((a) => a.email)
+          .map((a) => {
+            const entry: { email: string; responseStatus?: string } = { email: a.email! };
+            if (a.responseStatus) entry.responseStatus = a.responseStatus;
+            return entry;
+          });
+      }
+      return event;
+    });
+
+    return { ok: true, events, principal: tokenOrError.principal };
+  } catch (err) {
+    const status = (err as { code?: number; status?: number }).code ?? (err as { status?: number }).status;
+    log.warn('calendar_list_events failed', { timeMin: args.time_min, timeMax: args.time_max, err: String(err) });
+    return {
+      ok: false,
+      error: `Calendar list events failed: ${(err as Error).message}`,
+      status: typeof status === 'number' ? status : 500,
+    };
+  }
+}
+
+/** Determine whether a start/end pair represents an all-day event. */
+function isAllDay(isoString: string): boolean {
+  // All-day strings end with T00:00:00Z after normalization (from date-only input)
+  // OR the original arg might be a bare date like "2026-05-20"
+  return /^\d{4}-\d{2}-\d{2}T00:00:00Z$/.test(isoString) || /^\d{4}-\d{2}-\d{2}$/.test(isoString);
+}
+
+/** Normalize attendees: accept string[] or { email }[] — always produce { email }[]. */
+function normalizeAttendees(
+  raw: Array<{ email: string } | string> | undefined,
+): Array<{ email: string }> | undefined {
+  if (!raw || raw.length === 0) return undefined;
+  return raw.map((a) => (typeof a === 'string' ? { email: a } : { email: a.email }));
+}
+
+/**
+ * Create an event on the student's primary calendar.
+ */
+export async function calendarCreateEvent(
+  ctx: ToolContext,
+  args: {
+    start: string;
+    end: string;
+    summary: string;
+    description?: string;
+    location?: string;
+    attendees?: Array<{ email: string } | string>;
+  },
+): Promise<CalendarCreateEventResult | ToolError> {
+  const tokenOrError = await resolveTokenOrError(ctx, { requirePersonal: true });
+  if (!('principal' in tokenOrError)) return tokenOrError;
+  const cal = buildCalendarClient(tokenOrError.token);
+
+  // Detect all-day: both start and end are date-only or midnight-Z
+  const allDay = isAllDay(args.start) && isAllDay(args.end);
+
+  // Strip to date portion for all-day events
+  const toDate = (s: string) => s.slice(0, 10);
+
+  const requestBody: {
+    summary: string;
+    description?: string;
+    location?: string;
+    start: { dateTime?: string; date?: string };
+    end: { dateTime?: string; date?: string };
+    attendees?: Array<{ email: string }>;
+  } = {
+    summary: args.summary,
+    start: allDay ? { date: toDate(args.start) } : { dateTime: args.start },
+    end: allDay ? { date: toDate(args.end) } : { dateTime: args.end },
+  };
+
+  if (args.description) requestBody.description = args.description;
+  if (args.location) requestBody.location = args.location;
+  const attendees = normalizeAttendees(args.attendees);
+  if (attendees) requestBody.attendees = attendees;
+
+  try {
+    const res = await cal.events.insert({
+      calendarId: 'primary',
+      sendUpdates: 'all',
+      requestBody,
+    });
+
+    return {
+      ok: true,
+      eventId: res.data.id ?? '',
+      htmlLink: res.data.htmlLink ?? '',
+      principal: tokenOrError.principal,
+    };
+  } catch (err) {
+    const status = (err as { code?: number; status?: number }).code ?? (err as { status?: number }).status;
+    log.warn('calendar_create_event failed', { summary: args.summary, err: String(err) });
+    return {
+      ok: false,
+      error: `Calendar create event failed: ${(err as Error).message}`,
+      status: typeof status === 'number' ? status : 500,
+    };
+  }
+}
+
+const CALENDAR_DEFAULT_MAX_SLOTS = 5;
+
+/**
+ * Find free time slots in a window by listing events and computing gaps.
+ * Skips events with transparency === 'transparent' (free / unblocking).
+ * All-day events block the entire day.
+ */
+export async function calendarFindFreeSlot(
+  ctx: ToolContext,
+  args: { duration_minutes: number; time_min: string; time_max: string; max_slots?: number },
+): Promise<CalendarFindFreeSlotResult | ToolError> {
+  const tokenOrError = await resolveTokenOrError(ctx, { requirePersonal: true });
+  if (!('principal' in tokenOrError)) return tokenOrError;
+  const cal = buildCalendarClient(tokenOrError.token);
+
+  const maxSlots = args.max_slots ?? CALENDAR_DEFAULT_MAX_SLOTS;
+  const durationMs = args.duration_minutes * 60_000;
+
+  try {
+    // Fetch all events in the window (up to cap)
+    const res = await cal.events.list({
+      calendarId: 'primary',
+      timeMin: args.time_min,
+      timeMax: args.time_max,
+      maxResults: CALENDAR_MAX_RESULTS_CAP,
+      singleEvents: true,
+      orderBy: 'startTime',
+    });
+
+    const windowStart = new Date(args.time_min).getTime();
+    const windowEnd = new Date(args.time_max).getTime();
+
+    // Build sorted list of busy intervals, skipping transparent events
+    const busy: Array<{ start: number; end: number }> = [];
+    for (const item of res.data.items ?? []) {
+      if (item.transparency === 'transparent') continue;
+
+      let start: number;
+      let end: number;
+
+      if (item.start?.date) {
+        // All-day event: block entire day(s)
+        start = new Date(`${item.start.date}T00:00:00Z`).getTime();
+        const endDate = item.end?.date ?? item.start.date;
+        end = new Date(`${endDate}T00:00:00Z`).getTime();
+        // Google Calendar all-day end is exclusive (next day at midnight)
+        // so end is already correct as a boundary
+      } else {
+        start = new Date(item.start?.dateTime ?? args.time_min).getTime();
+        end = new Date(item.end?.dateTime ?? args.time_max).getTime();
+      }
+
+      // Clamp to window
+      start = Math.max(start, windowStart);
+      end = Math.min(end, windowEnd);
+      if (start < end) busy.push({ start, end });
+    }
+
+    // Sort by start time (should already be ordered, but defensive)
+    busy.sort((a, b) => a.start - b.start);
+
+    // Walk gaps: [windowStart, first event), between events, (last event, windowEnd]
+    const slots: CalendarFreeSlot[] = [];
+    let cursor = windowStart;
+
+    for (const interval of busy) {
+      const gapEnd = interval.start;
+      if (gapEnd - cursor >= durationMs) {
+        slots.push({
+          start: new Date(cursor).toISOString(),
+          end: new Date(gapEnd).toISOString(),
+        });
+        if (slots.length >= maxSlots) break;
+      }
+      // Advance cursor past this event
+      cursor = Math.max(cursor, interval.end);
+    }
+
+    // Trailing gap after last event
+    if (slots.length < maxSlots && windowEnd - cursor >= durationMs) {
+      slots.push({
+        start: new Date(cursor).toISOString(),
+        end: new Date(windowEnd).toISOString(),
+      });
+    }
+
+    return { ok: true, slots, principal: tokenOrError.principal };
+  } catch (err) {
+    const status = (err as { code?: number; status?: number }).code ?? (err as { status?: number }).status;
+    log.warn('calendar_find_free_slot failed', { timeMin: args.time_min, timeMax: args.time_max, err: String(err) });
+    return {
+      ok: false,
+      error: `Calendar find free slot failed: ${(err as Error).message}`,
+      status: typeof status === 'number' ? status : 500,
+    };
+  }
 }
 
 /**

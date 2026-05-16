@@ -401,6 +401,102 @@ export const gmailSendDraft: McpToolDefinition = {
   },
 };
 
+// ── Calendar MCP tool definitions (Phase 14 Tier D) ──────────────────────────
+
+export const calendarListEvents: McpToolDefinition = {
+  tool: {
+    name: 'calendar_list_events',
+    description:
+      'List events on the student\'s primary Google Calendar between two timestamps. Returns id, summary, start, end, location, attendees, and htmlLink for each event. Requires the student to have connected their Google account.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        time_min: { type: 'string', description: 'Start of window (ISO-8601, e.g. "2026-05-20T00:00:00Z").' },
+        time_max: { type: 'string', description: 'End of window (ISO-8601, e.g. "2026-05-21T00:00:00Z").' },
+        max_results: { type: 'number', description: 'Maximum events to return (default 50, capped at 250).' },
+      },
+      required: ['time_min', 'time_max'],
+    },
+  },
+  async handler(args) {
+    const result = await callRelay('calendar_list_events', args as Record<string, unknown>);
+    if (!result.ok) return err(result.error);
+    const body = result.body as { ok: boolean; error?: string; reason?: string; events?: unknown[] };
+    if (!body.ok) {
+      if (body.reason === 'connect_required') return connectRequired();
+      return err(body.error || 'calendar_list_events failed');
+    }
+    return ok(JSON.stringify(body.events, null, 2));
+  },
+};
+
+export const calendarCreateEvent: McpToolDefinition = {
+  tool: {
+    name: 'calendar_create_event',
+    description:
+      'Create an event on the student\'s primary Google Calendar. Returns the event ID and a link to the event in Google Calendar. Date-only start/end (e.g. "2026-05-20") or midnight-UTC timestamps create all-day events. Invites attendees and sends them notifications. Requires the student to have connected their Google account.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        start: { type: 'string', description: 'Event start (ISO-8601). Date-only or midnight-Z for all-day.' },
+        end: { type: 'string', description: 'Event end (ISO-8601). Date-only or midnight-Z for all-day.' },
+        summary: { type: 'string', description: 'Event title.' },
+        description: { type: 'string', description: 'Optional event description / notes.' },
+        location: { type: 'string', description: 'Optional location string.' },
+        attendees: {
+          type: 'array',
+          description: 'Optional list of attendees — either email strings or objects with an `email` field.',
+          items: {
+            oneOf: [
+              { type: 'string' },
+              { type: 'object', properties: { email: { type: 'string' } }, required: ['email'] },
+            ],
+          },
+        },
+      },
+      required: ['start', 'end', 'summary'],
+    },
+  },
+  async handler(args) {
+    const result = await callRelay('calendar_create_event', args as Record<string, unknown>);
+    if (!result.ok) return err(result.error);
+    const body = result.body as { ok: boolean; error?: string; reason?: string; eventId?: string; htmlLink?: string };
+    if (!body.ok) {
+      if (body.reason === 'connect_required') return connectRequired();
+      return err(body.error || 'calendar_create_event failed');
+    }
+    return ok(JSON.stringify({ eventId: body.eventId, htmlLink: body.htmlLink }, null, 2));
+  },
+};
+
+export const calendarFindFreeSlot: McpToolDefinition = {
+  tool: {
+    name: 'calendar_find_free_slot',
+    description:
+      'Suggest free time slots within a calendar window. Lists events in the window and surfaces gaps at least `duration_minutes` long. Skips events marked as free (transparency=transparent). All-day events block the entire day. Requires the student to have connected their Google account.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        duration_minutes: { type: 'number', description: 'Minimum slot length in minutes (e.g. 30, 60).' },
+        time_min: { type: 'string', description: 'Start of search window (ISO-8601).' },
+        time_max: { type: 'string', description: 'End of search window (ISO-8601).' },
+        max_slots: { type: 'number', description: 'Maximum slots to return (default 5).' },
+      },
+      required: ['duration_minutes', 'time_min', 'time_max'],
+    },
+  },
+  async handler(args) {
+    const result = await callRelay('calendar_find_free_slot', args as Record<string, unknown>);
+    if (!result.ok) return err(result.error);
+    const body = result.body as { ok: boolean; error?: string; reason?: string; slots?: unknown[] };
+    if (!body.ok) {
+      if (body.reason === 'connect_required') return connectRequired();
+      return err(body.error || 'calendar_find_free_slot failed');
+    }
+    return ok(JSON.stringify(body.slots, null, 2));
+  },
+};
+
 registerTools([
   driveDocReadAsMarkdown,
   driveDocWriteFromMarkdown,
@@ -412,4 +508,7 @@ registerTools([
   gmailSearch,
   gmailReadThread,
   gmailSendDraft,
+  calendarListEvents,
+  calendarCreateEvent,
+  calendarFindFreeSlot,
 ]);
