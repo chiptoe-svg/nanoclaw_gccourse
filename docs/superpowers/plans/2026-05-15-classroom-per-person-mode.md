@@ -166,49 +166,53 @@ Order matches `plans/master.md` §"Phase 2 — Full classroom capability".
           required connection (it's optional).
 
   **Tier B — Drive tools route per-student when connected
-  (no gate — Mode A fallback preserved):**
-    - [ ] Verify existing `drive_doc_read_as_markdown` /
+  (SHIPPED 2026-05-15, commits `161589f`..`b320da0`. No gate —
+  Mode A fallback preserved):**
+    - [x] Verify existing `drive_doc_read_as_markdown` /
           `drive_doc_write_from_markdown` / `sheet_*` /
           `slides_*` tools route through the per-student
           credential when present, instructor bearer otherwise.
           Should fall out of Tier A's `gws-token.ts` change
           (default `requirePersonal: false` keeps the instructor
           fallback).
-    - [ ] Add a `principal` field to each tool's response
+    - [x] Add a `principal` field to each tool's response
           metadata (e.g. `"student:alice@clemson.edu"` /
           `"instructor"`) so the agent / playground can surface
           "this Doc was created in your Drive" vs "this Doc was
           created in the class shared Drive" when listing
           artifacts. Useful for student awareness without
           forcing them to connect.
-    - [ ] Integration test: same tool call with and without a
+    - [x] Integration test: same tool call with and without a
           per-student credential — verify the resulting Doc
           lands in the correct Drive each time, and the
           response `principal` matches.
 
-  **Tier C — Gmail tools (gated on personal connection):**
-    - [ ] Add `gmail_search`, `gmail_read_thread`,
+  **Tier C — Gmail tools (SHIPPED 2026-05-15, commits `88ac7e2`..`95d6d53`. Gated on personal connection):**
+    - [x] Add `gmail_search`, `gmail_read_thread`,
           `gmail_send_draft` to `src/gws-mcp-server.ts`. All
           three call the resolver with `requirePersonal: true`;
           return `connect_required` for unconnected students.
           Draft tool returns a draft ID + compose URL; never
           auto-sends (UI-only confirmation).
-    - [ ] Add container-side shim in
+    - [x] Add container-side shim in
           `container/agent-runner/src/mcp-tools/gws.ts`.
-    - [ ] Add `@googleapis/gmail` to host package.json (pinned).
-    - [ ] Smoke test from a connected student's agent + verify
-          unconnected-student gate fires.
+    - [x] Add `@googleapis/gmail` to host package.json (pinned).
+    - [ ] Smoke test from a connected student's agent — DEFERRED,
+          gated on operator's GCP Console step (redirect URI +
+          test users + gmail.modify scope on consent screen).
+          Unconnected-student gate is unit-tested.
 
-  **Tier D — Calendar tools (gated on personal connection,
+  **Tier D — Calendar tools (SHIPPED 2026-05-15, commits `a924ea1`..`ee4af34`. Gated on personal connection,
   read + write both):**
-    - [ ] Add `calendar_list_events`, `calendar_create_event`,
+    - [x] Add `calendar_list_events`, `calendar_create_event`,
           `calendar_find_free_slot` to `src/gws-mcp-server.ts`.
           All three gated with `requirePersonal: true` —
           there's no class-shared calendar to fall back to so
           even reads require the student's own connection.
-    - [ ] Container-side shim + `@googleapis/calendar` pinned.
-    - [ ] Smoke test from a connected student's agent + verify
-          unconnected-student gate fires.
+    - [x] Container-side shim + `@googleapis/calendar` pinned.
+    - [ ] Smoke test from a connected student's agent — DEFERRED,
+          gated on operator's GCP Console step (same as Tier C).
+          Unconnected-student gate is unit-tested.
 
   **Open question (revisit before Tier C):** auto-send or
   draft-only for Gmail? Drafts-only is the conservative
