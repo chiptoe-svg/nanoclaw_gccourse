@@ -22,6 +22,9 @@ import {
   slidesCreateDeck,
   slidesAppendSlide,
   slidesReplaceText,
+  gmailSearch,
+  gmailReadThread,
+  gmailSendDraft,
   type ToolContext,
   type ToolError,
   type DocReadResult,
@@ -40,7 +43,10 @@ export type ToolName =
   | 'sheet_write_range'
   | 'slides_create_deck'
   | 'slides_append_slide'
-  | 'slides_replace_text';
+  | 'slides_replace_text'
+  | 'gmail_search'
+  | 'gmail_read_thread'
+  | 'gmail_send_draft';
 
 /**
  * Result shape returned by `dispatchTool`. The dispatcher forwards
@@ -207,6 +213,92 @@ registerGwsTool('slides_append_slide', {
 registerGwsTool('slides_replace_text', {
   handler: slidesReplaceText,
   validate: validateSlidesReplaceText as (raw: unknown) => unknown | string,
+});
+
+// ── Gmail validators ───────────────────────────────────────────────────────
+
+function validateGmailSearch(raw: unknown): { query: string; max_results?: number } | string {
+  const o = asObject(raw);
+  if (!o) return 'arguments must be an object';
+  const query = asString(o, 'query');
+  if (!query) return '`query` (non-empty string) is required';
+  const maxResults = o.max_results;
+  if (maxResults !== undefined && (typeof maxResults !== 'number' || !Number.isInteger(maxResults) || maxResults < 1)) {
+    return '`max_results`, when provided, must be a positive integer';
+  }
+  return { query, max_results: typeof maxResults === 'number' ? maxResults : undefined };
+}
+
+function validateGmailReadThread(raw: unknown): { thread_id: string } | string {
+  const o = asObject(raw);
+  if (!o) return 'arguments must be an object';
+  const threadId = asString(o, 'thread_id');
+  if (!threadId) return '`thread_id` (string) is required';
+  return { thread_id: threadId };
+}
+
+function validateGmailSendDraft(
+  raw: unknown,
+): {
+  to: string | string[];
+  subject: string;
+  body: string;
+  cc?: string | string[];
+  in_reply_to_thread_id?: string;
+} | string {
+  const o = asObject(raw);
+  if (!o) return 'arguments must be an object';
+
+  // `to` can be a string or array of strings
+  const toRaw = o.to;
+  let to: string | string[];
+  if (typeof toRaw === 'string' && toRaw.length > 0) {
+    to = toRaw;
+  } else if (Array.isArray(toRaw) && toRaw.every((x) => typeof x === 'string') && toRaw.length > 0) {
+    to = toRaw as string[];
+  } else {
+    return '`to` (string or non-empty string[]) is required';
+  }
+
+  const subject = typeof o.subject === 'string' ? o.subject : null;
+  if (subject === null) return '`subject` (string) is required';
+
+  const body = typeof o.body === 'string' ? o.body : null;
+  if (body === null) return '`body` (string) is required';
+
+  // `cc` optional — same shape as `to`
+  let cc: string | string[] | undefined;
+  const ccRaw = o.cc;
+  if (ccRaw !== undefined) {
+    if (typeof ccRaw === 'string' && ccRaw.length > 0) {
+      cc = ccRaw;
+    } else if (Array.isArray(ccRaw) && ccRaw.every((x) => typeof x === 'string')) {
+      cc = ccRaw as string[];
+    } else {
+      return '`cc`, when provided, must be a string or string[]';
+    }
+  }
+
+  return {
+    to,
+    subject,
+    body,
+    cc,
+    in_reply_to_thread_id: asString(o, 'in_reply_to_thread_id') ?? undefined,
+  };
+}
+
+registerGwsTool('gmail_search', {
+  handler: gmailSearch,
+  validate: validateGmailSearch as (raw: unknown) => unknown | string,
+});
+registerGwsTool('gmail_read_thread', {
+  handler: gmailReadThread,
+  validate: validateGmailReadThread as (raw: unknown) => unknown | string,
+});
+registerGwsTool('gmail_send_draft', {
+  handler: gmailSendDraft,
+  validate: validateGmailSendDraft as (raw: unknown) => unknown | string,
 });
 
 /** Names of every registered tool — used by the relay's introspection

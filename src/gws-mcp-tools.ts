@@ -27,6 +27,7 @@
 import { Readable } from 'stream';
 
 import { drive as driveApi, auth as gAuth } from '@googleapis/drive';
+import { gmail as gmailApi } from '@googleapis/gmail';
 import { sheets as sheetsApi } from '@googleapis/sheets';
 import { slides as slidesApi } from '@googleapis/slides';
 
@@ -41,6 +42,7 @@ export interface ToolError {
   ok: false;
   error: string;
   status?: number;
+  reason?: 'connect_required';
 }
 
 export interface DocReadResult {
@@ -121,9 +123,21 @@ export function _resetHooksForTest(): void {
 }
 
 // Exported for extension modules — same reasoning as buildDriveClient.
-export async function resolveTokenOrError(ctx: ToolContext): Promise<ResolvedToken | ToolError> {
-  const resolved = await getGoogleAccessTokenForAgentGroup(ctx.agentGroupId);
+export async function resolveTokenOrError(
+  ctx: ToolContext,
+  options?: { requirePersonal?: boolean },
+): Promise<ResolvedToken | ToolError> {
+  const resolved = await getGoogleAccessTokenForAgentGroup(ctx.agentGroupId, options);
   if (!resolved) {
+    if (options?.requirePersonal) {
+      return {
+        ok: false,
+        error:
+          'Connect your Google account to use Gmail. Open the home tab in the playground and click "Connect Google".',
+        status: 403,
+        reason: 'connect_required',
+      };
+    }
     return {
       ok: false,
       error:
@@ -573,6 +587,292 @@ export async function slidesReplaceText(
     return {
       ok: false,
       error: `Slides replace-text failed for ${args.presentation_id}: ${(err as Error).message}`,
+      status: typeof status === 'number' ? status : 500,
+    };
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Gmail (Phase 14 Tier C)
+//
+// All three tools require the student's personal Google account
+// (requirePersonal: true). No instructor fallback — these tools are
+// explicitly gated.
+// ────────────────────────────────────────────────────────────────────
+
+function buildGmailClient(accessToken: string): ReturnType<typeof gmailApi> {
+  const oauth = new gAuth.OAuth2();
+  oauth.setCredentials({ access_token: accessToken });
+  return gmailApi({ version: 'v1', auth: oauth });
+}
+
+/** A single message summary returned by gmail_search. */
+export interface GmailMessage {
+  id: string;
+  threadId: string;
+  snippet: string;
+  subject: string;
+  from: string;
+  date: string;
+}
+
+export interface GmailSearchResult {
+  ok: true;
+  messages: GmailMessage[];
+  principal: GwsPrincipal;
+}
+
+/** A single message in a full thread (gmail_read_thread). */
+export interface GmailThreadMessage {
+  id: string;
+  from: string;
+  to: string;
+  cc?: string;
+  subject: string;
+  date: string;
+  body: string;
+}
+
+export interface GmailReadThreadResult {
+  ok: true;
+  threadId: string;
+  messages: GmailThreadMessage[];
+  principal: GwsPrincipal;
+}
+
+export interface GmailSendDraftResult {
+  ok: true;
+  draftId: string;
+  messageId: string;
+  threadId: string;
+  composeUrl: string;
+  principal: GwsPrincipal;
+}
+
+/** Extract a named header from a Gmail message headers array. */
+function extractHeader(headers: Array<{ name?: string | null; value?: string | null }>, name: string): string {
+  const lc = name.toLowerCase();
+  return headers.find((h) => (h.name ?? '').toLowerCase() === lc)?.value ?? '';
+}
+
+/**
+ * Decode a base64url-encoded string to UTF-8 text. Gmail encodes
+ * message body parts in base64url (RFC 4648 §5).
+ */
+function decodeBase64Url(encoded: string): string {
+  // base64url → base64: replace - with + and _ with /
+  const b64 = encoded.replace(/-/g, '+').replace(/_/g, '/');
+  return Buffer.from(b64, 'base64').toString('utf-8');
+}
+
+/** Strip HTML tags — simple regex, good enough for email body fallback. */
+function stripHtmlTags(html: string): string {
+  return html
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+/**
+ * Walk a Gmail MIME part tree and extract the best-available body:
+ * prefer text/plain; fall back to text/html (stripped of tags).
+ */
+function extractBody(part: {
+  mimeType?: string | null;
+  body?: { data?: string | null } | null;
+  parts?: unknown[] | null;
+}): string {
+  // Leaf node
+  if (part.mimeType === 'text/plain' && part.body?.data) {
+    return decodeBase64Url(part.body.data);
+  }
+  if (part.mimeType === 'text/html' && part.body?.data) {
+    return stripHtmlTags(decodeBase64Url(part.body.data));
+  }
+
+  // Multipart: recurse and collect
+  if (Array.isArray(part.parts)) {
+    const subParts = part.parts as typeof part[];
+    // Prefer plain text first
+    for (const sub of subParts) {
+      if (sub.mimeType === 'text/plain' && sub.body?.data) {
+        return decodeBase64Url(sub.body.data);
+      }
+    }
+    // Try nested multipart recursively
+    for (const sub of subParts) {
+      const result = extractBody(sub);
+      if (result) return result;
+    }
+  }
+
+  return '';
+}
+
+const MAX_CONCURRENT_FETCHES = 10;
+const DEFAULT_MAX_RESULTS = 20;
+const MAX_RESULTS_CAP = 50;
+
+/**
+ * Search the student's Gmail inbox and return message summaries.
+ */
+export async function gmailSearch(
+  ctx: ToolContext,
+  args: { query: string; max_results?: number },
+): Promise<GmailSearchResult | ToolError> {
+  const tokenOrError = await resolveTokenOrError(ctx, { requirePersonal: true });
+  if (!('principal' in tokenOrError)) return tokenOrError;
+  const gmail = buildGmailClient(tokenOrError.token);
+
+  const maxResults = Math.min(args.max_results ?? DEFAULT_MAX_RESULTS, MAX_RESULTS_CAP);
+
+  try {
+    const listRes = await gmail.users.messages.list({ userId: 'me', q: args.query, maxResults });
+    const rawMessages = listRes.data.messages ?? [];
+
+    // Fetch details in parallel, capped at MAX_CONCURRENT_FETCHES at a time
+    const messages: GmailMessage[] = [];
+    for (let i = 0; i < rawMessages.length; i += MAX_CONCURRENT_FETCHES) {
+      const chunk = rawMessages.slice(i, i + MAX_CONCURRENT_FETCHES);
+      const details = await Promise.all(
+        chunk.map((m) =>
+          gmail.users.messages.get({ userId: 'me', id: m.id!, format: 'metadata', metadataHeaders: ['Subject', 'From', 'Date'] }),
+        ),
+      );
+      for (const detail of details) {
+        const headers = detail.data.payload?.headers ?? [];
+        messages.push({
+          id: detail.data.id ?? '',
+          threadId: detail.data.threadId ?? '',
+          snippet: detail.data.snippet ?? '',
+          subject: extractHeader(headers, 'Subject'),
+          from: extractHeader(headers, 'From'),
+          date: extractHeader(headers, 'Date'),
+        });
+      }
+    }
+
+    return { ok: true, messages, principal: tokenOrError.principal };
+  } catch (err) {
+    const status = (err as { code?: number; status?: number }).code ?? (err as { status?: number }).status;
+    log.warn('gmail_search failed', { query: args.query, err: String(err) });
+    return {
+      ok: false,
+      error: `Gmail search failed: ${(err as Error).message}`,
+      status: typeof status === 'number' ? status : 500,
+    };
+  }
+}
+
+/**
+ * Read a full Gmail thread by ID, returning each message with decoded body.
+ */
+export async function gmailReadThread(
+  ctx: ToolContext,
+  args: { thread_id: string },
+): Promise<GmailReadThreadResult | ToolError> {
+  const tokenOrError = await resolveTokenOrError(ctx, { requirePersonal: true });
+  if (!('principal' in tokenOrError)) return tokenOrError;
+  const gmail = buildGmailClient(tokenOrError.token);
+
+  try {
+    const res = await gmail.users.threads.get({ userId: 'me', id: args.thread_id, format: 'full' });
+    const rawMsgs = res.data.messages ?? [];
+
+    const messages: GmailThreadMessage[] = rawMsgs.map((msg) => {
+      const headers = msg.payload?.headers ?? [];
+      const body = extractBody(msg.payload as Parameters<typeof extractBody>[0] ?? { mimeType: undefined });
+      const cc = extractHeader(headers, 'Cc');
+      const result: GmailThreadMessage = {
+        id: msg.id ?? '',
+        from: extractHeader(headers, 'From'),
+        to: extractHeader(headers, 'To'),
+        subject: extractHeader(headers, 'Subject'),
+        date: extractHeader(headers, 'Date'),
+        body,
+      };
+      if (cc) result.cc = cc;
+      return result;
+    });
+
+    return { ok: true, threadId: args.thread_id, messages, principal: tokenOrError.principal };
+  } catch (err) {
+    const status = (err as { code?: number; status?: number }).code ?? (err as { status?: number }).status;
+    log.warn('gmail_read_thread failed', { threadId: args.thread_id, err: String(err) });
+    return {
+      ok: false,
+      error: `Gmail read thread failed for ${args.thread_id}: ${(err as Error).message}`,
+      status: typeof status === 'number' ? status : 500,
+    };
+  }
+}
+
+/**
+ * Build an RFC 2822 message string and base64url-encode it.
+ * Handles multi-recipient `to` and optional `cc` arrays.
+ */
+function buildRawMessage(opts: {
+  to: string | string[];
+  subject: string;
+  body: string;
+  cc?: string | string[];
+  from?: string;
+}): string {
+  const toHeader = Array.isArray(opts.to) ? opts.to.join(', ') : opts.to;
+  const lines: string[] = [
+    `To: ${toHeader}`,
+    `Subject: ${opts.subject}`,
+    'MIME-Version: 1.0',
+    'Content-Type: text/plain; charset=UTF-8',
+  ];
+  if (opts.cc) {
+    const ccHeader = Array.isArray(opts.cc) ? opts.cc.join(', ') : opts.cc;
+    lines.push(`Cc: ${ccHeader}`);
+  }
+  lines.push('', opts.body);
+  const raw = lines.join('\r\n');
+  return Buffer.from(raw).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+/**
+ * Create a Gmail draft (never sends automatically). Returns the draft ID
+ * and a composeUrl deep link so the student can review and send manually.
+ */
+export async function gmailSendDraft(
+  ctx: ToolContext,
+  args: {
+    to: string | string[];
+    subject: string;
+    body: string;
+    cc?: string | string[];
+    in_reply_to_thread_id?: string;
+  },
+): Promise<GmailSendDraftResult | ToolError> {
+  const tokenOrError = await resolveTokenOrError(ctx, { requirePersonal: true });
+  if (!('principal' in tokenOrError)) return tokenOrError;
+  const gmail = buildGmailClient(tokenOrError.token);
+
+  const raw = buildRawMessage({ to: args.to, subject: args.subject, body: args.body, cc: args.cc });
+
+  const messageBody: { raw: string; threadId?: string } = { raw };
+  if (args.in_reply_to_thread_id) messageBody.threadId = args.in_reply_to_thread_id;
+
+  try {
+    const res = await gmail.users.drafts.create({
+      userId: 'me',
+      requestBody: { message: messageBody },
+    });
+    const draftId = res.data.id ?? '';
+    const messageId = res.data.message?.id ?? '';
+    const threadId = res.data.message?.threadId ?? '';
+    const composeUrl = `https://mail.google.com/mail/u/0/#drafts/${messageId}`;
+    return { ok: true, draftId, messageId, threadId, composeUrl, principal: tokenOrError.principal };
+  } catch (err) {
+    const status = (err as { code?: number; status?: number }).code ?? (err as { status?: number }).status;
+    log.warn('gmail_send_draft failed', { to: args.to, subject: args.subject, err: String(err) });
+    return {
+      ok: false,
+      error: `Gmail draft creation failed: ${(err as Error).message}`,
       status: typeof status === 'number' ? status : 500,
     };
   }

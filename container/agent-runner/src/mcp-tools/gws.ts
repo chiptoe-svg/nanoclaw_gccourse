@@ -286,6 +286,121 @@ export const slidesReplaceText: McpToolDefinition = {
   },
 };
 
+// ── Gmail MCP tool definitions (Phase 14 Tier C) ──────────────────────────
+
+/** Friendly guidance rendered when the student hasn't connected Google. */
+function connectRequired(): ReturnType<typeof ok> {
+  return ok("Your Google account isn't connected yet. Open the playground home tab and click \"Connect Google\", then try again.");
+}
+
+export const gmailSearch: McpToolDefinition = {
+  tool: {
+    name: 'gmail_search',
+    description:
+      'Search the student\'s Gmail inbox. Pass a Gmail search query (e.g. "from:someone@example.com", "subject:invoice", "is:unread"). Returns message summaries including id, threadId, snippet, subject, from, and date. Requires the student to have connected their Google account.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        query: { type: 'string', description: 'Gmail search query string (same syntax as the Gmail search bar).' },
+        max_results: {
+          type: 'number',
+          description: 'Maximum messages to return (default 20, capped at 50).',
+        },
+      },
+      required: ['query'],
+    },
+  },
+  async handler(args) {
+    const result = await callRelay('gmail_search', args as Record<string, unknown>);
+    if (!result.ok) return err(result.error);
+    const body = result.body as { ok: boolean; error?: string; reason?: string; messages?: unknown[] };
+    if (!body.ok) {
+      if (body.reason === 'connect_required') return connectRequired();
+      return err(body.error || 'gmail_search failed');
+    }
+    return ok(JSON.stringify(body.messages, null, 2));
+  },
+};
+
+export const gmailReadThread: McpToolDefinition = {
+  tool: {
+    name: 'gmail_read_thread',
+    description:
+      'Read a full Gmail thread by its thread ID. Returns all messages in the thread with from/to/cc/subject/date headers and decoded body text. Requires the student to have connected their Google account.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        thread_id: { type: 'string', description: 'Gmail thread ID (from gmail_search results or a message threadId).' },
+      },
+      required: ['thread_id'],
+    },
+  },
+  async handler(args) {
+    const threadId = args.thread_id as string;
+    if (!threadId) return err('thread_id is required');
+    const result = await callRelay('gmail_read_thread', { thread_id: threadId });
+    if (!result.ok) return err(result.error);
+    const body = result.body as { ok: boolean; error?: string; reason?: string; messages?: unknown[]; threadId?: string };
+    if (!body.ok) {
+      if (body.reason === 'connect_required') return connectRequired();
+      return err(body.error || 'gmail_read_thread failed');
+    }
+    return ok(JSON.stringify({ threadId: body.threadId, messages: body.messages }, null, 2));
+  },
+};
+
+export const gmailSendDraft: McpToolDefinition = {
+  tool: {
+    name: 'gmail_send_draft',
+    description:
+      'Create a Gmail DRAFT (never auto-sends). Returns the draftId and a composeUrl deep link so the student can review and send the draft manually from Gmail. To reply within a thread, pass in_reply_to_thread_id. Requires the student to have connected their Google account.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        to: {
+          description: 'Recipient address(es) — a single string or an array of strings.',
+          oneOf: [
+            { type: 'string' },
+            { type: 'array', items: { type: 'string' } },
+          ],
+        },
+        subject: { type: 'string', description: 'Email subject line.' },
+        body: { type: 'string', description: 'Plain-text email body.' },
+        cc: {
+          description: 'CC address(es) — a single string or an array of strings (optional).',
+          oneOf: [
+            { type: 'string' },
+            { type: 'array', items: { type: 'string' } },
+          ],
+        },
+        in_reply_to_thread_id: {
+          type: 'string',
+          description: 'Thread ID to reply within. When set, the draft is placed in that thread.',
+        },
+      },
+      required: ['to', 'subject', 'body'],
+    },
+  },
+  async handler(args) {
+    const result = await callRelay('gmail_send_draft', args as Record<string, unknown>);
+    if (!result.ok) return err(result.error);
+    const body = result.body as {
+      ok: boolean;
+      error?: string;
+      reason?: string;
+      draftId?: string;
+      messageId?: string;
+      threadId?: string;
+      composeUrl?: string;
+    };
+    if (!body.ok) {
+      if (body.reason === 'connect_required') return connectRequired();
+      return err(body.error || 'gmail_send_draft failed');
+    }
+    return ok(JSON.stringify({ draftId: body.draftId, messageId: body.messageId, threadId: body.threadId, composeUrl: body.composeUrl }, null, 2));
+  },
+};
+
 registerTools([
   driveDocReadAsMarkdown,
   driveDocWriteFromMarkdown,
@@ -294,4 +409,7 @@ registerTools([
   slidesCreateDeck,
   slidesAppendSlide,
   slidesReplaceText,
+  gmailSearch,
+  gmailReadThread,
+  gmailSendDraft,
 ]);
