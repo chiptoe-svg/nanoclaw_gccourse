@@ -17,12 +17,18 @@ importers:
       '@clack/prompts':
         specifier: ^1.2.0
         version: 1.2.0
+      '@googleapis/calendar':
+        specifier: 14.2.0
+        version: 14.2.0
       '@googleapis/docs':
         specifier: 9.2.1
         version: 9.2.1
       '@googleapis/drive':
         specifier: 20.1.0
         version: 20.1.0
+      '@googleapis/gmail':
+        specifier: 16.1.1
+        version: 16.1.1
       '@googleapis/sheets':
         specifier: ^13.0.1
         version: 13.0.1
@@ -299,12 +305,20 @@ packages:
     resolution: {integrity: sha512-43/qtrDUokr7LJqoF2c3+RInu/t4zfrpYdoSDfYyhg52rwLV6TnOvdG4fXm7IkSB3wErkcmJS9iEhjVtOSEjjA==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
 
+  '@googleapis/calendar@14.2.0':
+    resolution: {integrity: sha512-oo6bikN3dl7n43vvknpPzJlCD8FZbs82h4bZLfDAx1wWRUkIusg6++RFQvOKF46rNXsUePqyVwnFx+8oOOyK1A==}
+    engines: {node: '>=12.0.0'}
+
   '@googleapis/docs@9.2.1':
     resolution: {integrity: sha512-CmrOPR1ZGvL4h1H/zBGb/RisTQpKnam+HusElBG/lknIB9IdXz2fkL83fuynguEGuq4aL0m/X3TGzNJoUfQtJQ==}
     engines: {node: '>=12.0.0'}
 
   '@googleapis/drive@20.1.0':
     resolution: {integrity: sha512-8/gapeLuZ3igooEGLE1AL3Zp5fjqigZQNmyjehb4QF7JVJh6FXF+72AcQGGsFypwJb2S68HIuQFomHBw4RJSOg==}
+    engines: {node: '>=12.0.0'}
+
+  '@googleapis/gmail@16.1.1':
+    resolution: {integrity: sha512-XFMMJvhpEoKzwBOHYrcbBu/jHS+8Aer5YmbMUsrZeJgXAbTD6K7K6+/1RJczXIqDoBzVDdECm4WtjAcvEHPLVg==}
     engines: {node: '>=12.0.0'}
 
   '@googleapis/sheets@13.0.1':
@@ -1997,6 +2011,12 @@ snapshots:
       '@eslint/core': 0.17.0
       levn: 0.4.1
 
+  '@googleapis/calendar@14.2.0':
+    dependencies:
+      googleapis-common: 8.0.1
+    transitivePeerDependencies:
+      - supports-color
+
   '@googleapis/docs@9.2.1':
     dependencies:
       googleapis-common: 8.0.1
@@ -2004,6 +2024,12 @@ snapshots:
       - supports-color
 
   '@googleapis/drive@20.1.0':
+    dependencies:
+      googleapis-common: 8.0.1
+    transitivePeerDependencies:
+      - supports-color
+
+  '@googleapis/gmail@16.1.1':
     dependencies:
       googleapis-common: 8.0.1
     transitivePeerDependencies:
