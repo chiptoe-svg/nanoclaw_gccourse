@@ -890,9 +890,7 @@ export interface CalendarFindFreeSlotResult {
 }
 
 /** Map Google's { dateTime?, date? } to a single ISO-8601 string. */
-function resolveEventTime(
-  t: { dateTime?: string | null; date?: string | null } | null | undefined,
-): string {
+function resolveEventTime(t: { dateTime?: string | null; date?: string | null } | null | undefined): string {
   if (!t) return '';
   if (t.dateTime) return t.dateTime;
   if (t.date) return `${t.date}T00:00:00Z`;
@@ -968,9 +966,7 @@ function isAllDay(isoString: string): boolean {
 }
 
 /** Normalize attendees: accept string[] or { email }[] — always produce { email }[]. */
-function normalizeAttendees(
-  raw: Array<{ email: string } | string> | undefined,
-): Array<{ email: string }> | undefined {
+function normalizeAttendees(raw: Array<{ email: string } | string> | undefined): Array<{ email: string }> | undefined {
   if (!raw || raw.length === 0) return undefined;
   return raw.map((a) => (typeof a === 'string' ? { email: a } : { email: a.email }));
 }

@@ -649,10 +649,7 @@ describe('calendarCreateEvent', () => {
     const callArg = mockCalendarEventsInsertFn.mock.calls[0][0] as {
       requestBody: { attendees?: Array<{ email: string }> };
     };
-    expect(callArg.requestBody.attendees).toEqual([
-      { email: 'alice@example.com' },
-      { email: 'bob@example.com' },
-    ]);
+    expect(callArg.requestBody.attendees).toEqual([{ email: 'alice@example.com' }, { email: 'bob@example.com' }]);
   });
 
   it('accepts attendees as array of objects', async () => {
@@ -669,10 +666,7 @@ describe('calendarCreateEvent', () => {
     const callArg = mockCalendarEventsInsertFn.mock.calls[0][0] as {
       requestBody: { attendees?: Array<{ email: string }> };
     };
-    expect(callArg.requestBody.attendees).toEqual([
-      { email: 'alice@example.com' },
-      { email: 'bob@example.com' },
-    ]);
+    expect(callArg.requestBody.attendees).toEqual([{ email: 'alice@example.com' }, { email: 'bob@example.com' }]);
   });
 
   it('passes sendUpdates: "all" to notify attendees', async () => {

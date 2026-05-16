@@ -325,9 +325,7 @@ function validateCalendarListEvents(
   return { time_min: timeMin, time_max: timeMax, max_results: typeof maxResults === 'number' ? maxResults : undefined };
 }
 
-function validateCalendarCreateEvent(
-  raw: unknown,
-):
+function validateCalendarCreateEvent(raw: unknown):
   | {
       start: string;
       end: string;
@@ -352,7 +350,10 @@ function validateCalendarCreateEvent(
   if (rawAttendees !== undefined) {
     if (!Array.isArray(rawAttendees)) return '`attendees`, when provided, must be an array';
     for (const a of rawAttendees) {
-      if (typeof a !== 'string' && !(a && typeof a === 'object' && typeof (a as { email?: unknown }).email === 'string')) {
+      if (
+        typeof a !== 'string' &&
+        !(a && typeof a === 'object' && typeof (a as { email?: unknown }).email === 'string')
+      ) {
         return '`attendees` entries must be strings or objects with an `email` string field';
       }
     }
