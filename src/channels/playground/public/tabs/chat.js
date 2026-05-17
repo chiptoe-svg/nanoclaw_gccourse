@@ -97,11 +97,14 @@ function loadModelDropdowns(el, folder) {
 
       // Filter providers by class-controls — owner sees everything;
       // students see only what the instructor authorized.
-      const cc = window.__pg && window.__pg.classControls;
+      const ac = window.__pg && window.__pg.activeClass;
       const isOwner = window.__pg && window.__pg.user && window.__pg.user.role === 'owner';
-      const allowedProviders = isOwner || !cc ? null : new Set(cc.providersAvailable || []);
+      // v2 shape: providers is a map of { allow, provideDefault, allowByo }.
+      const providerAllowed = isOwner || !ac
+        ? null
+        : (p) => !!(ac.providers && ac.providers[p] && ac.providers[p].allow);
       const providers = [...new Set(visible.map((m) => m.provider))].filter(
-        (p) => !allowedProviders || allowedProviders.has(p),
+        (p) => !providerAllowed || providerAllowed(p),
       );
       provSel.innerHTML = '';
       for (const p of providers) provSel.add(new Option(p, p));

@@ -244,14 +244,22 @@ async function renderClassControlsCard(body) {
 }
 
 function renderClassControlsForm(body, cfg) {
+  // v2 shape: cfg.classes.default.{tabsVisibleToStudents, authModesAvailable,
+  //   providers: { [id]: { allow, provideDefault, allowByo } } }
+  const DEFAULT_CLASS_ID = 'default';
+  const cls = (cfg.classes && cfg.classes[DEFAULT_CLASS_ID]) || {
+    tabsVisibleToStudents: [], authModesAvailable: [], providers: {},
+  };
+  const providerAllowed = (p) => !!(cls.providers && cls.providers[p] && cls.providers[p].allow);
+
   const tabsChecks = ALL_TABS.map((t) => `
-    <label class="cc-check"><input type="checkbox" data-cc-tab="${t}" ${cfg.tabsVisibleToStudents.includes(t) ? 'checked' : ''}> ${t}</label>
+    <label class="cc-check"><input type="checkbox" data-cc-tab="${t}" ${cls.tabsVisibleToStudents.includes(t) ? 'checked' : ''}> ${t}</label>
   `).join('');
   const providersChecks = ALL_PROVIDERS.map((p) => `
-    <label class="cc-check"><input type="checkbox" data-cc-provider="${p}" ${cfg.providersAvailable.includes(p) ? 'checked' : ''}> ${p}</label>
+    <label class="cc-check"><input type="checkbox" data-cc-provider="${p}" ${providerAllowed(p) ? 'checked' : ''}> ${p}</label>
   `).join('');
   const authChecks = ALL_AUTH.map((a) => `
-    <label class="cc-check"><input type="checkbox" data-cc-auth="${a}" ${cfg.authModesAvailable.includes(a) ? 'checked' : ''}> ${escapeHtml(AUTH_LABEL[a])}</label>
+    <label class="cc-check"><input type="checkbox" data-cc-auth="${a}" ${cls.authModesAvailable.includes(a) ? 'checked' : ''}> ${escapeHtml(AUTH_LABEL[a])}</label>
   `).join('');
 
   body.innerHTML = `
@@ -274,10 +282,30 @@ function renderClassControlsForm(body, cfg) {
   `;
 
   body.querySelector('#cc-save').addEventListener('click', async () => {
+    // Reconstruct providers map from checkbox state. Preserve existing
+    // provideDefault/allowByo flags from the loaded cfg so the toggle here
+    // controls only `allow` — Task 11 will add UI for the finer-grained
+    // per-provider flags.
+    const checkedProviderIds = new Set(
+      [...body.querySelectorAll('[data-cc-provider]')].filter((i) => i.checked).map((i) => i.dataset.ccProvider),
+    );
+    const providers = {};
+    for (const p of ALL_PROVIDERS) {
+      const existing = (cls.providers && cls.providers[p]) || { provideDefault: false, allowByo: false };
+      providers[p] = {
+        allow: checkedProviderIds.has(p),
+        provideDefault: !!existing.provideDefault,
+        allowByo: !!existing.allowByo,
+      };
+    }
     const next = {
-      tabsVisibleToStudents: [...body.querySelectorAll('[data-cc-tab]')].filter((i) => i.checked).map((i) => i.dataset.ccTab),
-      providersAvailable: [...body.querySelectorAll('[data-cc-provider]')].filter((i) => i.checked).map((i) => i.dataset.ccProvider),
-      authModesAvailable: [...body.querySelectorAll('[data-cc-auth]')].filter((i) => i.checked).map((i) => i.dataset.ccAuth),
+      classes: {
+        [DEFAULT_CLASS_ID]: {
+          tabsVisibleToStudents: [...body.querySelectorAll('[data-cc-tab]')].filter((i) => i.checked).map((i) => i.dataset.ccTab),
+          authModesAvailable: [...body.querySelectorAll('[data-cc-auth]')].filter((i) => i.checked).map((i) => i.dataset.ccAuth),
+          providers,
+        },
+      },
     };
     const status = body.querySelector('#cc-status');
     status.textContent = 'Saving…';
