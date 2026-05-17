@@ -13,7 +13,10 @@ describe('listLibrary — cost_tokens + latency_ms', () => {
     fs.mkdirSync(cacheDir, { recursive: true });
     // Mark as already-cloned so ensureClone() short-circuits.
     fs.mkdirSync(path.join(cacheDir, '.git'));
-    vi.doMock('../../config.js', () => ({ DATA_DIR: tmp }));
+    vi.doMock('../../config.js', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('../../config.js')>();
+      return { ...actual, DATA_DIR: tmp };
+    });
   });
 
   afterEach(() => {
@@ -71,7 +74,10 @@ describe('listSkillFiles + readSkillFile', () => {
     cacheDir = path.join(tmp, 'playground', 'library-cache');
     fs.mkdirSync(cacheDir, { recursive: true });
     fs.mkdirSync(path.join(cacheDir, '.git')); // short-circuit ensureClone
-    vi.doMock('../../config.js', () => ({ DATA_DIR: tmp }));
+    vi.doMock('../../config.js', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('../../config.js')>();
+      return { ...actual, DATA_DIR: tmp };
+    });
   });
   afterEach(() => {
     fs.rmSync(tmp, { recursive: true, force: true });

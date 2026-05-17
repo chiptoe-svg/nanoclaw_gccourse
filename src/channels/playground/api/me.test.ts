@@ -144,7 +144,22 @@ describe('GET /api/me/agent', () => {
     vi.resetModules();
   });
 
+  // resolveRole inside me.ts hits user-roles → getDb. Without a real DB
+  // initialized, that throws. Mock just the predicates the call chain uses.
+  function mockUserRoles() {
+    vi.doMock('../../../modules/permissions/db/user-roles.js', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('../../../modules/permissions/db/user-roles.js')>();
+      return {
+        ...actual,
+        isOwner: () => false,
+        isGlobalAdmin: () => false,
+        isAdminOfAgentGroup: () => false,
+      };
+    });
+  }
+
   it('returns the user-assigned agent group + user info', async () => {
+    mockUserRoles();
     vi.doMock('../../../db/agent-groups.js', () => ({
       getPlaygroundAgentForUser: () => ({ id: 'ag_123', name: 'Felix', folder: 'telegram_main' }),
     }));
@@ -155,6 +170,7 @@ describe('GET /api/me/agent', () => {
   });
 
   it('returns 404 when no agent group can be resolved', async () => {
+    mockUserRoles();
     vi.doMock('../../../db/agent-groups.js', () => ({
       getPlaygroundAgentForUser: () => null,
     }));
@@ -164,6 +180,7 @@ describe('GET /api/me/agent', () => {
   });
 
   it('handles anonymous (userId null) via the fallback path', async () => {
+    mockUserRoles();
     vi.doMock('../../../db/agent-groups.js', () => ({
       getPlaygroundAgentForUser: () => ({ id: 'ag_999', name: 'main', folder: 'main' }),
     }));

@@ -10,7 +10,10 @@ describe('getModelCatalog', () => {
   beforeEach(() => {
     tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'model-catalog-'));
     localPath = path.join(tmp, 'local.json');
-    vi.doMock('./config.js', () => ({ MODEL_CATALOG_LOCAL_PATH: localPath }));
+    vi.doMock('./config.js', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('./config.js')>();
+      return { ...actual, MODEL_CATALOG_LOCAL_PATH: localPath };
+    });
   });
   afterEach(() => {
     fs.rmSync(tmp, { recursive: true, force: true });
