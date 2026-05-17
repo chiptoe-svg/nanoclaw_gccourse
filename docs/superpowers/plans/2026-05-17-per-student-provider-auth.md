@@ -211,6 +211,15 @@ export type ProviderAuthSpec = {
     scopes: string[];
     refreshGrantBody: (refreshToken: string, clientId: string) => string;
     pkce: 'S256';
+    /** Token endpoint body format for the auth-code grant. Discovered
+     *  empirically (smoke test 2026-05-17): Anthropic requires JSON,
+     *  OpenAI accepts standard form-urlencoded. Refresh grant is
+     *  separately form-urlencoded for both per refreshGrantBody. */
+    authCodeBodyFormat: 'json' | 'form';
+    /** Per-provider user-facing walkthrough rendered in the Home
+     *  Providers card paste form. The OpenAI/loopback flow needs
+     *  different copy than Anthropic's vendor-display flow. */
+    connectInstructions: string;
   };
   apiKey?: {
     placeholder: string;
@@ -247,6 +256,10 @@ import { registerProvider } from './auth-registry.js';
 
 // Values sourced from docs/providers/oauth-endpoints.md (Claude Code v2.1.116).
 // Re-verify after major @anthropic-ai/claude-code version bumps.
+// Notes from smoke test 2026-05-17:
+//   - Anthropic silently drops `org:create_api_key` on grant; omitted here.
+//   - Auth-code grant requires JSON body (not form-urlencoded); refresh grant
+//     still uses form per refreshGrantBody.
 registerProvider({
   id: 'claude',
   displayName: 'Anthropic',
@@ -258,7 +271,6 @@ registerProvider({
     tokenUrl: 'https://platform.claude.com/v1/oauth/token',
     redirectUri: 'https://platform.claude.com/oauth/code/callback',
     scopes: [
-      'org:create_api_key',
       'user:profile',
       'user:inference',
       'user:sessions:claude_code',
@@ -268,6 +280,13 @@ registerProvider({
     refreshGrantBody: (refreshToken, clientId) =>
       new URLSearchParams({ grant_type: 'refresh_token', refresh_token: refreshToken, client_id: clientId }).toString(),
     pkce: 'S256',
+    authCodeBodyFormat: 'json',
+    connectInstructions: [
+      '1. Sign in to your Anthropic account in the new tab.',
+      '2. Click "Authorize".',
+      '3. Anthropic will display an authorization code on the next page.',
+      '4. Copy the code (it may be combined with state separated by "#" — paste the whole thing).',
+    ].join('\n'),
   },
   apiKey: {
     placeholder: 'sk-ant-api03-…',
@@ -309,6 +328,15 @@ registerProvider({
     refreshGrantBody: (refreshToken, clientId) =>
       new URLSearchParams({ grant_type: 'refresh_token', refresh_token: refreshToken, client_id: clientId }).toString(),
     pkce: 'S256',
+    authCodeBodyFormat: 'form',
+    connectInstructions: [
+      '1. Sign in to your OpenAI account in the new tab.',
+      '2. Click "Authorize".',
+      '3. Your browser will try to load "localhost:1455" and FAIL — this is expected.',
+      '4. Look at the URL bar. It will show:',
+      '   http://localhost:1455/auth/callback?code=ac_...&state=...',
+      '5. Copy the entire URL (or just the value of the "code" parameter) and paste below.',
+    ].join('\n'),
   },
   apiKey: {
     placeholder: 'sk-…',
@@ -1597,6 +1625,8 @@ export function handleProviderAuthStart(
     body: {
       authorizeUrl: `${spec.oauth.authorizeUrl}?${params.toString()}`,
       state,
+      instructions: spec.oauth.connectInstructions,
+      displayName: spec.displayName,
     },
   };
 }
@@ -1747,21 +1777,28 @@ type TokenExchanger = (
 ) => Promise<{ accessToken: string; refreshToken: string; expiresIn: number; account?: string } | null>;
 
 let tokenExchanger: TokenExchanger = async (spec, code, pkceVerifier, redirectUri) => {
-  // Real implementation: POST application/x-www-form-urlencoded to spec.oauth.tokenUrl
   if (!spec.oauth) return null;
-  const body = new URLSearchParams({
+  // Body format dispatched per provider (smoke-tested 2026-05-17):
+  //   Anthropic auth-code grant requires JSON
+  //   OpenAI auth-code grant uses standard form-urlencoded
+  const payload = {
     grant_type: 'authorization_code',
     code,
     code_verifier: pkceVerifier,
     client_id: spec.oauth.clientId,
     redirect_uri: redirectUri,
-  }).toString();
+  };
+  const isJson = spec.oauth.authCodeBodyFormat === 'json';
+  const body = isJson ? JSON.stringify(payload) : new URLSearchParams(payload).toString();
   const url = new URL(spec.oauth.tokenUrl);
   return new Promise((resolve) => {
     const req = httpsRequest(
       {
         hostname: url.hostname, port: url.port || 443, path: url.pathname, method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(body) },
+        headers: {
+          'Content-Type': isJson ? 'application/json' : 'application/x-www-form-urlencoded',
+          'Content-Length': Buffer.byteLength(body),
+        },
       },
       (res) => {
         const chunks: Buffer[] = [];
@@ -1774,7 +1811,7 @@ let tokenExchanger: TokenExchanger = async (spec, code, pkceVerifier, redirectUr
               accessToken: json.access_token,
               refreshToken: json.refresh_token,
               expiresIn: json.expires_in,
-              account: json.account ?? json.email,
+              account: extractAccountEmail(spec.id, json),
             });
           } catch { resolve(null); }
         });
@@ -1785,6 +1822,26 @@ let tokenExchanger: TokenExchanger = async (spec, code, pkceVerifier, redirectUr
     req.end();
   });
 };
+
+/** Extract display-friendly account label per provider.
+ *  Anthropic: top-level `account.email_address`.
+ *  OpenAI: middle segment of `id_token` JWT, claim `email`.
+ *  Both confirmed via smoke test 2026-05-17. */
+function extractAccountEmail(providerId: string, tokenResponse: Record<string, unknown>): string | undefined {
+  if (providerId === 'claude') {
+    const account = tokenResponse.account as { email_address?: string } | undefined;
+    return account?.email_address;
+  }
+  if (providerId === 'codex' && typeof tokenResponse.id_token === 'string') {
+    const parts = tokenResponse.id_token.split('.');
+    if (parts.length !== 3) return undefined;
+    try {
+      const claims = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf-8')) as { email?: string };
+      return claims.email;
+    } catch { return undefined; }
+  }
+  return undefined;
+}
 
 export function setTokenExchangerForTests(fn: TokenExchanger): void {
   tokenExchanger = fn;
@@ -2181,9 +2238,9 @@ function wireProviderRow(body, p) {
         // server-side; we hold it in JS closure until the user pastes the code.
         const res = await fetch(`/provider-auth/${p.id}/start`, { credentials: 'same-origin' });
         if (!res.ok) { alert(`Couldn't start ${p.displayName} sign-in (${res.status}).`); return; }
-        const { authorizeUrl, state } = await res.json();
+        const { authorizeUrl, state, instructions } = await res.json();
         window.open(authorizeUrl, '_blank', 'noopener,noreferrer');
-        showPasteForm(row, p, state);
+        showPasteForm(row, p, state, instructions);
       } else {
         const apiKey = prompt(`Paste your ${p.displayName} API key:`);
         if (!apiKey) return;
@@ -2197,12 +2254,16 @@ function wireProviderRow(body, p) {
     });
   });
 
-  function showPasteForm(rowEl, p, state) {
+  function showPasteForm(rowEl, p, state, instructions) {
     const form = document.createElement('div');
     form.className = 'provider-paste-form';
+    const instructionsHtml = (instructions || `Sign in to ${escapeHtml(p.displayName)} in the new tab. Paste the authorization code here:`)
+      .split('\n')
+      .map((line) => `<div>${escapeHtml(line)}</div>`)
+      .join('');
     form.innerHTML = `
-      <p class="muted">Sign in to ${escapeHtml(p.displayName)} in the new tab. Paste the authorization code here:</p>
-      <input type="text" class="paste-code" placeholder="Authorization code" autocomplete="off">
+      <div class="paste-instructions">${instructionsHtml}</div>
+      <input type="text" class="paste-code" placeholder="Paste code or URL here" autocomplete="off">
       <div class="home-actions">
         <button class="btn btn-primary">Submit</button>
         <button class="btn">Cancel</button>
@@ -2214,8 +2275,8 @@ function wireProviderRow(body, p) {
     const errLine = form.querySelector('.paste-err');
     codeInput.focus();
     form.querySelector('.btn-primary').addEventListener('click', async () => {
-      const code = codeInput.value.trim();
-      if (!code) return;
+      const code = parsePastedCode(codeInput.value.trim());
+      if (!code) { errLine.textContent = 'Code could not be parsed from the pasted value.'; errLine.hidden = false; return; }
       const r = await fetch(`/provider-auth/${p.id}/exchange`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -2231,6 +2292,20 @@ function wireProviderRow(body, p) {
       renderProvidersCard(rowEl.parentElement);
     });
     form.querySelector('.btn:not(.btn-primary)').addEventListener('click', () => form.remove());
+  }
+
+  /** Lenient paste parsing — accepts raw code, code#state, or full callback URL. */
+  function parsePastedCode(raw) {
+    if (!raw) return '';
+    // Full URL with ?code= (OpenAI's failed-loopback case)
+    try {
+      const url = new URL(raw);
+      const c = url.searchParams.get('code');
+      if (c) return c;
+    } catch { /* not a URL */ }
+    // Anthropic's combined code#state form
+    if (raw.includes('#')) return raw.split('#')[0];
+    return raw;
   }
 
   row.querySelectorAll('[data-disconnect]').forEach((btn) => {
@@ -2374,6 +2449,8 @@ Append to `src/channels/playground/public/style.css` (near the existing `.cc-gro
 .provider-active { font-size: 12px; color: #555; margin-top: 4px; }
 .provider-active label { margin-right: 12px; }
 .provider-paste-form { margin-top: 8px; padding: 8px; background: #f8fafe; border: 1px solid #d6e2f5; border-radius: 6px; }
+.provider-paste-form .paste-instructions { font-size: 12px; color: #444; margin-bottom: 6px; line-height: 1.5; }
+.provider-paste-form .paste-instructions > div { margin-bottom: 2px; }
 .provider-paste-form .paste-code { width: 100%; font-family: ui-monospace, monospace; padding: 4px 6px; margin: 4px 0; }
 .provider-paste-form .paste-err { color: #c8482a; font-size: 12px; margin-top: 4px; }
 ```

@@ -24,6 +24,15 @@ export type ProviderAuthSpec = {
     scopes: string[];
     refreshGrantBody: (refreshToken: string, clientId: string) => string;
     pkce: 'S256';
+    /** Token endpoint body format for the auth-code grant. Discovered
+     *  empirically (smoke test 2026-05-17): Anthropic requires JSON,
+     *  OpenAI accepts standard form-urlencoded. Refresh grant is
+     *  separately form-urlencoded for both per refreshGrantBody. */
+    authCodeBodyFormat: 'json' | 'form';
+    /** Per-provider user-facing walkthrough rendered in the Home
+     *  Providers card paste form. The OpenAI/loopback flow needs
+     *  different copy than Anthropic's vendor-display flow. */
+    connectInstructions: string;
   };
   apiKey?: {
     placeholder: string;

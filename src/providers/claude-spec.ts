@@ -12,8 +12,9 @@ registerProvider({
     authorizeUrl: 'https://claude.com/cai/oauth/authorize',
     tokenUrl: 'https://platform.claude.com/v1/oauth/token',
     redirectUri: 'https://platform.claude.com/oauth/code/callback',
+    // org:create_api_key was in Claude Code's request set but Anthropic
+    // silently drops it on grant (smoke-tested 2026-05-17). Omitted here.
     scopes: [
-      'org:create_api_key',
       'user:profile',
       'user:inference',
       'user:sessions:claude_code',
@@ -21,8 +22,19 @@ registerProvider({
       'user:file_upload',
     ],
     refreshGrantBody: (refreshToken, clientId) =>
-      new URLSearchParams({ grant_type: 'refresh_token', refresh_token: refreshToken, client_id: clientId }).toString(),
+      new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: refreshToken,
+        client_id: clientId,
+      }).toString(),
     pkce: 'S256',
+    authCodeBodyFormat: 'json',
+    connectInstructions: [
+      '1. Sign in to your Anthropic account in the new tab.',
+      '2. Click "Authorize".',
+      '3. Anthropic will display an authorization code on the next page.',
+      '4. Copy the code (it may be combined with state separated by "#" — paste the whole thing).',
+    ].join('\n'),
   },
   apiKey: {
     placeholder: 'sk-ant-api03-…',

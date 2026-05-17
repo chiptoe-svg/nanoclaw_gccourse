@@ -64,10 +64,7 @@ export type ResolvedCreds =
   | { kind: 'forbidden'; provider: string }
   | null;
 
-export type StudentCredsHook = (
-  agentGroupId: string,
-  providerId: string,
-) => Promise<ResolvedCreds>;
+export type StudentCredsHook = (agentGroupId: string, providerId: string) => Promise<ResolvedCreds>;
 
 /**
  * Trunk default — no-op. Solo installs see this and the proxy falls
