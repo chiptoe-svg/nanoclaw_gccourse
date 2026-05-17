@@ -1,10 +1,5 @@
 import { describe, expect, it, beforeEach } from 'vitest';
-import {
-  registerProvider,
-  getProviderSpec,
-  listProviderSpecs,
-  resetRegistryForTests,
-} from './auth-registry.js';
+import { registerProvider, getProviderSpec, listProviderSpecs, resetRegistryForTests } from './auth-registry.js';
 
 beforeEach(() => resetRegistryForTests());
 

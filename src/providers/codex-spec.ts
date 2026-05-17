@@ -17,14 +17,7 @@ registerProvider({
     authorizeUrl: 'https://auth.openai.com/oauth/authorize',
     tokenUrl: 'https://auth.openai.com/oauth/token',
     redirectUri: 'http://localhost:1455/auth/callback',
-    scopes: [
-      'openid',
-      'profile',
-      'email',
-      'offline_access',
-      'api.connectors.read',
-      'api.connectors.invoke',
-    ],
+    scopes: ['openid', 'profile', 'email', 'offline_access', 'api.connectors.read', 'api.connectors.invoke'],
     refreshGrantBody: (refreshToken, clientId) =>
       new URLSearchParams({ grant_type: 'refresh_token', refresh_token: refreshToken, client_id: clientId }).toString(),
     pkce: 'S256',
