@@ -48,6 +48,59 @@ import { readEnvFile } from './env.js';
 import { getGoogleAccessTokenForAgentGroup } from './gws-token.js';
 import { log } from './log.js';
 
+/**
+ * Per-request credential resolution outcome returned by the
+ * studentCredsHook. The trunk proxy understands four shapes:
+ *   - apiKey / oauth: real creds; proxy injects them
+ *   - connect_required: 402 envelope (classroom-skill policy)
+ *   - forbidden:       403 envelope (classroom-skill policy)
+ *   - null:            no per-student creds; proxy falls through to
+ *                      the existing .env / file / keychain chain
+ */
+export type ResolvedCreds =
+  | { kind: 'apiKey'; value: string }
+  | { kind: 'oauth'; accessToken: string }
+  | { kind: 'connect_required'; provider: string; message: string; connect_url: string }
+  | { kind: 'forbidden'; provider: string }
+  | null;
+
+export type StudentCredsHook = (
+  agentGroupId: string,
+  providerId: string,
+) => Promise<ResolvedCreds>;
+
+/**
+ * Trunk default — no-op. Solo installs see this and the proxy falls
+ * through to existing .env / file / keychain resolution. The classroom
+ * skill calls setStudentCredsHook() at startup to install its real
+ * resolver.
+ */
+export let studentCredsHook: StudentCredsHook = async () => null;
+
+export function setStudentCredsHook(fn: StudentCredsHook): void {
+  studentCredsHook = fn;
+}
+
+export function serializeResolvedCredsError(
+  result: Extract<ResolvedCreds, { kind: 'connect_required' | 'forbidden' }>,
+): { status: number; body: Record<string, unknown> } {
+  if (result.kind === 'connect_required') {
+    return {
+      status: 402,
+      body: {
+        type: 'connect_required',
+        provider: result.provider,
+        message: result.message,
+        connect_url: result.connect_url,
+      },
+    };
+  }
+  return {
+    status: 403,
+    body: { type: 'forbidden', provider: result.provider },
+  };
+}
+
 /** Header containers send to identify which agent group is calling. */
 const AGENT_GROUP_HEADER = 'x-nanoclaw-agent-group';
 

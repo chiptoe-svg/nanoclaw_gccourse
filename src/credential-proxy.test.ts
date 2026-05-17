@@ -17,7 +17,12 @@ vi.mock('./log.js', () => ({
   log: { info: vi.fn(), error: vi.fn(), debug: vi.fn(), warn: vi.fn() },
 }));
 
-import { startCredentialProxy } from './credential-proxy.js';
+import {
+  startCredentialProxy,
+  setStudentCredsHook,
+  studentCredsHook,
+  serializeResolvedCredsError,
+} from './credential-proxy.js';
 
 function makeRequest(
   port: number,
@@ -261,5 +266,50 @@ describe('credential-proxy', () => {
 
     expect(res.statusCode).toBe(502);
     expect(res.body).toBe('Bad Gateway');
+  });
+});
+
+describe('studentCredsHook', () => {
+  afterEach(() => {
+    setStudentCredsHook(async () => null);
+  });
+
+  it('default hook returns null (no-op for solo installs)', async () => {
+    const result = await studentCredsHook('any-gid', 'claude');
+    expect(result).toBeNull();
+  });
+
+  it('setStudentCredsHook installs a new hook globally', async () => {
+    setStudentCredsHook(async (gid, provider) => ({
+      kind: 'apiKey',
+      value: `key-for-${gid}-${provider}`,
+    }));
+    const result = await studentCredsHook('g1', 'claude');
+    expect(result).toEqual({ kind: 'apiKey', value: 'key-for-g1-claude' });
+  });
+
+  it('serializes connect_required sentinel to HTTP 402', () => {
+    const { status, body } = serializeResolvedCredsError({
+      kind: 'connect_required',
+      provider: 'claude',
+      message: 'Connect your Anthropic account to use this model.',
+      connect_url: '/provider-auth/claude/start',
+    });
+    expect(status).toBe(402);
+    expect(body).toEqual({
+      type: 'connect_required',
+      provider: 'claude',
+      message: 'Connect your Anthropic account to use this model.',
+      connect_url: '/provider-auth/claude/start',
+    });
+  });
+
+  it('serializes forbidden sentinel to HTTP 403', () => {
+    const { status, body } = serializeResolvedCredsError({
+      kind: 'forbidden',
+      provider: 'claude',
+    });
+    expect(status).toBe(403);
+    expect(body).toEqual({ type: 'forbidden', provider: 'claude' });
   });
 });
