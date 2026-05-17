@@ -240,7 +240,6 @@ async function renderUsageCard(body, folder) {
 }
 
 const ALL_TABS = ['home', 'chat', 'persona', 'skills', 'models'];
-const ALL_PROVIDERS = ['claude', 'codex', 'local'];
 const ALL_AUTH = ['api-key', 'oauth', 'claude-code-oauth'];
 const AUTH_LABEL = { 'api-key': 'API key', oauth: 'OAuth (Anthropic Console / OpenAI)', 'claude-code-oauth': 'Claude Code OAuth' };
 
@@ -266,13 +265,11 @@ function renderClassControlsForm(body, cfg) {
   const cls = (cfg.classes && cfg.classes[DEFAULT_CLASS_ID]) || {
     tabsVisibleToStudents: [], authModesAvailable: [], providers: {},
   };
-  const providerAllowed = (p) => !!(cls.providers && cls.providers[p] && cls.providers[p].allow);
-
   const tabsChecks = ALL_TABS.map((t) => `
     <label class="cc-check"><input type="checkbox" data-cc-tab="${t}" ${cls.tabsVisibleToStudents.includes(t) ? 'checked' : ''}> ${t}</label>
   `).join('');
   // ── classroom-provider-auth:class-controls-providers START ────────────
-  const policies = cfg.classes?.default?.providers || {};
+  const policies = cls.providers || {};
   const providerRows = PROVIDERS.concat([{ id: 'local', displayName: 'Local' }])
     .map((p) => {
       const pol = policies[p.id] || { allow: false, provideDefault: false, allowByo: false };
