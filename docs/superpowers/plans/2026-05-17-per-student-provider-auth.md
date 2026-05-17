@@ -18,7 +18,8 @@
 | Trunk infrastructure | 2, 3 | ✅ on `origin/main` | `f632b0a`, `f4faa5e`, `f30cfb0`, `13a43a9`, `73f0ab7`, `b480367` |
 | Worktree setup | 4 | ✅ | (no commit — environment setup; worktree at `/Users/admin/projects/nanoclaw-classroom-x7`) |
 | Classroom backend | 5–10 | ✅ on `classroom-x7-provider-auth` | `ed651bd`, `8f356af`, `1db3d30`, `f24ae00`, `03a9f75`, `ccdd517`, `c388605`, `8950332`, `9f15051` |
-| Classroom UI | 11–13 | ⬜ pending | — |
+| Classroom UI | 11 | ✅ on `classroom-x7-provider-auth` | `d1e3cbe`, `f3ec9d7` |
+| Classroom UI | 12, 13 | ⬜ pending | — |
 | Wire-up | 14 | ⬜ pending | — |
 | Skill packaging | 15 | ⬜ pending | — |
 | Integration test | 16 | ⬜ pending | — |
@@ -26,7 +27,7 @@
 
 **Backend total:** 36 new tests passing (9 storage + 4 class-controls + 7 resolver + 19 provider-auth). Full suite green (792/792 on classroom worktree, 753/753 on main).
 
-**Next session entry point:** Task 11 (Home Providers card UI). Worktree is at `/Users/admin/projects/nanoclaw-classroom-x7` on branch `classroom-x7-provider-auth`; pushed to `origin/classroom-x7-provider-auth`.
+**Next session entry point:** Task 12 (Home Class Controls per-provider table). Worktree at `/Users/admin/projects/nanoclaw-classroom-x7` on branch `classroom-x7-provider-auth`.
 
 ---
 
@@ -2235,13 +2236,14 @@ function wireProviderRow(body, p) {
 
   row.querySelectorAll(`input[name="active-${p.id}"]`).forEach((input) => {
     input.addEventListener('change', async () => {
-      await fetch(`/api/me/providers/${p.id}/active`, {
+      const res = await fetch(`/api/me/providers/${p.id}/active`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         credentials: 'same-origin',
         body: JSON.stringify({ active: input.value }),
       });
-      renderProvidersCard(body.parentElement);
+      if (!res.ok) alert(`Couldn't switch active method for ${p.displayName} (${res.status}).`);
+      renderProvidersCard(body);
     });
   });
 
@@ -2256,21 +2258,27 @@ function wireProviderRow(body, p) {
         if (!res.ok) { alert(`Couldn't start ${p.displayName} sign-in (${res.status}).`); return; }
         const { authorizeUrl, state, instructions } = await res.json();
         window.open(authorizeUrl, '_blank', 'noopener,noreferrer');
-        showPasteForm(row, p, state, instructions);
+        showPasteForm(row, state, instructions);
       } else {
         const apiKey = prompt(`Paste your ${p.displayName} API key:`);
         if (!apiKey) return;
-        fetch(`/api/me/providers/${p.id}/api-key`, {
+        const res = await fetch(`/api/me/providers/${p.id}/api-key`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           credentials: 'same-origin',
           body: JSON.stringify({ apiKey }),
-        }).then(() => renderProvidersCard(body.parentElement));
+        });
+        if (!res.ok) alert(`Couldn't save API key for ${p.displayName} (${res.status}).`);
+        renderProvidersCard(body);
       }
     });
   });
 
-  function showPasteForm(rowEl, p, state, instructions) {
+  // showPasteForm closes over the outer `body` and `p` of wireProviderRow —
+  // do NOT take them as parameters again. Passing `body.parentElement` (the
+  // <section>) here would overwrite the section's innerHTML, destroying the
+  // <h2> and the inner div on re-render.
+  function showPasteForm(rowEl, state, instructions) {
     const form = document.createElement('div');
     form.className = 'provider-paste-form';
     const instructionsHtml = (instructions || `Sign in to ${escapeHtml(p.displayName)} in the new tab. Paste the authorization code here:`)
@@ -2305,7 +2313,7 @@ function wireProviderRow(body, p) {
         errLine.hidden = false;
         return;
       }
-      renderProvidersCard(rowEl.parentElement);
+      renderProvidersCard(body);
     });
     form.querySelector('.btn:not(.btn-primary)').addEventListener('click', () => form.remove());
   }
@@ -2332,7 +2340,7 @@ function wireProviderRow(body, p) {
         method: 'DELETE',
         credentials: 'same-origin',
       });
-      renderProvidersCard(body.parentElement);
+      renderProvidersCard(body);
     });
   });
 }
