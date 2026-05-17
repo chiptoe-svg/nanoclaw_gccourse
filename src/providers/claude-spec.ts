@@ -14,13 +14,7 @@ registerProvider({
     redirectUri: 'https://platform.claude.com/oauth/code/callback',
     // org:create_api_key was in Claude Code's request set but Anthropic
     // silently drops it on grant (smoke-tested 2026-05-17). Omitted here.
-    scopes: [
-      'user:profile',
-      'user:inference',
-      'user:sessions:claude_code',
-      'user:mcp_servers',
-      'user:file_upload',
-    ],
+    scopes: ['user:profile', 'user:inference', 'user:sessions:claude_code', 'user:mcp_servers', 'user:file_upload'],
     refreshGrantBody: (refreshToken, clientId) =>
       new URLSearchParams({
         grant_type: 'refresh_token',
