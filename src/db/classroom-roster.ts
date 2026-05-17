@@ -76,3 +76,19 @@ export function lookupRosterByUserId(userId: string): ClassroomRosterEntry | nul
     .get(userId) as ClassroomRosterEntry | undefined;
   return row ?? null;
 }
+
+/**
+ * Look up a roster entry by its bound agent_group_id. Used by the
+ * classroom provider resolver to map a container's agentGroupId back
+ * to the student's canonical user_id. Returns null when no row binds
+ * this agent_group_id (solo-install path — caller treats as "not in
+ * classroom" and falls through to host .env creds).
+ */
+export function lookupRosterByAgentGroupId(agentGroupId: string): ClassroomRosterEntry | null {
+  const row = getDb()
+    .prepare(
+      'SELECT email, user_id, agent_group_id, added_at FROM classroom_roster WHERE agent_group_id = ? LIMIT 1',
+    )
+    .get(agentGroupId) as ClassroomRosterEntry | undefined;
+  return row ?? null;
+}
