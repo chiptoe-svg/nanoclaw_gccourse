@@ -19,15 +19,16 @@
 | Worktree setup | 4 | ✅ | (no commit — environment setup; worktree at `/Users/admin/projects/nanoclaw-classroom-x7`) |
 | Classroom backend | 5–10 | ✅ on `classroom-x7-provider-auth` | `ed651bd`, `8f356af`, `1db3d30`, `f24ae00`, `03a9f75`, `ccdd517`, `c388605`, `8950332`, `9f15051` |
 | Classroom UI | 11 | ✅ on `classroom-x7-provider-auth` | `d1e3cbe`, `f3ec9d7` |
-| Classroom UI | 12, 13 | ⬜ pending | — |
-| Wire-up | 14 | ⬜ pending | — |
-| Skill packaging | 15 | ⬜ pending | — |
-| Integration test | 16 | ⬜ pending | — |
-| Docs follow-up | 17 | ⬜ pending | — |
+| Classroom UI | 12 | ✅ on `classroom-x7-provider-auth` | `c0b28f0`, `9a9fef1` |
+| Classroom UI | 13 | ✅ on `classroom-x7-provider-auth` | `b3ec07a`, `0817e34` |
+| Wire-up | 14 | ✅ trunk + classroom | `389e719` (main), `f7672bc` (classroom) |
+| Skill packaging | 15 | ✅ on `main` | `9bd86f2` |
+| Integration test | 16 | ✅ on `classroom-x7-provider-auth` | `eb8b93c` |
+| Docs follow-up | 17 | ✅ on `main` | (this commit) |
 
-**Backend total:** 36 new tests passing (9 storage + 4 class-controls + 7 resolver + 19 provider-auth). Full suite green (792/792 on classroom worktree, 753/753 on main).
+**Backend total:** 37 tests passing (36 backend + 1 end-to-end integration). Full suite green (793/793 on classroom worktree, 753/753 on main).
 
-**Next session entry point:** Task 12 (Home Class Controls per-provider table). Worktree at `/Users/admin/projects/nanoclaw-classroom-x7` on branch `classroom-x7-provider-auth`.
+**Status:** All 17 tasks complete. Phase X.7 ready for live smoke test (Task 14 step 6 — owner signs in, configures Class Controls, clicks Connect on the Providers card and verifies the authorize URL).
 
 ---
 

@@ -271,6 +271,13 @@ Order matches `plans/master.md` §"Phase 2 — Full classroom capability".
       can be added later as a refinement of the fallback toggle
       with an optional TTL. Not in v1.
 
+      **Phase 14 asymmetry (follow-up):** `src/student-google-auth.ts`,
+      `src/channels/playground/api/google-auth.ts`, and the Home/Models
+      UI patches for Google currently live in trunk. X.7's classroom-
+      branch split exposes this asymmetry; the clean state would
+      migrate Phase 14 to `origin/classroom-x7-provider-auth` and install via
+      `/add-classroom-google-auth`. Not blocking, tracked separately.
+
       Detail: [`plans/credential-proxy-per-call-attribution.md` §X.7](../../../plans/credential-proxy-per-call-attribution.md)
 - [ ] **gws-mcp Phase 13.5b — Calendar list/create.** Earns its
       keep once each user has their own calendar. Skipped in
