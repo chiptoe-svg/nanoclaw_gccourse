@@ -18,8 +18,10 @@
  * see docs/providers/oauth-endpoints.md.
  */
 import crypto from 'crypto';
+import { request as httpsRequest } from 'https';
 
 import { getProviderSpec } from '../../../providers/auth-registry.js';
+import { addOAuth } from '../../../student-provider-auth.js';
 import { TtlMap } from '../ttl-map.js';
 import type { ApiResult } from './me.js';
 
@@ -47,10 +49,7 @@ function s256(verifier: string): string {
   return crypto.createHash('sha256').update(verifier).digest('base64url');
 }
 
-export function handleProviderAuthStart(
-  providerId: string,
-  session: { userId: string },
-): ApiResult<unknown> {
+export function handleProviderAuthStart(providerId: string, session: { userId: string }): ApiResult<unknown> {
   const spec = getProviderSpec(providerId);
   if (!spec) return { status: 404, body: { error: `unknown provider: ${providerId}` } };
   if (!spec.oauth) return { status: 400, body: { error: `provider ${providerId} has no oauth config` } };
@@ -86,4 +85,121 @@ export function handleProviderAuthStart(
       displayName: spec.displayName,
     },
   };
+}
+
+type TokenExchanger = (
+  spec: NonNullable<ReturnType<typeof getProviderSpec>>,
+  code: string,
+  pkceVerifier: string,
+  redirectUri: string,
+) => Promise<{ accessToken: string; refreshToken: string; expiresIn: number; account?: string } | null>;
+
+let tokenExchanger: TokenExchanger = async (spec, code, pkceVerifier, redirectUri) => {
+  if (!spec.oauth) return null;
+  // Body format dispatched per provider (smoke-tested 2026-05-17):
+  //   Anthropic auth-code grant requires JSON
+  //   OpenAI auth-code grant uses standard form-urlencoded
+  const payload = {
+    grant_type: 'authorization_code',
+    code,
+    code_verifier: pkceVerifier,
+    client_id: spec.oauth.clientId,
+    redirect_uri: redirectUri,
+  };
+  const isJson = spec.oauth.authCodeBodyFormat === 'json';
+  const body = isJson ? JSON.stringify(payload) : new URLSearchParams(payload).toString();
+  const url = new URL(spec.oauth.tokenUrl);
+  return new Promise((resolve) => {
+    const req = httpsRequest(
+      {
+        hostname: url.hostname,
+        port: url.port || 443,
+        path: url.pathname,
+        method: 'POST',
+        headers: {
+          'Content-Type': isJson ? 'application/json' : 'application/x-www-form-urlencoded',
+          'Content-Length': Buffer.byteLength(body),
+        },
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (c) => chunks.push(c as Buffer));
+        res.on('end', () => {
+          if (res.statusCode !== 200) return resolve(null);
+          try {
+            const json = JSON.parse(Buffer.concat(chunks).toString('utf-8')) as Record<string, unknown>;
+            resolve({
+              accessToken: json.access_token as string,
+              refreshToken: json.refresh_token as string,
+              expiresIn: json.expires_in as number,
+              account: extractAccountEmail(spec.id, json),
+            });
+          } catch {
+            resolve(null);
+          }
+        });
+      },
+    );
+    req.on('error', () => resolve(null));
+    req.write(body);
+    req.end();
+  });
+};
+
+export function setTokenExchangerForTests(fn: TokenExchanger): void {
+  tokenExchanger = fn;
+}
+
+/** Extract display-friendly account label per provider.
+ *  Anthropic: top-level `account.email_address`.
+ *  OpenAI: middle segment of `id_token` JWT, claim `email`.
+ *  Both confirmed via smoke test 2026-05-17. */
+function extractAccountEmail(providerId: string, tokenResponse: Record<string, unknown>): string | undefined {
+  if (providerId === 'claude') {
+    const account = tokenResponse.account as { email_address?: string } | undefined;
+    return account?.email_address;
+  }
+  if (providerId === 'codex' && typeof tokenResponse.id_token === 'string') {
+    const parts = tokenResponse.id_token.split('.');
+    if (parts.length !== 3) return undefined;
+    try {
+      const claims = JSON.parse(Buffer.from(parts[1]!, 'base64url').toString('utf-8')) as { email?: string };
+      return claims.email;
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
+export async function handleProviderAuthExchange(
+  providerId: string,
+  body: { code?: string; state?: string },
+  session: { userId: string },
+): Promise<ApiResult<unknown>> {
+  const code = (body.code ?? '').trim();
+  const state = (body.state ?? '').trim();
+  if (!code || !state) return { status: 400, body: { error: 'code and state required' } };
+
+  const entry = oauthStateStore.take(state);
+  if (!entry) return { status: 400, body: { error: 'invalid or expired state' } };
+  if (entry.providerId !== providerId) return { status: 400, body: { error: 'state/provider mismatch' } };
+  if (entry.userId !== session.userId) return { status: 403, body: { error: 'state bound to different session' } };
+
+  const spec = getProviderSpec(providerId);
+  if (!spec) return { status: 404, body: { error: 'unknown provider' } };
+
+  const tokens = await tokenExchanger(spec, code, entry.pkceVerifier, entry.redirectUri);
+  if (!tokens) {
+    return { status: 502, body: { error: 'token exchange failed' } };
+  }
+
+  addOAuth(session.userId, providerId, {
+    accessToken: tokens.accessToken,
+    refreshToken: tokens.refreshToken,
+    expiresAt: Date.now() + tokens.expiresIn * 1000,
+    account: tokens.account,
+  });
+
+  return { status: 200, body: { ok: true, account: tokens.account } };
 }

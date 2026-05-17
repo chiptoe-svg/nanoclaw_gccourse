@@ -1,7 +1,17 @@
-import { describe, expect, it, beforeEach } from 'vitest';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+
+import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 
 import { registerProvider, resetRegistryForTests } from '../../../providers/auth-registry.js';
-import { handleProviderAuthStart, getOAuthStateStoreForTests } from './provider-auth.js';
+import { hasStudentProviderCreds, loadStudentProviderCreds } from '../../../student-provider-auth.js';
+import {
+  handleProviderAuthStart,
+  handleProviderAuthExchange,
+  getOAuthStateStoreForTests,
+  setTokenExchangerForTests,
+} from './provider-auth.js';
 
 beforeEach(() => {
   resetRegistryForTests();
@@ -66,5 +76,96 @@ describe('handleProviderAuthStart (paste-back)', () => {
     });
     const result = handleProviderAuthStart('apikey-only', { userId: 'alice@x.edu' });
     expect(result.status).toBe(400);
+  });
+});
+
+describe('handleProviderAuthExchange (paste-back)', () => {
+  let tmpRoot: string;
+  let originalCwd: string;
+
+  beforeEach(() => {
+    originalCwd = process.cwd();
+    tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'exchange-test-'));
+    process.chdir(tmpRoot);
+    setTokenExchangerForTests(async (_spec, code, _verifier, _redirectUri) => {
+      if (code === 'good-code') {
+        return {
+          accessToken: 'at-from-exchange',
+          refreshToken: 'rt-from-exchange',
+          expiresIn: 3600,
+          account: 'alice@anthropic',
+        };
+      }
+      return null;
+    });
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  });
+
+  it('rejects unknown state', async () => {
+    const r = await handleProviderAuthExchange(
+      'claude',
+      { code: 'any-code', state: 'unknown-state' },
+      { userId: 'alice@x.edu' },
+    );
+    expect(r.status).toBe(400);
+  });
+
+  it('rejects missing code or state', async () => {
+    const r = await handleProviderAuthExchange('claude', { code: '', state: 's' } as never, { userId: 'alice@x.edu' });
+    expect(r.status).toBe(400);
+  });
+
+  it('exchanges code, persists creds, returns 200 on success', async () => {
+    const start = handleProviderAuthStart('claude', { userId: 'alice@x.edu' });
+    const { state } = start.body as { state: string };
+    const r = await handleProviderAuthExchange('claude', { code: 'good-code', state }, { userId: 'alice@x.edu' });
+    expect(r.status).toBe(200);
+    expect((r.body as { ok: boolean }).ok).toBe(true);
+    expect(hasStudentProviderCreds('alice@x.edu', 'claude')).toBe(true);
+    const creds = loadStudentProviderCreds('alice@x.edu', 'claude');
+    expect(creds?.active).toBe('oauth');
+    expect(creds?.oauth?.accessToken).toBe('at-from-exchange');
+  });
+
+  it('rejects state from a different session user', async () => {
+    const start = handleProviderAuthStart('claude', { userId: 'alice@x.edu' });
+    const { state } = start.body as { state: string };
+    const r = await handleProviderAuthExchange('claude', { code: 'good-code', state }, { userId: 'bob@x.edu' });
+    expect(r.status).toBe(403);
+  });
+
+  it('rejects state/provider mismatch', async () => {
+    registerProvider({
+      id: 'codex',
+      displayName: 'OpenAI',
+      proxyRoutePrefix: '/openai/',
+      credentialFileShape: 'mixed',
+      oauth: {
+        clientId: 'cid-codex',
+        authorizeUrl: 'https://example.com/codex/authorize',
+        tokenUrl: 'https://example.com/codex/token',
+        redirectUri: 'http://localhost:1455/auth/callback',
+        scopes: ['openid'],
+        refreshGrantBody: () => '',
+        pkce: 'S256',
+        authCodeBodyFormat: 'form',
+        connectInstructions: 'codex',
+      },
+    });
+    const start = handleProviderAuthStart('claude', { userId: 'alice@x.edu' });
+    const { state } = start.body as { state: string };
+    const r = await handleProviderAuthExchange('codex', { code: 'good-code', state }, { userId: 'alice@x.edu' });
+    expect(r.status).toBe(400);
+  });
+
+  it('returns 502 on exchange failure', async () => {
+    const start = handleProviderAuthStart('claude', { userId: 'alice@x.edu' });
+    const { state } = start.body as { state: string };
+    const r = await handleProviderAuthExchange('claude', { code: 'bad-code', state }, { userId: 'alice@x.edu' });
+    expect(r.status).toBe(502);
   });
 });
