@@ -36,7 +36,10 @@ describe('student-provider-auth', () => {
 
   it('addOAuth on empty store sets active=oauth', () => {
     addOAuth('alice@x.edu', 'claude', {
-      accessToken: 'at', refreshToken: 'rt', expiresAt: 999, account: 'alice',
+      accessToken: 'at',
+      refreshToken: 'rt',
+      expiresAt: 999,
+      account: 'alice',
     });
     const creds = loadStudentProviderCreds('alice@x.edu', 'claude');
     expect(creds?.active).toBe('oauth');
@@ -46,7 +49,9 @@ describe('student-provider-auth', () => {
   it('adding the second method leaves active unchanged', () => {
     addApiKey('alice@x.edu', 'claude', 'sk-1');
     addOAuth('alice@x.edu', 'claude', {
-      accessToken: 'at', refreshToken: 'rt', expiresAt: 999,
+      accessToken: 'at',
+      refreshToken: 'rt',
+      expiresAt: 999,
     });
     expect(loadStudentProviderCreds('alice@x.edu', 'claude')?.active).toBe('apiKey');
   });

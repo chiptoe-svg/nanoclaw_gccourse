@@ -58,10 +58,7 @@ function writeAtomic(file: string, data: object): void {
   fs.renameSync(tmp, file);
 }
 
-export function loadStudentProviderCreds(
-  userId: string,
-  providerId: string,
-): StudentProviderCreds | null {
+export function loadStudentProviderCreds(userId: string, providerId: string): StudentProviderCreds | null {
   try {
     const raw = fs.readFileSync(credsFile(userId, providerId), 'utf-8');
     return JSON.parse(raw) as StudentProviderCreds;
@@ -97,11 +94,7 @@ export function addOAuth(
   writeAtomic(credsFile(userId, providerId), next);
 }
 
-export function setActiveMethod(
-  userId: string,
-  providerId: string,
-  active: 'apiKey' | 'oauth',
-): void {
+export function setActiveMethod(userId: string, providerId: string, active: 'apiKey' | 'oauth'): void {
   const existing = loadStudentProviderCreds(userId, providerId);
   if (!existing) throw new Error(`no creds for ${userId}/${providerId}`);
   if (active === 'apiKey' && !existing.apiKey) throw new Error('cannot activate apiKey: not set');
@@ -109,11 +102,7 @@ export function setActiveMethod(
   writeAtomic(credsFile(userId, providerId), { ...existing, active });
 }
 
-export function clearMethod(
-  userId: string,
-  providerId: string,
-  which: 'apiKey' | 'oauth',
-): void {
+export function clearMethod(userId: string, providerId: string, which: 'apiKey' | 'oauth'): void {
   const existing = loadStudentProviderCreds(userId, providerId);
   if (!existing) return;
   const remaining: StudentProviderCreds = { ...existing };
