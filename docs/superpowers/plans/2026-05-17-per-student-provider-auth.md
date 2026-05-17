@@ -202,6 +202,12 @@ export type ProviderAuthSpec = {
     clientId: string;
     authorizeUrl: string;
     tokenUrl: string;
+    /** Vendor-pinned redirect URI — included verbatim in the
+     *  authorize-URL request and the token-exchange POST.
+     *  We piggyback on vendor CLI OAuth clients whose redirect_uri
+     *  cannot be overridden, so the user pastes the code back rather
+     *  than NanoClaw receiving a callback. */
+    redirectUri: string;
     scopes: string[];
     refreshGrantBody: (refreshToken: string, clientId: string) => string;
     pkce: 'S256';
@@ -239,7 +245,7 @@ export function resetRegistryForTests(): void {
 ```ts
 import { registerProvider } from './auth-registry.js';
 
-// Values sourced from docs/providers/oauth-endpoints.md.
+// Values sourced from docs/providers/oauth-endpoints.md (Claude Code v2.1.116).
 // Re-verify after major @anthropic-ai/claude-code version bumps.
 registerProvider({
   id: 'claude',
@@ -248,9 +254,17 @@ registerProvider({
   credentialFileShape: 'mixed',
   oauth: {
     clientId: '9d1c250a-e61b-44d9-88ed-5944d1962f5e',
-    authorizeUrl: /* fill in from Task 1 discovery */ '',
+    authorizeUrl: 'https://claude.com/cai/oauth/authorize',
     tokenUrl: 'https://platform.claude.com/v1/oauth/token',
-    scopes: /* fill in from Task 1 discovery */ [],
+    redirectUri: 'https://platform.claude.com/oauth/code/callback',
+    scopes: [
+      'org:create_api_key',
+      'user:profile',
+      'user:inference',
+      'user:sessions:claude_code',
+      'user:mcp_servers',
+      'user:file_upload',
+    ],
     refreshGrantBody: (refreshToken, clientId) =>
       new URLSearchParams({ grant_type: 'refresh_token', refresh_token: refreshToken, client_id: clientId }).toString(),
     pkce: 'S256',
@@ -267,18 +281,31 @@ registerProvider({
 ```ts
 import { registerProvider } from './auth-registry.js';
 
-// Values sourced from docs/providers/oauth-endpoints.md.
+// Values sourced from docs/providers/oauth-endpoints.md (Codex v0.124.0).
 // Re-verify after major @openai/codex version bumps.
+// Note: codex CLI's redirectUri is `http://localhost:<ephemeral>/auth/callback`
+// — a loopback listener that only works for the CLI's own desktop flow.
+// For NanoClaw's web-driven paste-back flow we use the localhost form below;
+// OpenAI's OAuth server accepts any loopback URI for this client. The actual
+// loopback port doesn't matter — the user never lands on it (paste-back).
 registerProvider({
   id: 'codex',
   displayName: 'OpenAI',
   proxyRoutePrefix: '/openai/',
   credentialFileShape: 'mixed',
   oauth: {
-    clientId: /* fill in from Task 1 discovery */ '',
-    authorizeUrl: /* fill in from Task 1 discovery */ '',
-    tokenUrl: /* fill in from Task 1 discovery */ '',
-    scopes: /* fill in from Task 1 discovery */ [],
+    clientId: 'app_EMoamEEZ73f0CkXaXp7hrann',
+    authorizeUrl: 'https://auth.openai.com/oauth/authorize',
+    tokenUrl: 'https://auth.openai.com/oauth/token',
+    redirectUri: 'http://localhost:1455/auth/callback',
+    scopes: [
+      'openid',
+      'profile',
+      'email',
+      'offline_access',
+      'api.connectors.read',
+      'api.connectors.invoke',
+    ],
     refreshGrantBody: (refreshToken, clientId) =>
       new URLSearchParams({ grant_type: 'refresh_token', refresh_token: refreshToken, client_id: clientId }).toString(),
     pkce: 'S256',
@@ -1391,11 +1418,19 @@ EOF
 
 ---
 
-## Task 8: OAuth /start route (PKCE authorize redirect)
+## Task 8: OAuth /start route (PKCE authorize URL builder — paste-back flow)
 
 **Files:**
-- Create: `src/channels/playground/api/provider-auth.ts` (handlers; route registration in Task 15)
+- Create: `src/channels/playground/api/provider-auth.ts` (handlers; route registration in Task 14)
 - Create: `src/channels/playground/api/provider-auth.test.ts`
+
+**Important:** Per the OAuth endpoint discovery (Task 1) and the spec
+update on 2026-05-17, the vendor OAuth clients pin their redirect URIs
+to vendor-controlled URLs (Claude: a vendor-hosted "display the code"
+page; Codex: localhost loopback). NanoClaw cannot host the callback,
+so we use a paste-back flow: `/start` returns the authorize URL + state
+as JSON; the frontend opens that URL in a new tab and renders a paste
+form. `/exchange` (Task 9) receives the pasted code + state via POST.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1417,6 +1452,7 @@ beforeEach(() => {
       clientId: 'cid-claude',
       authorizeUrl: 'https://example.com/oauth/authorize',
       tokenUrl: 'https://example.com/oauth/token',
+      redirectUri: 'https://example.com/code/callback',
       scopes: ['user'],
       refreshGrantBody: (rt, cid) => `grant_type=refresh_token&refresh_token=${rt}&client_id=${cid}`,
       pkce: 'S256',
@@ -1424,21 +1460,21 @@ beforeEach(() => {
   });
 });
 
-describe('handleProviderAuthStart', () => {
-  it('returns 302 to vendor authorize URL with PKCE+state for known provider', () => {
-    const result = handleProviderAuthStart('claude', { userId: 'alice@x.edu' }, 'http://host:3002');
-    expect(result.status).toBe(302);
-    const loc = result.headers!['Location'];
-    expect(loc).toContain('https://example.com/oauth/authorize');
-    expect(loc).toContain('client_id=cid-claude');
-    expect(loc).toContain('code_challenge_method=S256');
-    expect(loc).toContain('redirect_uri=http%3A%2F%2Fhost%3A3002%2Fprovider-auth%2Fclaude%2Fcallback');
-    expect(loc).toMatch(/state=[^&]+/);
-    expect(loc).toMatch(/code_challenge=[^&]+/);
+describe('handleProviderAuthStart (paste-back)', () => {
+  it('returns 200 with JSON {authorizeUrl, state} for known provider', () => {
+    const result = handleProviderAuthStart('claude', { userId: 'alice@x.edu' });
+    expect(result.status).toBe(200);
+    const { authorizeUrl, state } = result.body as { authorizeUrl: string; state: string };
+    expect(authorizeUrl).toContain('https://example.com/oauth/authorize');
+    expect(authorizeUrl).toContain('client_id=cid-claude');
+    expect(authorizeUrl).toContain('code_challenge_method=S256');
+    expect(authorizeUrl).toContain('redirect_uri=https%3A%2F%2Fexample.com%2Fcode%2Fcallback');
+    expect(authorizeUrl).toContain(`state=${encodeURIComponent(state)}`);
+    expect(authorizeUrl).toMatch(/code_challenge=[^&]+/);
   });
 
-  it('stores state in TtlMap bound to user_id and PKCE verifier', () => {
-    handleProviderAuthStart('claude', { userId: 'alice@x.edu' }, 'http://host:3002');
+  it('stores state in TtlMap bound to user_id, providerId, and PKCE verifier', () => {
+    handleProviderAuthStart('claude', { userId: 'alice@x.edu' });
     const store = getOAuthStateStoreForTests();
     const entries = [...store.entriesForTest()];
     expect(entries).toHaveLength(1);
@@ -1449,7 +1485,7 @@ describe('handleProviderAuthStart', () => {
   });
 
   it('returns 404 for unknown provider', () => {
-    const result = handleProviderAuthStart('nope', { userId: 'alice@x.edu' }, 'http://host:3002');
+    const result = handleProviderAuthStart('nope', { userId: 'alice@x.edu' });
     expect(result.status).toBe(404);
   });
 
@@ -1461,7 +1497,7 @@ describe('handleProviderAuthStart', () => {
       credentialFileShape: 'api-key',
       apiKey: { placeholder: 'k' },
     });
-    const result = handleProviderAuthStart('apikey-only', { userId: 'alice@x.edu' }, 'http://host:3002');
+    const result = handleProviderAuthStart('apikey-only', { userId: 'alice@x.edu' });
     expect(result.status).toBe(400);
   });
 });
@@ -1478,18 +1514,23 @@ Create `src/channels/playground/api/provider-auth.ts`:
 
 ```ts
 /**
- * OAuth + API-key HTTP handlers for per-student provider auth.
+ * OAuth + API-key HTTP handlers for per-student provider auth (paste-back flow).
  *
  * Routes (registered in playground/server.ts):
- *   GET  /provider-auth/:provider/start     → handleProviderAuthStart
- *   GET  /provider-auth/:provider/callback  → handleProviderAuthCallback (Task 9)
- *   GET  /api/me/providers/:id              → handleGetProviderStatus (Task 10)
- *   POST /api/me/providers/:id/api-key      → handlePostApiKey (Task 10)
- *   POST /api/me/providers/:id/active       → handleSetActive (Task 10)
- *   DELETE /api/me/providers/:id            → handleDisconnect (Task 10)
+ *   GET    /provider-auth/:provider/start      → handleProviderAuthStart
+ *                                                returns JSON { authorizeUrl, state }
+ *   POST   /provider-auth/:provider/exchange   → handleProviderAuthExchange (Task 9)
+ *                                                body { code, state }
+ *   GET    /api/me/providers/:id               → handleGetProviderStatus (Task 10)
+ *   POST   /api/me/providers/:id/api-key       → handlePostApiKey (Task 10)
+ *   POST   /api/me/providers/:id/active        → handleSetActive (Task 10)
+ *   DELETE /api/me/providers/:id               → handleDisconnect (Task 10)
  *
  * PKCE S256, single-use state tokens via TtlMap. State binds to user_id
- * + providerId + PKCE verifier; callback enforces single-use via take().
+ * + providerId + PKCE verifier; exchange enforces single-use via take().
+ * Vendor's own redirect_uri (from spec.oauth.redirectUri) is sent unchanged
+ * since the vendor OAuth clients are pinned to vendor-controlled URLs —
+ * see docs/providers/oauth-endpoints.md.
  */
 import crypto from 'crypto';
 
@@ -1524,8 +1565,7 @@ function s256(verifier: string): string {
 export function handleProviderAuthStart(
   providerId: string,
   session: { userId: string },
-  hostBase: string,
-): ApiResult<unknown> & { headers?: Record<string, string> } {
+): ApiResult<unknown> {
   const spec = getProviderSpec(providerId);
   if (!spec) return { status: 404, body: { error: `unknown provider: ${providerId}` } };
   if (!spec.oauth) return { status: 400, body: { error: `provider ${providerId} has no oauth config` } };
@@ -1533,20 +1573,19 @@ export function handleProviderAuthStart(
   const state = randomBase64Url(32);
   const pkceVerifier = randomBase64Url(64);
   const codeChallenge = s256(pkceVerifier);
-  const redirectUri = `${hostBase}/provider-auth/${providerId}/callback`;
 
   oauthStateStore.set(state, {
     userId: session.userId,
     providerId,
     pkceVerifier,
-    redirectUri,
+    redirectUri: spec.oauth.redirectUri,
     createdAt: Date.now(),
   });
 
   const params = new URLSearchParams({
     response_type: 'code',
     client_id: spec.oauth.clientId,
-    redirect_uri: redirectUri,
+    redirect_uri: spec.oauth.redirectUri,
     state,
     code_challenge: codeChallenge,
     code_challenge_method: 'S256',
@@ -1554,9 +1593,11 @@ export function handleProviderAuthStart(
   });
 
   return {
-    status: 302,
-    headers: { Location: `${spec.oauth.authorizeUrl}?${params.toString()}` },
-    body: null,
+    status: 200,
+    body: {
+      authorizeUrl: `${spec.oauth.authorizeUrl}?${params.toString()}`,
+      state,
+    },
   };
 }
 ```
@@ -1607,23 +1648,23 @@ EOF
 
 ---
 
-## Task 9: OAuth /callback route (token exchange)
+## Task 9: OAuth /exchange route (paste-back token exchange)
 
 **Files:**
-- Modify: `src/channels/playground/api/provider-auth.ts` — add `handleProviderAuthCallback`
-- Modify: `src/channels/playground/api/provider-auth.test.ts` — add callback tests
+- Modify: `src/channels/playground/api/provider-auth.ts` — add `handleProviderAuthExchange`
+- Modify: `src/channels/playground/api/provider-auth.test.ts` — add exchange tests
 
 - [ ] **Step 1: Write the failing tests**
 
 Append to `src/channels/playground/api/provider-auth.test.ts`:
 
 ```ts
-import { handleProviderAuthCallback, setTokenExchangerForTests } from './provider-auth.js';
+import { handleProviderAuthExchange, setTokenExchangerForTests } from './provider-auth.js';
 import { hasStudentProviderCreds, loadStudentProviderCreds } from '../../../student-provider-auth.js';
 
-describe('handleProviderAuthCallback', () => {
+describe('handleProviderAuthExchange (paste-back)', () => {
   beforeEach(() => {
-    setTokenExchangerForTests(async (_spec, code, verifier, redirectUri) => {
+    setTokenExchangerForTests(async (_spec, code, _verifier, _redirectUri) => {
       if (code === 'good-code') {
         return {
           accessToken: 'at-from-exchange',
@@ -1637,16 +1678,25 @@ describe('handleProviderAuthCallback', () => {
   });
 
   it('rejects unknown state', async () => {
-    const r = await handleProviderAuthCallback('claude', 'unknown-state', 'any-code', { userId: 'alice@x.edu' });
+    const r = await handleProviderAuthExchange(
+      'claude',
+      { code: 'any-code', state: 'unknown-state' },
+      { userId: 'alice@x.edu' },
+    );
     expect(r.status).toBe(400);
   });
 
-  it('exchanges code, persists creds, redirects on success', async () => {
-    const start = handleProviderAuthStart('claude', { userId: 'alice@x.edu' }, 'http://host:3002');
-    const state = new URL(start.headers!['Location']).searchParams.get('state')!;
-    const r = await handleProviderAuthCallback('claude', state, 'good-code', { userId: 'alice@x.edu' });
-    expect(r.status).toBe(302);
-    expect(r.headers!['Location']).toBe('/playground/?provider_connected=claude');
+  it('rejects missing code or state', async () => {
+    const r = await handleProviderAuthExchange('claude', { code: '', state: 's' } as never, { userId: 'alice@x.edu' });
+    expect(r.status).toBe(400);
+  });
+
+  it('exchanges code, persists creds, returns 200 on success', async () => {
+    const start = handleProviderAuthStart('claude', { userId: 'alice@x.edu' });
+    const { state } = start.body as { state: string };
+    const r = await handleProviderAuthExchange('claude', { code: 'good-code', state }, { userId: 'alice@x.edu' });
+    expect(r.status).toBe(200);
+    expect((r.body as { ok: boolean }).ok).toBe(true);
     expect(hasStudentProviderCreds('alice@x.edu', 'claude')).toBe(true);
     const creds = loadStudentProviderCreds('alice@x.edu', 'claude');
     expect(creds?.active).toBe('oauth');
@@ -1654,18 +1704,24 @@ describe('handleProviderAuthCallback', () => {
   });
 
   it('rejects state from a different session user', async () => {
-    const start = handleProviderAuthStart('claude', { userId: 'alice@x.edu' }, 'http://host:3002');
-    const state = new URL(start.headers!['Location']).searchParams.get('state')!;
-    const r = await handleProviderAuthCallback('claude', state, 'good-code', { userId: 'bob@x.edu' });
+    const start = handleProviderAuthStart('claude', { userId: 'alice@x.edu' });
+    const { state } = start.body as { state: string };
+    const r = await handleProviderAuthExchange('claude', { code: 'good-code', state }, { userId: 'bob@x.edu' });
     expect(r.status).toBe(403);
   });
 
-  it('redirects with ?error=denied on exchange failure', async () => {
-    const start = handleProviderAuthStart('claude', { userId: 'alice@x.edu' }, 'http://host:3002');
-    const state = new URL(start.headers!['Location']).searchParams.get('state')!;
-    const r = await handleProviderAuthCallback('claude', state, 'bad-code', { userId: 'alice@x.edu' });
-    expect(r.status).toBe(302);
-    expect(r.headers!['Location']).toBe('/playground/?provider_auth_error=denied');
+  it('rejects state/provider mismatch', async () => {
+    const start = handleProviderAuthStart('claude', { userId: 'alice@x.edu' });
+    const { state } = start.body as { state: string };
+    const r = await handleProviderAuthExchange('codex', { code: 'good-code', state }, { userId: 'alice@x.edu' });
+    expect(r.status).toBe(400);
+  });
+
+  it('returns 502 on exchange failure', async () => {
+    const start = handleProviderAuthStart('claude', { userId: 'alice@x.edu' });
+    const { state } = start.body as { state: string };
+    const r = await handleProviderAuthExchange('claude', { code: 'bad-code', state }, { userId: 'alice@x.edu' });
+    expect(r.status).toBe(502);
   });
 });
 ```
@@ -1675,7 +1731,7 @@ describe('handleProviderAuthCallback', () => {
 Run: `pnpm exec vitest run src/channels/playground/api/provider-auth.test.ts`
 Expected: FAIL — handler and test seam not exported.
 
-- [ ] **Step 3: Implement `handleProviderAuthCallback` + token exchanger**
+- [ ] **Step 3: Implement `handleProviderAuthExchange` + token exchanger**
 
 Append to `src/channels/playground/api/provider-auth.ts`:
 
@@ -1734,12 +1790,15 @@ export function setTokenExchangerForTests(fn: TokenExchanger): void {
   tokenExchanger = fn;
 }
 
-export async function handleProviderAuthCallback(
+export async function handleProviderAuthExchange(
   providerId: string,
-  state: string,
-  code: string,
+  body: { code?: string; state?: string },
   session: { userId: string },
-): Promise<ApiResult<unknown> & { headers?: Record<string, string> }> {
+): Promise<ApiResult<unknown>> {
+  const code = (body.code ?? '').trim();
+  const state = (body.state ?? '').trim();
+  if (!code || !state) return { status: 400, body: { error: 'code and state required' } };
+
   const entry = oauthStateStore.take(state);
   if (!entry) return { status: 400, body: { error: 'invalid or expired state' } };
   if (entry.providerId !== providerId) return { status: 400, body: { error: 'state/provider mismatch' } };
@@ -1750,11 +1809,7 @@ export async function handleProviderAuthCallback(
 
   const tokens = await tokenExchanger(spec, code, entry.pkceVerifier, entry.redirectUri);
   if (!tokens) {
-    return {
-      status: 302,
-      headers: { Location: `/playground/?provider_auth_error=denied` },
-      body: null,
-    };
+    return { status: 502, body: { error: 'token exchange failed' } };
   }
 
   addOAuth(session.userId, providerId, {
@@ -1764,11 +1819,7 @@ export async function handleProviderAuthCallback(
     account: tokens.account,
   });
 
-  return {
-    status: 302,
-    headers: { Location: `/playground/?provider_connected=${providerId}` },
-    body: null,
-  };
+  return { status: 200, body: { ok: true, account: tokens.account } };
 }
 ```
 
@@ -1789,10 +1840,11 @@ Expected: clean exit.
 ```bash
 git add src/channels/playground/api/provider-auth.ts src/channels/playground/api/provider-auth.test.ts
 git commit -m "$(cat <<'EOF'
-feat(classroom): provider-auth /callback handler with PKCE token exchange
+feat(classroom): provider-auth /exchange handler with PKCE token exchange
 
-State token single-use enforced via TtlMap.take. Cross-session state
-binding rejected with 403. Exchange failure redirects to error banner.
+Paste-back flow: POST { code, state }. State token single-use enforced
+via TtlMap.take. Cross-session state binding rejected with 403. Provider
+mismatch rejected with 400. Exchange failure returns 502.
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
 EOF
@@ -2121,10 +2173,17 @@ function wireProviderRow(body, p) {
   });
 
   row.querySelectorAll('[data-add]').forEach((btn) => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       const which = btn.dataset.add;
       if (which === 'oauth') {
-        window.location.href = `/provider-auth/${p.id}/start`;
+        // Paste-back flow: fetch authorize URL + state, open vendor in new tab,
+        // render an inline paste form. State is the lookup key for the verifier
+        // server-side; we hold it in JS closure until the user pastes the code.
+        const res = await fetch(`/provider-auth/${p.id}/start`, { credentials: 'same-origin' });
+        if (!res.ok) { alert(`Couldn't start ${p.displayName} sign-in (${res.status}).`); return; }
+        const { authorizeUrl, state } = await res.json();
+        window.open(authorizeUrl, '_blank', 'noopener,noreferrer');
+        showPasteForm(row, p, state);
       } else {
         const apiKey = prompt(`Paste your ${p.displayName} API key:`);
         if (!apiKey) return;
@@ -2137,6 +2196,42 @@ function wireProviderRow(body, p) {
       }
     });
   });
+
+  function showPasteForm(rowEl, p, state) {
+    const form = document.createElement('div');
+    form.className = 'provider-paste-form';
+    form.innerHTML = `
+      <p class="muted">Sign in to ${escapeHtml(p.displayName)} in the new tab. Paste the authorization code here:</p>
+      <input type="text" class="paste-code" placeholder="Authorization code" autocomplete="off">
+      <div class="home-actions">
+        <button class="btn btn-primary">Submit</button>
+        <button class="btn">Cancel</button>
+      </div>
+      <p class="paste-err muted" hidden></p>
+    `;
+    rowEl.appendChild(form);
+    const codeInput = form.querySelector('.paste-code');
+    const errLine = form.querySelector('.paste-err');
+    codeInput.focus();
+    form.querySelector('.btn-primary').addEventListener('click', async () => {
+      const code = codeInput.value.trim();
+      if (!code) return;
+      const r = await fetch(`/provider-auth/${p.id}/exchange`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ code, state }),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        errLine.textContent = `Failed: ${err.error || r.status}`;
+        errLine.hidden = false;
+        return;
+      }
+      renderProvidersCard(rowEl.parentElement);
+    });
+    form.querySelector('.btn:not(.btn-primary)').addEventListener('click', () => form.remove());
+  }
 
   row.querySelectorAll('[data-disconnect]').forEach((btn) => {
     btn.addEventListener('click', async () => {
@@ -2278,6 +2373,9 @@ Append to `src/channels/playground/public/style.css` (near the existing `.cc-gro
 .provider-row:last-child { border-bottom: none; }
 .provider-active { font-size: 12px; color: #555; margin-top: 4px; }
 .provider-active label { margin-right: 12px; }
+.provider-paste-form { margin-top: 8px; padding: 8px; background: #f8fafe; border: 1px solid #d6e2f5; border-radius: 6px; }
+.provider-paste-form .paste-code { width: 100%; font-family: ui-monospace, monospace; padding: 4px 6px; margin: 4px 0; }
+.provider-paste-form .paste-err { color: #c8482a; font-size: 12px; margin-top: 4px; }
 ```
 
 - [ ] **Step 5: Smoke test**
@@ -2432,18 +2530,18 @@ Mirror those route registrations. Inside `server.ts`'s router setup, add (sentin
 ```ts
 // ── classroom-provider-auth:routes START ───────────────────────────────────
 if (pathname.startsWith('/provider-auth/')) {
-  const m = pathname.match(/^\/provider-auth\/([^/]+)\/(start|callback)$/);
-  if (m && method === 'GET') {
+  const m = pathname.match(/^\/provider-auth\/([^/]+)\/(start|exchange)$/);
+  if (m) {
     const [, providerId, kind] = m;
-    if (kind === 'start') {
-      const result = handleProviderAuthStart(providerId, requireSession(req, res), hostBase(req));
+    if (kind === 'start' && method === 'GET') {
+      const result = handleProviderAuthStart(providerId, requireSession(req, res));
       return sendApiResult(res, result);
     }
-    const url = new URL(req.url ?? '', 'http://localhost');
-    const state = url.searchParams.get('state') ?? '';
-    const code = url.searchParams.get('code') ?? '';
-    const result = await handleProviderAuthCallback(providerId, state, code, requireSession(req, res));
-    return sendApiResult(res, result);
+    if (kind === 'exchange' && method === 'POST') {
+      const body = await readJson(req);
+      const result = await handleProviderAuthExchange(providerId, body, requireSession(req, res));
+      return sendApiResult(res, result);
+    }
   }
 }
 if (pathname.startsWith('/api/me/providers/')) {
@@ -2473,7 +2571,7 @@ Imports at top of file (skip if already present):
 
 ```ts
 import {
-  handleProviderAuthStart, handleProviderAuthCallback,
+  handleProviderAuthStart, handleProviderAuthExchange,
   handleGetProviderStatus, handlePostApiKey, handleSetActive, handleDisconnect,
 } from './api/provider-auth.js';
 ```
@@ -2538,7 +2636,7 @@ pnpm run dev
 1. Sign in as owner via PIN.
 2. Class Controls → enable Claude (allow=true, provideDefault=false, allowByo=true). Save.
 3. Home → Providers card shows "⚠ Anthropic · Not connected · [Connect]".
-4. Click Connect → browser navigates to vendor authorize URL (will fail if real OAuth endpoints aren't yet registered with vendor — that's expected for now; verify the URL has correct client_id, code_challenge, state, redirect_uri).
+4. Click Connect → a new tab opens to `https://claude.com/cai/oauth/authorize?...` with correct client_id, code_challenge, state, and the vendor's own redirect_uri (`https://platform.claude.com/oauth/code/callback`). An inline paste form appears on the original tab. (Token exchange will only succeed when the student completes the vendor flow with a real Anthropic account; verifying the URL/form shape is enough to confirm wiring.)
 
 - [ ] **Step 7: Commit**
 
@@ -2740,7 +2838,7 @@ import http from 'http';
 import { createServer } from 'http';
 
 import './providers/claude-spec.js';
-import { handleProviderAuthStart, handleProviderAuthCallback, setTokenExchangerForTests } from './channels/playground/api/provider-auth.js';
+import { handleProviderAuthStart, handleProviderAuthExchange, setTokenExchangerForTests } from './channels/playground/api/provider-auth.js';
 import { setStudentCredsHook } from './credential-proxy.js';
 import { resolveStudentCreds, setRosterLookupForTests } from './classroom-provider-resolver.js';
 import { loadStudentProviderCreds } from './student-provider-auth.js';
@@ -2754,10 +2852,10 @@ beforeAll(() => {
 });
 
 describe('end-to-end provider auth', () => {
-  it('start → callback → resolver → proxy hook returns student OAuth token', async () => {
-    const start = handleProviderAuthStart('claude', { userId: 'alice@x.edu' }, 'http://host:3002');
-    const state = new URL(start.headers!['Location']).searchParams.get('state')!;
-    await handleProviderAuthCallback('claude', state, 'good', { userId: 'alice@x.edu' });
+  it('start → exchange → resolver → proxy hook returns student OAuth token', async () => {
+    const start = handleProviderAuthStart('claude', { userId: 'alice@x.edu' });
+    const { state } = start.body as { state: string };
+    await handleProviderAuthExchange('claude', { code: 'good', state }, { userId: 'alice@x.edu' });
 
     expect(loadStudentProviderCreds('alice@x.edu', 'claude')?.oauth?.accessToken).toBe('integration-at');
 

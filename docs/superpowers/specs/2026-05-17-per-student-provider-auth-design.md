@@ -244,17 +244,20 @@ classroom skill's entry point.
 
 #### 5. OAuth HTTP routes — `src/channels/playground/api/provider-auth.ts`
 
-Registry-driven, one set of route handlers covering every registered
-provider:
+Registry-driven, paste-back flow (vendor redirect URIs cannot be
+overridden — see §Open Questions § OAuth endpoint discovery):
 
 - `GET /provider-auth/:provider/start` — session-guard, mint state +
-  PKCE verifier (TtlMap, single-use via `take()`), redirect to
-  `spec.oauth.authorizeUrl` with `client_id`, `code_challenge`,
-  `state`, `redirect_uri`, `scope`.
-- `GET /provider-auth/:provider/callback` — verify state (single-use,
-  bound to session user_id), POST to `spec.oauth.tokenUrl` with
-  `authorization_code` grant, call `addOAuth(userId, provider, ...)`,
-  302 → `/playground/?provider_connected=<provider>`.
+  PKCE verifier (TtlMap, single-use via `take()`). Returns JSON
+  `{ authorizeUrl, state }` rather than a 302; the frontend opens
+  `authorizeUrl` in a new tab and renders an inline paste form keyed
+  by `state`. The vendor's own `redirect_uri` (read from
+  `spec.oauth.redirectUri`) is included in the authorize URL.
+- `POST /provider-auth/:provider/exchange` — body `{ code, state }`.
+  Verify state (single-use, bound to session user_id + providerId),
+  POST to `spec.oauth.tokenUrl` with `authorization_code` grant +
+  PKCE verifier, call `addOAuth(userId, provider, ...)`. Returns
+  `{ ok: true, account? }`.
 
 CRUD:
 - `GET /api/me/providers/:id` → `{ hasApiKey, hasOAuth, active,
@@ -265,7 +268,8 @@ CRUD:
 - `DELETE /api/me/providers/:id?which=apiKey|oauth` →
   `clearMethod(...)`
 
-State token shape mirrors `src/channels/playground/api/google-auth.ts`.
+State token shape mirrors `src/channels/playground/api/google-auth.ts`
+but is consumed by the exchange POST instead of a GET callback.
 
 #### 6. Class Controls schema extension
 
@@ -376,24 +380,31 @@ AND `allowByo=false` AND student has no creds) — literally unusable.
 
 ## Data flow
 
-### OAuth happy path (Anthropic, first connect, no API key)
+### OAuth happy path (Anthropic, first connect, no API key) — paste-back
 
 1. Student clicks "Sign in with Anthropic" in Home → Providers.
-2. GET `/provider-auth/claude/start`.
+2. Browser fetches `GET /provider-auth/claude/start`.
 3. Server: session check → mint `{state, pkceVerifier}` keyed by
-   `state`, store in TtlMap (10 min, single-use). Redirect 302 to
-   `<spec.oauth.authorizeUrl>?client_id=…&response_type=code&code_challenge=<S256>&code_challenge_method=S256&state=<state>&redirect_uri=<host>/provider-auth/claude/callback&scope=…`.
-4. Student authenticates with Anthropic, consents.
-5. 302 → `/provider-auth/claude/callback?code=…&state=…`.
-6. Server: `take(state)`, POST to `<spec.oauth.tokenUrl>` with
-   `grant_type=authorization_code`, `code`, `code_verifier`,
-   `client_id`, `redirect_uri`.
-7. Vendor returns `{access_token, refresh_token, expires_in,
-   id_token?}`.
-8. `addOAuth(userId, 'claude', {accessToken, refreshToken,
-   expiresAt, account: <from id_token>, addedAt: now()})` — since
-   no creds existed, `active='oauth'` is auto-set.
-9. 302 → `/playground/?provider_connected=claude`.
+   `state`, store in TtlMap (10 min, single-use). Returns JSON
+   `{ authorizeUrl: "https://claude.com/cai/oauth/authorize?client_id=9d1c…&response_type=code&code_challenge=<S256>&code_challenge_method=S256&state=<state>&redirect_uri=https://platform.claude.com/oauth/code/callback&scope=…", state: "…" }`.
+4. Browser opens `authorizeUrl` in a new tab and renders an inline
+   paste form (still on the original Home tab) bound to `state`:
+   "Paste the code Anthropic displayed: [______] [Submit]".
+5. In the new tab, student authenticates with Anthropic and consents.
+6. Anthropic redirects to its own `platform.claude.com/oauth/code/callback`
+   page which displays the auth code to the student.
+7. Student copies the code, switches back to the original Home tab,
+   pastes into the form, clicks Submit.
+8. Browser POSTs `{code, state}` to `/provider-auth/claude/exchange`.
+9. Server: `take(state)`, verify `userId` matches session, POST to
+   `<spec.oauth.tokenUrl>` with `grant_type=authorization_code`,
+   `code`, `code_verifier`, `client_id`, `redirect_uri` (the vendor's
+   own URI).
+10. Vendor returns `{access_token, refresh_token, expires_in, id_token?}`.
+11. `addOAuth(userId, 'claude', {accessToken, refreshToken,
+    expiresAt, account: <from id_token>, addedAt: now()})` — since
+    no creds existed, `active='oauth'` is auto-set.
+12. Server returns `{ok: true}`; browser re-renders the Providers card.
 
 ### API-key paste path
 
@@ -479,17 +490,17 @@ AND `allowByo=false` AND student has no creds) — literally unusable.
   refresh-grant use. Mitigation: paste-API-key tab always available
   as fallback.
 
-- **OAuth endpoint discovery — both providers.** The token URL for
-  Claude (`platform.claude.com/v1/oauth/token`) is grounded in
-  `src/credential-proxy.ts`. The authorize URL is NOT — example
-  paths in this spec are placeholders. Implementation phase must
-  inspect `node_modules/@anthropic-ai/claude-code/` or strace
-  `claude login` to discover the real authorize URL, required
-  scopes, redirect-URI format, and `id_token` claims (for the
-  `account` display field). Same for OpenAI: inspect
-  `node_modules/@openai/codex/` for codex CLI's authorize URL,
-  token URL, client ID, scopes. Document discovered values in the
-  registry entries.
+- **OAuth endpoint discovery — RESOLVED 2026-05-17.** Discovered values
+  documented in `docs/providers/oauth-endpoints.md`. Critical finding:
+  both vendor OAuth clients pin their redirect URIs to vendor-controlled
+  URLs (Claude: `https://platform.claude.com/oauth/code/callback`, a
+  vendor page that displays the code to the user; Codex: `http://localhost:<ephemeral>/auth/callback`,
+  loopback only). This rules out the original NanoClaw-hosted GET
+  callback design. **Flow chosen: paste-back.** Same shape `claude login`
+  / `codex login` use in headless mode — NanoClaw opens the vendor
+  authorize URL in a new tab, vendor displays the auth code on the
+  vendor's page, user copies the code and pastes into a NanoClaw form,
+  NanoClaw exchanges code → tokens server-side. PKCE security unchanged.
 
 - **Token refresh failures.** If a refresh_token is revoked
   server-side, the proxy currently silently falls back. New
