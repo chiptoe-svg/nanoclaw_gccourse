@@ -201,7 +201,10 @@ describe('GET /api/me/providers/:id', () => {
 
   it('returns connection details including active method', () => {
     addOAuth('alice@x.edu', 'claude', {
-      accessToken: 'at', refreshToken: 'rt', expiresAt: Date.now() + 1000, account: 'alice',
+      accessToken: 'at',
+      refreshToken: 'rt',
+      expiresAt: Date.now() + 1000,
+      account: 'alice',
     });
     const r = handleGetProviderStatus('claude', { userId: 'alice@x.edu' });
     expect(r.body).toMatchObject({
@@ -267,7 +270,9 @@ describe('POST /api/me/providers/:id/active', () => {
     addOAuth('alice@x.edu', 'claude', { accessToken: 'at', refreshToken: 'rt', expiresAt: Date.now() + 1000 });
     const r = handleSetActive('claude', { active: 'oauth' }, { userId: 'alice@x.edu' });
     expect(r.status).toBe(200);
-    expect((handleGetProviderStatus('claude', { userId: 'alice@x.edu' }).body as { active: string }).active).toBe('oauth');
+    expect((handleGetProviderStatus('claude', { userId: 'alice@x.edu' }).body as { active: string }).active).toBe(
+      'oauth',
+    );
   });
 
   it('rejects activating a method that is not set', () => {
@@ -297,7 +302,9 @@ describe('DELETE /api/me/providers/:id', () => {
     addOAuth('alice@x.edu', 'claude', { accessToken: 'at', refreshToken: 'rt', expiresAt: Date.now() + 1000 });
     const r = handleDisconnect('claude', { which: 'oauth' }, { userId: 'alice@x.edu' });
     expect(r.status).toBe(200);
-    expect((handleGetProviderStatus('claude', { userId: 'alice@x.edu' }).body as { hasOAuth: boolean }).hasOAuth).toBe(false);
+    expect((handleGetProviderStatus('claude', { userId: 'alice@x.edu' }).body as { hasOAuth: boolean }).hasOAuth).toBe(
+      false,
+    );
   });
 
   it('removes file when both methods cleared', () => {
