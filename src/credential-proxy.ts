@@ -412,6 +412,31 @@ export function startCredentialProxy(port: number, host = '127.0.0.1'): Promise<
         // Don't leak the attribution header upstream — it's a NanoClaw-internal hint.
         delete headers[AGENT_GROUP_HEADER];
 
+        // ── per-student-provider-auth:proxy-invocation START ──────────────────────
+        let studentCredsApplied = false;
+        if (agentGroupId && (isOpenAI || (!isGoogle && !isOmlx))) {
+          const providerId = isOpenAI ? 'codex' : 'claude';
+          const resolved = await studentCredsHook(agentGroupId, providerId);
+          if (resolved) {
+            if (resolved.kind === 'connect_required' || resolved.kind === 'forbidden') {
+              const err = serializeResolvedCredsError(resolved);
+              res.writeHead(err.status, { 'content-type': 'application/json' });
+              res.end(JSON.stringify(err.body));
+              return;
+            }
+            delete headers['authorization'];
+            delete headers['x-api-key'];
+            if (resolved.kind === 'apiKey') {
+              if (isOpenAI) headers['authorization'] = `Bearer ${resolved.value}`;
+              else headers['x-api-key'] = resolved.value;
+            } else {
+              headers['authorization'] = `Bearer ${resolved.accessToken}`;
+            }
+            studentCredsApplied = true;
+          }
+        }
+        // ── per-student-provider-auth:proxy-invocation END ────────────────────────
+
         if (isGoogle) {
           // Google APIs: refresh access token if needed, inject as Bearer.
           // Returns 502 with an actionable message if no creds configured.
@@ -434,7 +459,7 @@ export function startCredentialProxy(port: number, host = '127.0.0.1'): Promise<
           delete headers['authorization'];
           delete headers['x-goog-api-key'];
           headers['authorization'] = `Bearer ${resolved.token}`;
-        } else if (isOpenAI) {
+        } else if (isOpenAI && !studentCredsApplied) {
           // OpenAI mode: replace any placeholder Authorization with the
           // real key. If OPENAI_API_KEY isn't set on the host, 502 with
           // a clear message so the container-side error is actionable.
@@ -461,11 +486,11 @@ export function startCredentialProxy(port: number, host = '127.0.0.1'): Promise<
           delete headers['authorization'];
           delete headers['x-api-key'];
           headers['authorization'] = `Bearer ${secrets.OMLX_API_KEY || 'local'}`;
-        } else if (authMode === 'api-key') {
+        } else if (authMode === 'api-key' && !studentCredsApplied) {
           // Anthropic API key mode: inject x-api-key on every request
           delete headers['x-api-key'];
           headers['x-api-key'] = secrets.ANTHROPIC_API_KEY;
-        } else {
+        } else if (!studentCredsApplied) {
           // Anthropic OAuth mode: replace placeholder Bearer token with
           // the real one only when the container actually sends an
           // Authorization header (exchange request + auth probes).
