@@ -47,6 +47,20 @@ vi.mock('./gws-mcp-tools.js', () => ({
     presentationId: args.presentation_id,
     occurrencesChanged: 3,
   })),
+  // Gmail tools (Phase 14 Tier C)
+  gmailSearch: vi.fn(async () => ({ ok: true, threads: [], principal: 'instructor' })),
+  gmailReadThread: vi.fn(async () => ({ ok: true, threadId: 'stub', messages: [], principal: 'instructor' })),
+  gmailSendDraft: vi.fn(async () => ({ ok: true, draftId: 'd_stub', composeUrl: 'https://mail.google.com/', principal: 'instructor' })),
+  // Calendar tools (Phase 14 Tier D)
+  calendarListEvents: vi.fn(async () => ({ ok: true, events: [], principal: 'instructor' })),
+  calendarCreateEvent: vi.fn(async () => ({ ok: true, eventId: 'e_stub', htmlLink: 'https://calendar.google.com/', principal: 'instructor' })),
+  calendarFindFreeSlot: vi.fn(async () => ({ ok: true, slots: [], principal: 'instructor' })),
+  // Hook registration / token resolver (passthrough no-ops)
+  registerPreMutationHook: vi.fn(),
+  registerPostCreateHook: vi.fn(),
+  _resetHooksForTest: vi.fn(),
+  resolveTokenOrError: vi.fn(async () => ({ ok: true, token: 'stub-token', principal: 'instructor' })),
+  buildDriveClient: vi.fn(),
 }));
 
 import { dispatchTool, listToolNames } from './gws-mcp-server.js';
@@ -64,6 +78,12 @@ describe('listToolNames', () => {
         'slides_create_deck',
         'slides_append_slide',
         'slides_replace_text',
+        'gmail_search',
+        'gmail_read_thread',
+        'gmail_send_draft',
+        'calendar_list_events',
+        'calendar_create_event',
+        'calendar_find_free_slot',
       ]),
     );
   });
