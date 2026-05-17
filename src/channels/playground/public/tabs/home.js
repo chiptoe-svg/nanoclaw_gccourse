@@ -5,10 +5,18 @@ export function mountHome(el) {
   const params = new URLSearchParams(location.search);
   const googleConnected = params.get('google_connected') === '1';
   const googleDenied = params.get('google_auth_error') === 'denied';
+  const providerConnected = params.get('provider_connected');
+  const providerAuthError = params.get('provider_auth_error');
   if (googleConnected || googleDenied) {
     const cleaned = new URL(location.href);
     cleaned.searchParams.delete('google_connected');
     cleaned.searchParams.delete('google_auth_error');
+    history.replaceState({}, '', cleaned.pathname + (cleaned.search === '?' ? '' : cleaned.search));
+  }
+  if (providerConnected || providerAuthError) {
+    const cleaned = new URL(location.href);
+    cleaned.searchParams.delete('provider_connected');
+    cleaned.searchParams.delete('provider_auth_error');
     history.replaceState({}, '', cleaned.pathname + (cleaned.search === '?' ? '' : cleaned.search));
   }
 
@@ -75,6 +83,13 @@ export function mountHome(el) {
         </div>
       </section>
 
+      <!-- classroom-provider-auth:providers-card START -->
+      <section class="home-card" id="providers-card">
+        <h2>LLM Providers</h2>
+        <div id="providers-card-body"><p class="muted">Loading…</p></div>
+      </section>
+      <!-- classroom-provider-auth:providers-card END -->
+
       <section class="home-card" id="usage-card">
         <h2>API credits</h2>
         <div id="usage-card-body"><p class="muted">Loading…</p></div>
@@ -111,6 +126,7 @@ export function mountHome(el) {
 
   renderTelegramCard(el.querySelector('#telegram-card-body'));
   renderGoogleCard(el.querySelector('#google-card-body'));
+  renderProvidersCard(el.querySelector('#providers-card-body'));
   renderUsageCard(el.querySelector('#usage-card-body'), agent.folder);
 
   if (isOwner) {
@@ -438,3 +454,203 @@ async function renderGoogleCard(body) {
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
+
+// ── classroom-provider-auth:providers-card-impl START ─────────────────────
+
+const PROVIDERS = [
+  { id: 'codex',  displayName: 'OpenAI'    },
+  { id: 'claude', displayName: 'Anthropic' },
+];
+
+async function renderProvidersCard(body) {
+  if (!body) return;
+  try {
+    const ccRes = await fetch('/api/class-controls', { credentials: 'same-origin' });
+    const cc = await ccRes.json();
+    const policies = cc.classes?.default?.providers || {};
+
+    const rows = [];
+    for (const p of PROVIDERS) {
+      const policy = policies[p.id];
+      if (!policy || policy.allow === false) continue;
+      const statusRes = await fetch(`/api/me/providers/${p.id}`, { credentials: 'same-origin' });
+      const status = await statusRes.json();
+      rows.push(renderProviderRow(p, policy, status));
+    }
+    body.innerHTML = rows.length
+      ? rows.join('')
+      : `<p class="muted">No providers enabled by your instructor.</p>`;
+
+    PROVIDERS.forEach((p) => wireProviderRow(body, p));
+  } catch (err) {
+    body.innerHTML = `<p class="muted">Couldn't load providers: ${escapeHtml(String(err))}</p>`;
+  }
+}
+
+function renderProviderRow(p, policy, status) {
+  const { hasApiKey, hasOAuth, active, oauth } = status;
+  const displayName = escapeHtml(p.displayName);
+
+  if (hasOAuth && hasApiKey) {
+    return `
+      <div class="provider-row" data-provider="${p.id}">
+        <strong>✅ ${displayName}</strong>
+        <div class="provider-active">
+          Active:
+          <label><input type="radio" name="active-${p.id}" value="oauth" ${active === 'oauth' ? 'checked' : ''}> Subscription (${escapeHtml(oauth?.account || '')})</label>
+          <label><input type="radio" name="active-${p.id}" value="apiKey" ${active === 'apiKey' ? 'checked' : ''}> API key</label>
+        </div>
+        <div class="home-actions">
+          <button class="btn btn-danger" data-disconnect="${active}">Disconnect ${active === 'oauth' ? 'subscription' : 'API key'}</button>
+        </div>
+      </div>`;
+  }
+  if (hasOAuth) {
+    return `
+      <div class="provider-row" data-provider="${p.id}">
+        <strong>✅ ${displayName}</strong> · Subscription (${escapeHtml(oauth?.account || '')})
+        <div class="home-actions">
+          <button class="btn" data-add="apiKey">Add API key</button>
+          <button class="btn btn-danger" data-disconnect="oauth">Disconnect</button>
+        </div>
+      </div>`;
+  }
+  if (hasApiKey) {
+    return `
+      <div class="provider-row" data-provider="${p.id}">
+        <strong>✅ ${displayName}</strong> · API key set
+        <div class="home-actions">
+          <button class="btn" data-add="oauth">Add subscription</button>
+          <button class="btn btn-danger" data-disconnect="apiKey">Disconnect</button>
+        </div>
+      </div>`;
+  }
+  // No creds
+  if (policy.provideDefault) {
+    return `
+      <div class="provider-row" data-provider="${p.id}">
+        <strong>✅ ${displayName}</strong> · Provided by instructor
+        ${policy.allowByo ? `<div class="home-actions"><button class="btn" data-add="oauth">Use my own</button></div>` : ''}
+      </div>`;
+  }
+  if (policy.allowByo) {
+    return `
+      <div class="provider-row" data-provider="${p.id}">
+        <strong>⚠ ${displayName}</strong> · Not connected
+        <div class="home-actions">
+          <button class="btn" data-add="oauth">Connect</button>
+        </div>
+      </div>`;
+  }
+  return ''; // hidden
+}
+
+function wireProviderRow(body, p) {
+  const row = body.querySelector(`.provider-row[data-provider="${p.id}"]`);
+  if (!row) return;
+
+  row.querySelectorAll(`input[name="active-${p.id}"]`).forEach((input) => {
+    input.addEventListener('change', async () => {
+      await fetch(`/api/me/providers/${p.id}/active`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ active: input.value }),
+      });
+      renderProvidersCard(body.parentElement);
+    });
+  });
+
+  row.querySelectorAll('[data-add]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const which = btn.dataset.add;
+      if (which === 'oauth') {
+        // Paste-back flow: fetch authorize URL + state, open vendor in new tab,
+        // render an inline paste form. State is the lookup key for the verifier
+        // server-side; we hold it in JS closure until the user pastes the code.
+        const res = await fetch(`/provider-auth/${p.id}/start`, { credentials: 'same-origin' });
+        if (!res.ok) { alert(`Couldn't start ${p.displayName} sign-in (${res.status}).`); return; }
+        const { authorizeUrl, state, instructions } = await res.json();
+        window.open(authorizeUrl, '_blank', 'noopener,noreferrer');
+        showPasteForm(row, p, state, instructions);
+      } else {
+        const apiKey = prompt(`Paste your ${p.displayName} API key:`);
+        if (!apiKey) return;
+        fetch(`/api/me/providers/${p.id}/api-key`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ apiKey }),
+        }).then(() => renderProvidersCard(body.parentElement));
+      }
+    });
+  });
+
+  function showPasteForm(rowEl, p, state, instructions) {
+    const form = document.createElement('div');
+    form.className = 'provider-paste-form';
+    const instructionsHtml = (instructions || `Sign in to ${escapeHtml(p.displayName)} in the new tab. Paste the authorization code here:`)
+      .split('\n')
+      .map((line) => `<div>${escapeHtml(line)}</div>`)
+      .join('');
+    form.innerHTML = `
+      <div class="paste-instructions">${instructionsHtml}</div>
+      <input type="text" class="paste-code" placeholder="Paste code or URL here" autocomplete="off">
+      <div class="home-actions">
+        <button class="btn btn-primary">Submit</button>
+        <button class="btn">Cancel</button>
+      </div>
+      <p class="paste-err muted" hidden></p>
+    `;
+    rowEl.appendChild(form);
+    const codeInput = form.querySelector('.paste-code');
+    const errLine = form.querySelector('.paste-err');
+    codeInput.focus();
+    form.querySelector('.btn-primary').addEventListener('click', async () => {
+      const code = parsePastedCode(codeInput.value.trim());
+      if (!code) { errLine.textContent = 'Code could not be parsed from the pasted value.'; errLine.hidden = false; return; }
+      const r = await fetch(`/provider-auth/${p.id}/exchange`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ code, state }),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        errLine.textContent = `Failed: ${err.error || r.status}`;
+        errLine.hidden = false;
+        return;
+      }
+      renderProvidersCard(rowEl.parentElement);
+    });
+    form.querySelector('.btn:not(.btn-primary)').addEventListener('click', () => form.remove());
+  }
+
+  /** Lenient paste parsing — accepts raw code, code#state, or full callback URL. */
+  function parsePastedCode(raw) {
+    if (!raw) return '';
+    // Full URL with ?code= (OpenAI's failed-loopback case)
+    try {
+      const url = new URL(raw);
+      const c = url.searchParams.get('code');
+      if (c) return c;
+    } catch { /* not a URL */ }
+    // Anthropic's combined code#state form
+    if (raw.includes('#')) return raw.split('#')[0];
+    return raw;
+  }
+
+  row.querySelectorAll('[data-disconnect]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const which = btn.dataset.disconnect;
+      if (!confirm(`Disconnect your ${p.displayName} ${which === 'oauth' ? 'subscription' : 'API key'}?`)) return;
+      await fetch(`/api/me/providers/${p.id}?which=${which}`, {
+        method: 'DELETE',
+        credentials: 'same-origin',
+      });
+      renderProvidersCard(body.parentElement);
+    });
+  });
+}
+
+// ── classroom-provider-auth:providers-card-impl END ───────────────────────
