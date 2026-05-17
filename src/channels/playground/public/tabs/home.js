@@ -551,13 +551,14 @@ function wireProviderRow(body, p) {
 
   row.querySelectorAll(`input[name="active-${p.id}"]`).forEach((input) => {
     input.addEventListener('change', async () => {
-      await fetch(`/api/me/providers/${p.id}/active`, {
+      const res = await fetch(`/api/me/providers/${p.id}/active`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         credentials: 'same-origin',
         body: JSON.stringify({ active: input.value }),
       });
-      renderProvidersCard(body.parentElement);
+      if (!res.ok) alert(`Couldn't switch active method for ${p.displayName} (${res.status}).`);
+      renderProvidersCard(body);
     });
   });
 
@@ -572,21 +573,23 @@ function wireProviderRow(body, p) {
         if (!res.ok) { alert(`Couldn't start ${p.displayName} sign-in (${res.status}).`); return; }
         const { authorizeUrl, state, instructions } = await res.json();
         window.open(authorizeUrl, '_blank', 'noopener,noreferrer');
-        showPasteForm(row, p, state, instructions);
+        showPasteForm(row, state, instructions);
       } else {
         const apiKey = prompt(`Paste your ${p.displayName} API key:`);
         if (!apiKey) return;
-        fetch(`/api/me/providers/${p.id}/api-key`, {
+        const res = await fetch(`/api/me/providers/${p.id}/api-key`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           credentials: 'same-origin',
           body: JSON.stringify({ apiKey }),
-        }).then(() => renderProvidersCard(body.parentElement));
+        });
+        if (!res.ok) alert(`Couldn't save API key for ${p.displayName} (${res.status}).`);
+        renderProvidersCard(body);
       }
     });
   });
 
-  function showPasteForm(rowEl, p, state, instructions) {
+  function showPasteForm(rowEl, state, instructions) {
     const form = document.createElement('div');
     form.className = 'provider-paste-form';
     const instructionsHtml = (instructions || `Sign in to ${escapeHtml(p.displayName)} in the new tab. Paste the authorization code here:`)
@@ -621,7 +624,7 @@ function wireProviderRow(body, p) {
         errLine.hidden = false;
         return;
       }
-      renderProvidersCard(rowEl.parentElement);
+      renderProvidersCard(body);
     });
     form.querySelector('.btn:not(.btn-primary)').addEventListener('click', () => form.remove());
   }
@@ -648,7 +651,7 @@ function wireProviderRow(body, p) {
         method: 'DELETE',
         credentials: 'same-origin',
       });
-      renderProvidersCard(body.parentElement);
+      renderProvidersCard(body);
     });
   });
 }
