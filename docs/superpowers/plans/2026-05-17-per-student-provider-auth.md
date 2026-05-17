@@ -10,6 +10,24 @@
 
 **Spec:** `docs/superpowers/specs/2026-05-17-per-student-provider-auth-design.md` — refer back for "why" and acceptance criteria.
 
+## Progress (2026-05-17)
+
+| Tier | Tasks | Status | Commits |
+|---|---|---|---|
+| Discovery | 1 | ✅ | `51c3465` |
+| Trunk infrastructure | 2, 3 | ✅ on `origin/main` | `f632b0a`, `f4faa5e`, `f30cfb0`, `13a43a9`, `73f0ab7`, `b480367` |
+| Worktree setup | 4 | ✅ | (no commit — environment setup; worktree at `/Users/admin/projects/nanoclaw-classroom-x7`) |
+| Classroom backend | 5–10 | ✅ on `classroom/x7-provider-auth` | `ed651bd`, `8f356af`, `1db3d30`, `f24ae00`, `03a9f75`, `ccdd517`, `c388605`, `8950332`, `9f15051` |
+| Classroom UI | 11–13 | ⬜ pending | — |
+| Wire-up | 14 | ⬜ pending | — |
+| Skill packaging | 15 | ⬜ pending | — |
+| Integration test | 16 | ⬜ pending | — |
+| Docs follow-up | 17 | ⬜ pending | — |
+
+**Backend total:** 36 new tests passing (9 storage + 4 class-controls + 7 resolver + 19 provider-auth). Full suite green (792/792 on classroom worktree, 753/753 on main).
+
+**Next session entry point:** Task 11 (Home Providers card UI). Worktree is at `/Users/admin/projects/nanoclaw-classroom-x7` on branch `classroom/x7-provider-auth`; pushed to `origin/classroom/x7-provider-auth`.
+
 ---
 
 ## File Inventory
