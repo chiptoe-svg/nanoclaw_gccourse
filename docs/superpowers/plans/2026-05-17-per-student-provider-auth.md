@@ -17,7 +17,7 @@
 | Discovery | 1 | ✅ | `51c3465` |
 | Trunk infrastructure | 2, 3 | ✅ on `origin/main` | `f632b0a`, `f4faa5e`, `f30cfb0`, `13a43a9`, `73f0ab7`, `b480367` |
 | Worktree setup | 4 | ✅ | (no commit — environment setup; worktree at `/Users/admin/projects/nanoclaw-classroom-x7`) |
-| Classroom backend | 5–10 | ✅ on `classroom/x7-provider-auth` | `ed651bd`, `8f356af`, `1db3d30`, `f24ae00`, `03a9f75`, `ccdd517`, `c388605`, `8950332`, `9f15051` |
+| Classroom backend | 5–10 | ✅ on `classroom-x7-provider-auth` | `ed651bd`, `8f356af`, `1db3d30`, `f24ae00`, `03a9f75`, `ccdd517`, `c388605`, `8950332`, `9f15051` |
 | Classroom UI | 11–13 | ⬜ pending | — |
 | Wire-up | 14 | ⬜ pending | — |
 | Skill packaging | 15 | ⬜ pending | — |
@@ -26,7 +26,7 @@
 
 **Backend total:** 36 new tests passing (9 storage + 4 class-controls + 7 resolver + 19 provider-auth). Full suite green (792/792 on classroom worktree, 753/753 on main).
 
-**Next session entry point:** Task 11 (Home Providers card UI). Worktree is at `/Users/admin/projects/nanoclaw-classroom-x7` on branch `classroom/x7-provider-auth`; pushed to `origin/classroom/x7-provider-auth`.
+**Next session entry point:** Task 11 (Home Providers card UI). Worktree is at `/Users/admin/projects/nanoclaw-classroom-x7` on branch `classroom-x7-provider-auth`; pushed to `origin/classroom-x7-provider-auth`.
 
 ---
 
@@ -41,7 +41,7 @@
 - Modify: `src/credential-proxy.test.ts` — hook tests
 - Create: `docs/providers/oauth-endpoints.md` — research artifact
 
-**Classroom branch (`origin/classroom/x7-provider-auth`):**
+**Classroom branch (`origin/classroom-x7-provider-auth`):**
 - Create: `src/student-provider-auth.ts`
 - Create: `src/student-provider-auth.test.ts`
 - Create: `src/classroom-provider-resolver.ts`
@@ -555,17 +555,17 @@ EOF
 
 **Files:** none (environment setup).
 
-**Why a new branch (not the legacy `origin/classroom`):** that long-lived branch is 606 commits behind main with significant overlap in the same files. A merge produces 9+ conflicts that aren't in X.7's scope to reconcile. Solution: branch off current main with a fresh name (`classroom/x7-provider-auth`). The skill (Task 15) fetches from this branch, same install pattern as `add-gws-tool` uses for `origin/gws-mcp`.
+**Why a new branch (not the legacy `origin/classroom`):** that long-lived branch is 606 commits behind main with significant overlap in the same files. A merge produces 9+ conflicts that aren't in X.7's scope to reconcile. Solution: branch off current main with a fresh name (`classroom-x7-provider-auth`). The skill (Task 15) fetches from this branch, same install pattern as `add-gws-tool` uses for `origin/gws-mcp`.
 
 - [x] **Step 1: Create a worktree on a new branch off main**
 
 ```bash
-git worktree add /Users/admin/projects/nanoclaw-classroom-x7 -b classroom/x7-provider-auth main
+git worktree add /Users/admin/projects/nanoclaw-classroom-x7 -b classroom-x7-provider-auth main
 cd /Users/admin/projects/nanoclaw-classroom-x7
 pnpm install --frozen-lockfile
 ```
 
-Expected: worktree at `/Users/admin/projects/nanoclaw-classroom-x7`, branch `classroom/x7-provider-auth` rooted at the current main HEAD (which already has the registry + hook from Tasks 2-3).
+Expected: worktree at `/Users/admin/projects/nanoclaw-classroom-x7`, branch `classroom-x7-provider-auth` rooted at the current main HEAD (which already has the registry + hook from Tasks 2-3).
 
 - [x] **Step 2: Copy gitignored install-local files into the worktree**
 
@@ -2764,7 +2764,7 @@ In the classroom worktree:
 
 ```bash
 cd /Users/admin/projects/nanoclaw-classroom-x7
-git push -u origin classroom/x7-provider-auth
+git push -u origin classroom-x7-provider-auth
 ```
 
 Verify all commits from Tasks 5-14 are on the remote branch. This becomes the long-lived source-of-truth branch the skill fetches from (same pattern as `add-gws-tool` uses for `origin/gws-mcp`).
@@ -2781,7 +2781,7 @@ Create `.claude/skills/add-classroom-provider-auth/SKILL.md`:
 ````markdown
 ---
 name: add-classroom-provider-auth
-description: Per-student LLM provider auth (Anthropic + OpenAI) with active-method toggle (subscription/API key), instructor-controlled class-pool fallback, and a class_id seam for future multi-class. Installs the resolver, OAuth routes, storage, Home Providers card, Models status pill, and Class Controls per-provider table by copying from origin/classroom/x7-provider-auth.
+description: Per-student LLM provider auth (Anthropic + OpenAI) with active-method toggle (subscription/API key), instructor-controlled class-pool fallback, and a class_id seam for future multi-class. Installs the resolver, OAuth routes, storage, Home Providers card, Models status pill, and Class Controls per-provider table by copying from origin/classroom-x7-provider-auth.
 ---
 
 # Add Classroom — Per-Student Provider Auth
@@ -2801,7 +2801,7 @@ Layers on top of `/add-classroom`. Lets each student bring their own Anthropic /
 
 - `/add-classroom` installed (provides `classroom_roster` + agent_group mapping).
 - The trunk-side provider auth registry + `studentCredsHook` extension point (lands on `main` independently; verify with `grep -l "studentCredsHook" src/credential-proxy.ts`).
-- `origin/classroom/x7-provider-auth` remote branch has Tasks 5-14 from `docs/superpowers/plans/2026-05-17-per-student-provider-auth.md` merged in.
+- `origin/classroom-x7-provider-auth` remote branch has Tasks 5-14 from `docs/superpowers/plans/2026-05-17-per-student-provider-auth.md` merged in.
 
 ## Install
 
@@ -2823,19 +2823,19 @@ git fetch origin classroom
 ### 2. Copy the new source files
 
 ```bash
-git show origin/classroom/x7-provider-auth:src/student-provider-auth.ts                              > src/student-provider-auth.ts
-git show origin/classroom/x7-provider-auth:src/student-provider-auth.test.ts                         > src/student-provider-auth.test.ts
-git show origin/classroom/x7-provider-auth:src/classroom-provider-resolver.ts                        > src/classroom-provider-resolver.ts
-git show origin/classroom/x7-provider-auth:src/classroom-provider-resolver.test.ts                   > src/classroom-provider-resolver.test.ts
-git show origin/classroom/x7-provider-auth:src/channels/playground/api/provider-auth.ts              > src/channels/playground/api/provider-auth.ts
-git show origin/classroom/x7-provider-auth:src/channels/playground/api/provider-auth.test.ts         > src/channels/playground/api/provider-auth.test.ts
+git show origin/classroom-x7-provider-auth:src/student-provider-auth.ts                              > src/student-provider-auth.ts
+git show origin/classroom-x7-provider-auth:src/student-provider-auth.test.ts                         > src/student-provider-auth.test.ts
+git show origin/classroom-x7-provider-auth:src/classroom-provider-resolver.ts                        > src/classroom-provider-resolver.ts
+git show origin/classroom-x7-provider-auth:src/classroom-provider-resolver.test.ts                   > src/classroom-provider-resolver.test.ts
+git show origin/classroom-x7-provider-auth:src/channels/playground/api/provider-auth.ts              > src/channels/playground/api/provider-auth.ts
+git show origin/classroom-x7-provider-auth:src/channels/playground/api/provider-auth.test.ts         > src/channels/playground/api/provider-auth.test.ts
 ```
 
 ### 3. Replace `class-controls.ts` with the wrapped+per-provider version
 
 ```bash
-git show origin/classroom/x7-provider-auth:src/channels/playground/api/class-controls.ts            > src/channels/playground/api/class-controls.ts
-git show origin/classroom/x7-provider-auth:src/channels/playground/api/class-controls.test.ts       > src/channels/playground/api/class-controls.test.ts
+git show origin/classroom-x7-provider-auth:src/channels/playground/api/class-controls.ts            > src/channels/playground/api/class-controls.ts
+git show origin/classroom-x7-provider-auth:src/channels/playground/api/class-controls.test.ts       > src/channels/playground/api/class-controls.test.ts
 ```
 
 The v2 loader is backwards-compat — existing flat `config/class-controls.json` is auto-migrated on first read.
@@ -2844,11 +2844,11 @@ The v2 loader is backwards-compat — existing flat `config/class-controls.json`
 
 Three files get small additions inside sentinel markers. Each block is idempotent: re-running checks for the sentinel and skips if present.
 
-**`src/channels/playground/server.ts`** — add the routes block from `origin/classroom/x7-provider-auth`:
+**`src/channels/playground/server.ts`** — add the routes block from `origin/classroom-x7-provider-auth`:
 
 ```bash
 if ! grep -q 'classroom-provider-auth:routes START' src/channels/playground/server.ts; then
-  echo "Apply the routes block manually from origin/classroom/x7-provider-auth: $(git show --stat origin/classroom/x7-provider-auth -- src/channels/playground/server.ts | head -5)"
+  echo "Apply the routes block manually from origin/classroom-x7-provider-auth: $(git show --stat origin/classroom-x7-provider-auth -- src/channels/playground/server.ts | head -5)"
 fi
 ```
 
@@ -2856,16 +2856,16 @@ fi
 
 ```bash
 if ! grep -q 'classroom-provider-auth:hook-registration START' src/index.ts; then
-  echo "Apply the hook-registration block manually from origin/classroom/x7-provider-auth"
+  echo "Apply the hook-registration block manually from origin/classroom-x7-provider-auth"
 fi
 ```
 
 **`src/channels/playground/public/tabs/home.js`** + **`src/channels/playground/public/tabs/models.js`** + **`src/channels/playground/public/style.css`** — copy the patched files directly:
 
 ```bash
-git show origin/classroom/x7-provider-auth:src/channels/playground/public/tabs/home.js   > src/channels/playground/public/tabs/home.js
-git show origin/classroom/x7-provider-auth:src/channels/playground/public/tabs/models.js > src/channels/playground/public/tabs/models.js
-git show origin/classroom/x7-provider-auth:src/channels/playground/public/style.css      > src/channels/playground/public/style.css
+git show origin/classroom-x7-provider-auth:src/channels/playground/public/tabs/home.js   > src/channels/playground/public/tabs/home.js
+git show origin/classroom-x7-provider-auth:src/channels/playground/public/tabs/models.js > src/channels/playground/public/tabs/models.js
+git show origin/classroom-x7-provider-auth:src/channels/playground/public/style.css      > src/channels/playground/public/style.css
 ```
 
 ### 5. Build + test
@@ -2904,7 +2904,7 @@ git add .claude/skills/add-classroom-provider-auth/SKILL.md
 git commit -m "$(cat <<'EOF'
 feat(skills): /add-classroom-provider-auth install skill
 
-Idempotent install: fetches from origin/classroom/x7-provider-auth and copies the
+Idempotent install: fetches from origin/classroom-x7-provider-auth and copies the
 per-student LLM provider auth subsystem. Layers on /add-classroom.
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
@@ -2995,7 +2995,7 @@ In `docs/superpowers/plans/2026-05-15-classroom-per-person-mode.md`, find the X.
       `src/channels/playground/api/google-auth.ts`, and the Home/Models
       UI patches for Google currently live in trunk. X.7's classroom-
       branch split exposes this asymmetry; the clean state would
-      migrate Phase 14 to `origin/classroom/x7-provider-auth` and install via
+      migrate Phase 14 to `origin/classroom-x7-provider-auth` and install via
       `/add-classroom-google-auth`. Not blocking, tracked separately.
 ```
 
