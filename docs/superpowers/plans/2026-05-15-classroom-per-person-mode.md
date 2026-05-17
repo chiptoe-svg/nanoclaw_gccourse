@@ -219,11 +219,58 @@ Order matches `plans/master.md` §"Phase 2 — Full classroom capability".
   default; the agent presents the composed draft + a compose
   URL the student opens to send manually. Auto-send would
   require its own confirmation pattern (approval primitive?).
-- [ ] **credential-proxy Phase X.7 — per-student provider OAuth +
-      temp-password fallback.** Same shape as the GWS resolver — a
-      per-student tier ahead of the instructor pool, with a
-      time-bounded `ncl temp-creds grant --user X --hours 24` to
-      let students operate on the pool during onboarding.
+- [ ] **credential-proxy Phase X.7 — per-student provider auth +
+      instructor-controlled class-pool fallback.** Generalizes the
+      Phase 14 resolver pattern across LLM providers (Anthropic /
+      OpenAI / Local) with the addition of an explicit instructor
+      toggle for fallback. **Shape locked 2026-05-17** after design
+      discussion; details:
+
+      **Class Controls (instructor):** per-provider, two toggles —
+      `allow` ("can students use this provider at all?") and
+      `pool_fallback` ("can students who haven't connected their
+      own creds use the instructor's pool?"). Sensible defaults:
+      OpenAI `allow=true, fallback=true`; Local `allow=true,
+      fallback=true` (free); Anthropic `allow=true, fallback=false`
+      (premium / scarce). Persisted in `class_controls.providers`
+      JSON column.
+
+      **Home → Providers card (student):** one row per provider
+      the instructor allows. Three states — ✅ "Connected as
+      `<account>`" (student creds in use), ◌ "Using class pool"
+      (instructor fallback active), ⚠ "Not connected" (pool
+      fallback off; student must connect to use). "Connect" / "Use
+      my own key" CTA opens a per-provider modal — paste API key
+      for OpenAI, paste API key OR Claude Code OAuth token for
+      Anthropic, Local is auto-detected. Disconnect button on
+      connected state. Mirrors the existing Telegram / Google card
+      pattern.
+
+      **Models tab (passive indicator):** each provider section
+      gets a status pill in the header reflecting which credential
+      path is active. Provider section appears iff `allow=true` AND
+      (student has own creds OR `pool_fallback=true`). Otherwise
+      the section is hidden or shown with a "Connect on Home" CTA.
+
+      **Resolver (`credential-proxy.ts`):** extended to consult
+      `data/student-provider-creds/<sanitized_user_id>/<provider>.json`
+      ahead of `.env`, with the agent's user_id resolved via the
+      existing `classroom_roster` lookup. Pseudocode:
+      `try student-creds → if absent AND class_controls.pool_fallback[provider] → use .env → else return 402-style envelope`.
+      Per-call attribution surfaces the principal (`"student:<id>"`,
+      `"class-pool"`, or `"unauthorized"`) so usage aggregation
+      stays clean.
+
+      **What this generalizes:** Phase 14 hardcoded the fallback
+      policy per-tool (Drive fallback always on, Gmail/Calendar off).
+      X.7 makes it instructor-toggleable per-provider. Backporting
+      to Google is scope creep — leave Phase 14 as-is.
+
+      **Out of scope for X.7:** time-bounded grants (the old
+      "temp-password" idea — `ncl temp-creds grant --hours 24`)
+      can be added later as a refinement of the fallback toggle
+      with an optional TTL. Not in v1.
+
       Detail: [`plans/credential-proxy-per-call-attribution.md` §X.7](../../../plans/credential-proxy-per-call-attribution.md)
 - [ ] **gws-mcp Phase 13.5b — Calendar list/create.** Earns its
       keep once each user has their own calendar. Skipped in
@@ -245,6 +292,62 @@ Order matches `plans/master.md` §"Phase 2 — Full classroom capability".
       `nanoclaw` / `claude-code` / `codex` / `json`. Endpoint:
       `GET /api/draft/<folder>/export?format=…`.
       Detail: [`plans/classroom-web-multiuser.md` §Phase 5](../../../plans/classroom-web-multiuser.md)
+- [ ] **classroom Phase 6 — home tab redesign.** Today's home tab
+      is a uniform grid of eight same-weight cards (Profile, Class
+      controls, Students, Settings, Telegram, Google, API credits,
+      Session, Help) — functional but not inviting. Needs a real
+      brainstorming pass before it gets a phased plan; this bullet
+      is a placeholder so the work is queued and named. Observed
+      pains:
+
+      - Greeting uses the platform user id (`playground:tjabrah@…`)
+        instead of the student's display name from the roster.
+      - The raccoon-unicycle personality from the chat tab doesn't
+        carry through — no hero, no warmth, just admin chrome.
+      - The two "do this" cards (Connect Telegram, Connect Google)
+        are buried mid-grid at the same visual weight as reference
+        info (session timestamp, sign-in identity).
+      - The Help card — which actually explains *what the playground
+        is for* — sits at the bottom where nobody reads it.
+      - Logout buttons get a top-level card slot equal to Profile;
+        belongs in a profile menu in the topbar.
+      - Student view feels sparse (Class controls / Students hidden;
+        the remaining cards don't fill the grid).
+      - API credits card opens with a dense table; fine for
+        instructor, intimidating-and-irrelevant for a student who
+        doesn't pay for tokens.
+
+      Proposed direction for the brainstorm (not committed):
+      - Hero band: "Welcome, <display-name>" + raccoon-unicycle +
+        one-sentence framing of what the playground is, with a
+        prominent **Open chat** primary CTA.
+      - Differentiated card tiers — actions (Connect Telegram /
+        Google) lifted with brand accent; status cards (Profile,
+        Session) muted; reference cards (API credits) collapsed by
+        default for students.
+      - Per-role layouts: student sees actions + chat-shortcut +
+        what-can-I-do tips; instructor sees Class controls +
+        Students roster + cost rollup first.
+      - Display-name resolution from `classroom_roster.display_name`
+        (already on disk) instead of platform id.
+      - Move logout to a profile dropdown anchored in the topbar.
+
+      Slot before Phase 7 because expert-system / RAG strategies
+      are likely to surface their own home-tab UI (strategy picker,
+      eval results), and we want a clean canvas to build on rather
+      than retrofitting around it. No backend changes beyond a
+      display-name lookup and possibly a "tagline" / agent-blurb
+      field. **Detailed brainstorm → spec → plan deferred** —
+      revisit when Phase 14 GCP is unblocked and student-side UI is
+      live so we can prioritize from real friction.
+
+      **Coupling with X.7:** the home-tab redesign needs to host
+      X.7's Providers card alongside Telegram and Google. Phase 6
+      should be designed with that subsection in mind so we don't
+      retrofit. If X.7 ships first (the current order), Phase 6
+      inherits a known-shape Providers card and just refines the
+      surrounding hierarchy.
+
 - [ ] **classroom Phase 7 — expert system builder + RAG
       strategies.** Pipeline framework + named strategies + UI.
       Cost-economical only after Phase 1 #8 (local-LLM runbook)
