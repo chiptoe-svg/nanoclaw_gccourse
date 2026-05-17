@@ -45,9 +45,9 @@ const DEFAULT_CLASS_CONTROL: ClassControl = {
   tabsVisibleToStudents: ['home', 'chat', 'persona', 'skills', 'models'],
   authModesAvailable: ['api-key', 'oauth', 'claude-code-oauth'],
   providers: {
-    codex:  { allow: true, provideDefault: true,  allowByo: true  },
-    claude: { allow: true, provideDefault: false, allowByo: true  },
-    local:  { allow: true, provideDefault: true,  allowByo: false },
+    codex: { allow: true, provideDefault: true, allowByo: true },
+    claude: { allow: true, provideDefault: false, allowByo: true },
+    local: { allow: true, provideDefault: true, allowByo: false },
   },
 };
 
@@ -61,10 +61,7 @@ function isV1Flat(parsed: unknown): parsed is {
   authModesAvailable?: AuthModeId[];
 } {
   if (!parsed || typeof parsed !== 'object') return false;
-  return (
-    'providersAvailable' in parsed ||
-    ('tabsVisibleToStudents' in parsed && !('classes' in parsed))
-  );
+  return 'providersAvailable' in parsed || ('tabsVisibleToStudents' in parsed && !('classes' in parsed));
 }
 
 function migrateV1(v1: {

@@ -28,13 +28,19 @@ describe('class-controls — new wrapped shape', () => {
     const { readClassControls, DEFAULT_CLASS_ID } = await import('./class-controls.js');
     const cc = readClassControls();
     expect(cc.classes[DEFAULT_CLASS_ID]!.providers.codex).toEqual({
-      allow: true, provideDefault: true, allowByo: true,
+      allow: true,
+      provideDefault: true,
+      allowByo: true,
     });
     expect(cc.classes[DEFAULT_CLASS_ID]!.providers.claude).toEqual({
-      allow: true, provideDefault: false, allowByo: true,
+      allow: true,
+      provideDefault: false,
+      allowByo: true,
     });
     expect(cc.classes[DEFAULT_CLASS_ID]!.providers.local).toEqual({
-      allow: true, provideDefault: true, allowByo: false,
+      allow: true,
+      provideDefault: true,
+      allowByo: false,
     });
   });
 
@@ -57,9 +63,7 @@ describe('class-controls — new wrapped shape', () => {
   });
 
   it('round-trips through write+read', async () => {
-    const { readClassControls, writeClassControls, DEFAULT_CLASS_ID } = await import(
-      './class-controls.js'
-    );
+    const { readClassControls, writeClassControls, DEFAULT_CLASS_ID } = await import('./class-controls.js');
     const before = readClassControls();
     before.classes[DEFAULT_CLASS_ID]!.providers.claude!.provideDefault = true;
     writeClassControls(before);
