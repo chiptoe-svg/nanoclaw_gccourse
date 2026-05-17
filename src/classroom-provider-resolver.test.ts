@@ -53,9 +53,7 @@ describe('classroom-provider-resolver', () => {
 
   it('refreshes oauth when expiry is within 5min', async () => {
     const { addOAuth } = await import('./student-provider-auth.js');
-    const { resolveStudentCreds, setOAuthRefresherForTests } = await import(
-      './classroom-provider-resolver.js'
-    );
+    const { resolveStudentCreds, setOAuthRefresherForTests } = await import('./classroom-provider-resolver.js');
     await setRoster([{ agentGroupId: 'g1', userId: 'alice@x.edu' }]);
     addOAuth('alice@x.edu', 'claude', {
       accessToken: 'stale',
@@ -72,9 +70,7 @@ describe('classroom-provider-resolver', () => {
   });
 
   it('falls back to host .env when provideDefault=true and no creds', async () => {
-    const { resolveStudentCreds, setClassPoolCredsForTests } = await import(
-      './classroom-provider-resolver.js'
-    );
+    const { resolveStudentCreds, setClassPoolCredsForTests } = await import('./classroom-provider-resolver.js');
     await setRoster([{ agentGroupId: 'g1', userId: 'alice@x.edu' }]);
     fs.writeFileSync(
       path.join(tmpRoot, 'config', 'class-controls.json'),

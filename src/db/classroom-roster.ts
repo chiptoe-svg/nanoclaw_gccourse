@@ -86,9 +86,7 @@ export function lookupRosterByUserId(userId: string): ClassroomRosterEntry | nul
  */
 export function lookupRosterByAgentGroupId(agentGroupId: string): ClassroomRosterEntry | null {
   const row = getDb()
-    .prepare(
-      'SELECT email, user_id, agent_group_id, added_at FROM classroom_roster WHERE agent_group_id = ? LIMIT 1',
-    )
+    .prepare('SELECT email, user_id, agent_group_id, added_at FROM classroom_roster WHERE agent_group_id = ? LIMIT 1')
     .get(agentGroupId) as ClassroomRosterEntry | undefined;
   return row ?? null;
 }
