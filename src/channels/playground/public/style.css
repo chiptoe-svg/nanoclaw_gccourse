@@ -998,4 +998,5 @@ select.model-changed {
 .pill-subtle  { background: #f1efeb; color: #777; }
 .pill-warn    { background: #fff7e6; color: #b8741a; }
 .pill-forbidden { background: #fbeae5; color: #c8482a; }
+.pill-link { border: none; cursor: pointer; font: inherit; }
 /* ── classroom-provider-auth:models-status-pill END ──────────────────────── */

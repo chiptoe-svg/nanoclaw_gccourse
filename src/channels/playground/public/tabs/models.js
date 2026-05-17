@@ -74,35 +74,42 @@ async function renderSections(el) {
 
   // ── classroom-provider-auth:models-status-pill START ──────────────────────
 
-  async function providerStatusPill(providerId) {
+  let ccPolicies = {};
+  try {
+    const ccRes = await fetch('/api/class-controls', { credentials: 'same-origin' });
+    const cc = await ccRes.json();
+    ccPolicies = cc.classes?.default?.providers || {};
+  } catch (err) {
+    console.warn('[models] class-controls fetch failed', err);
+  }
+
+  async function providerStatusPill(providerId, policy) {
     try {
-      const [statusRes, ccRes] = await Promise.all([
-        fetch(`/api/me/providers/${providerId}`, { credentials: 'same-origin' }),
-        fetch('/api/class-controls', { credentials: 'same-origin' }),
-      ]);
+      const statusRes = await fetch(`/api/me/providers/${providerId}`, { credentials: 'same-origin' });
       const status = await statusRes.json();
-      const cc = await ccRes.json();
-      const policy = cc.classes?.default?.providers?.[providerId] || {};
 
       if (status.active === 'oauth') return { label: 'Your subscription', tone: 'good' };
       if (status.active === 'apiKey') return { label: 'Your API key', tone: 'good' };
       if (policy.provideDefault) return { label: 'Provided by instructor', tone: 'subtle' };
-      if (policy.allowByo) return { label: 'Connect to use', tone: 'warn', href: '#tab=home' };
+      if (policy.allowByo) return { label: 'Connect to use', tone: 'warn', action: 'goto:home' };
       return { label: 'Unavailable', tone: 'forbidden' };
-    } catch {
+    } catch (err) {
+      console.warn('[models] providerStatusPill fetch failed', err);
       return { label: 'Unknown', tone: 'subtle' };
     }
   }
 
   function renderPill(pill) {
     const cls = `pill pill-${pill.tone}`;
-    if (pill.href) return `<a class="${cls}" href="${pill.href}">${escapeHtml(pill.label)} →</a>`;
+    if (pill.action === 'goto:home') {
+      return `<button type="button" class="${cls} pill-link" data-pg-goto-tab="home">${escapeHtml(pill.label)} →</button>`;
+    }
     return `<span class="${cls}">${escapeHtml(pill.label)}</span>`;
   }
 
   const [claudePill, codexPill] = await Promise.all([
-    providerStatusPill('claude'),
-    providerStatusPill('codex'),
+    providerStatusPill('claude', ccPolicies.claude || {}),
+    providerStatusPill('codex',  ccPolicies.codex  || {}),
   ]);
 
   const pillByProvider = { claude: claudePill, codex: codexPill };
@@ -123,8 +130,17 @@ async function renderSections(el) {
     // Inject status pill into the section title for cloud providers.
     if (pill && section) {
       const titleEl = section.querySelector('.models-section-title');
-      if (titleEl && !titleEl.querySelector('.pill')) {
+      if (titleEl) {
+        titleEl.querySelectorAll('.pill').forEach((p) => p.remove());
         titleEl.insertAdjacentHTML('beforeend', renderPill(pill));
+        const pillBtn = titleEl.querySelector('button[data-pg-goto-tab]');
+        if (pillBtn && !pillBtn.dataset.bound) {
+          pillBtn.dataset.bound = '1';
+          pillBtn.addEventListener('click', () => {
+            const dest = pillBtn.dataset.pgGotoTab;
+            document.querySelector(`[data-tab="${dest}"]`)?.click();
+          });
+        }
       }
     }
 
