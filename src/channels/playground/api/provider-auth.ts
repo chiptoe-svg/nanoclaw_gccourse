@@ -21,7 +21,13 @@ import crypto from 'crypto';
 import { request as httpsRequest } from 'https';
 
 import { getProviderSpec } from '../../../providers/auth-registry.js';
-import { addOAuth } from '../../../student-provider-auth.js';
+import {
+  addApiKey,
+  addOAuth,
+  clearMethod,
+  loadStudentProviderCreds,
+  setActiveMethod,
+} from '../../../student-provider-auth.js';
 import { TtlMap } from '../ttl-map.js';
 import type { ApiResult } from './me.js';
 
@@ -202,4 +208,62 @@ export async function handleProviderAuthExchange(
   });
 
   return { status: 200, body: { ok: true, account: tokens.account } };
+}
+
+export function handleGetProviderStatus(providerId: string, session: { userId: string }): ApiResult<unknown> {
+  const creds = loadStudentProviderCreds(session.userId, providerId);
+  if (!creds) return { status: 200, body: { hasApiKey: false, hasOAuth: false, active: null } };
+  return {
+    status: 200,
+    body: {
+      hasApiKey: Boolean(creds.apiKey),
+      hasOAuth: Boolean(creds.oauth),
+      active: creds.active,
+      oauth: creds.oauth ? { account: creds.oauth.account } : undefined,
+    },
+  };
+}
+
+export function handlePostApiKey(
+  providerId: string,
+  body: { apiKey?: string },
+  session: { userId: string },
+): ApiResult<unknown> {
+  const spec = getProviderSpec(providerId);
+  if (!spec) return { status: 404, body: { error: `unknown provider: ${providerId}` } };
+  const apiKey = (body.apiKey ?? '').trim();
+  if (!apiKey) return { status: 400, body: { error: 'apiKey required' } };
+  if (spec.apiKey?.validatePrefix && !apiKey.startsWith(spec.apiKey.validatePrefix)) {
+    return { status: 400, body: { error: `apiKey must start with ${spec.apiKey.validatePrefix}` } };
+  }
+  addApiKey(session.userId, providerId, apiKey);
+  return { status: 200, body: { ok: true } };
+}
+
+export function handleSetActive(
+  providerId: string,
+  body: { active?: 'apiKey' | 'oauth' },
+  session: { userId: string },
+): ApiResult<unknown> {
+  if (!body.active || (body.active !== 'apiKey' && body.active !== 'oauth')) {
+    return { status: 400, body: { error: 'active must be apiKey or oauth' } };
+  }
+  try {
+    setActiveMethod(session.userId, providerId, body.active);
+    return { status: 200, body: { ok: true } };
+  } catch (e) {
+    return { status: 400, body: { error: (e as Error).message } };
+  }
+}
+
+export function handleDisconnect(
+  providerId: string,
+  body: { which?: 'apiKey' | 'oauth' },
+  session: { userId: string },
+): ApiResult<unknown> {
+  if (!body.which || (body.which !== 'apiKey' && body.which !== 'oauth')) {
+    return { status: 400, body: { error: 'which must be apiKey or oauth' } };
+  }
+  clearMethod(session.userId, providerId, body.which);
+  return { status: 200, body: { ok: true } };
 }

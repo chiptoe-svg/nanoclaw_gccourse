@@ -11,7 +11,12 @@ import {
   handleProviderAuthExchange,
   getOAuthStateStoreForTests,
   setTokenExchangerForTests,
+  handleGetProviderStatus,
+  handlePostApiKey,
+  handleSetActive,
+  handleDisconnect,
 } from './provider-auth.js';
+import { addOAuth } from '../../../student-provider-auth.js';
 
 beforeEach(() => {
   resetRegistryForTests();
@@ -21,6 +26,10 @@ beforeEach(() => {
     displayName: 'Anthropic',
     proxyRoutePrefix: '',
     credentialFileShape: 'mixed',
+    apiKey: {
+      placeholder: 'sk-ant-api03-…',
+      validatePrefix: 'sk-ant-',
+    },
     oauth: {
       clientId: 'cid-claude',
       authorizeUrl: 'https://example.com/oauth/authorize',
@@ -167,5 +176,134 @@ describe('handleProviderAuthExchange (paste-back)', () => {
     const { state } = start.body as { state: string };
     const r = await handleProviderAuthExchange('claude', { code: 'bad-code', state }, { userId: 'alice@x.edu' });
     expect(r.status).toBe(502);
+  });
+});
+
+describe('GET /api/me/providers/:id', () => {
+  let tmpRoot: string;
+  let originalCwd: string;
+
+  beforeEach(() => {
+    originalCwd = process.cwd();
+    tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'crud-test-'));
+    process.chdir(tmpRoot);
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  });
+
+  it('returns connected:false when no creds', () => {
+    const r = handleGetProviderStatus('claude', { userId: 'fresh@x.edu' });
+    expect(r.body).toEqual({ hasApiKey: false, hasOAuth: false, active: null });
+  });
+
+  it('returns connection details including active method', () => {
+    addOAuth('alice@x.edu', 'claude', {
+      accessToken: 'at', refreshToken: 'rt', expiresAt: Date.now() + 1000, account: 'alice',
+    });
+    const r = handleGetProviderStatus('claude', { userId: 'alice@x.edu' });
+    expect(r.body).toMatchObject({
+      hasApiKey: false,
+      hasOAuth: true,
+      active: 'oauth',
+      oauth: { account: 'alice' },
+    });
+  });
+});
+
+describe('POST /api/me/providers/:id/api-key', () => {
+  let tmpRoot: string;
+  let originalCwd: string;
+
+  beforeEach(() => {
+    originalCwd = process.cwd();
+    tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'crud-test-'));
+    process.chdir(tmpRoot);
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  });
+
+  it('rejects empty key', () => {
+    const r = handlePostApiKey('claude', { apiKey: '' }, { userId: 'alice@x.edu' });
+    expect(r.status).toBe(400);
+  });
+
+  it('rejects key that does not match validatePrefix', () => {
+    const r = handlePostApiKey('claude', { apiKey: 'wrong-prefix-key' }, { userId: 'alice@x.edu' });
+    expect(r.status).toBe(400);
+    expect((r.body as { error: string }).error).toContain('sk-ant-');
+  });
+
+  it('stores key and sets active=apiKey when no oauth present', () => {
+    const r = handlePostApiKey('claude', { apiKey: 'sk-ant-test' }, { userId: 'alice@x.edu' });
+    expect(r.status).toBe(200);
+    const status = handleGetProviderStatus('claude', { userId: 'alice@x.edu' });
+    expect(status.body).toMatchObject({ hasApiKey: true, active: 'apiKey' });
+  });
+});
+
+describe('POST /api/me/providers/:id/active', () => {
+  let tmpRoot: string;
+  let originalCwd: string;
+
+  beforeEach(() => {
+    originalCwd = process.cwd();
+    tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'crud-test-'));
+    process.chdir(tmpRoot);
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  });
+
+  it('switches active when both methods present', () => {
+    handlePostApiKey('claude', { apiKey: 'sk-ant-1' }, { userId: 'alice@x.edu' });
+    addOAuth('alice@x.edu', 'claude', { accessToken: 'at', refreshToken: 'rt', expiresAt: Date.now() + 1000 });
+    const r = handleSetActive('claude', { active: 'oauth' }, { userId: 'alice@x.edu' });
+    expect(r.status).toBe(200);
+    expect((handleGetProviderStatus('claude', { userId: 'alice@x.edu' }).body as { active: string }).active).toBe('oauth');
+  });
+
+  it('rejects activating a method that is not set', () => {
+    handlePostApiKey('claude', { apiKey: 'sk-ant-1' }, { userId: 'alice@x.edu' });
+    const r = handleSetActive('claude', { active: 'oauth' }, { userId: 'alice@x.edu' });
+    expect(r.status).toBe(400);
+  });
+});
+
+describe('DELETE /api/me/providers/:id', () => {
+  let tmpRoot: string;
+  let originalCwd: string;
+
+  beforeEach(() => {
+    originalCwd = process.cwd();
+    tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'crud-test-'));
+    process.chdir(tmpRoot);
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  });
+
+  it('clears named method', () => {
+    handlePostApiKey('claude', { apiKey: 'sk-ant-1' }, { userId: 'alice@x.edu' });
+    addOAuth('alice@x.edu', 'claude', { accessToken: 'at', refreshToken: 'rt', expiresAt: Date.now() + 1000 });
+    const r = handleDisconnect('claude', { which: 'oauth' }, { userId: 'alice@x.edu' });
+    expect(r.status).toBe(200);
+    expect((handleGetProviderStatus('claude', { userId: 'alice@x.edu' }).body as { hasOAuth: boolean }).hasOAuth).toBe(false);
+  });
+
+  it('removes file when both methods cleared', () => {
+    handlePostApiKey('claude', { apiKey: 'sk-ant-1' }, { userId: 'alice@x.edu' });
+    handleDisconnect('claude', { which: 'apiKey' }, { userId: 'alice@x.edu' });
+    const status = handleGetProviderStatus('claude', { userId: 'alice@x.edu' });
+    expect(status.body).toMatchObject({ hasApiKey: false, hasOAuth: false, active: null });
   });
 });
