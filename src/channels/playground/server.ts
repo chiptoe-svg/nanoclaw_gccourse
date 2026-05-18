@@ -42,6 +42,13 @@ import { handleIssue as handleLoginPinIssue, handleVerify as handleLoginPinVerif
 import { handleGoogleAuthCallback, handleGoogleAuthStart } from './api/google-auth.js';
 import { handleOAuthCallback, handleOAuthStart } from './google-oauth.js';
 import { parseCookie, readJsonBody, send } from './http-helpers.js';
+// ── class-enrollment-passcode:imports START ────────────────────────────────
+import {
+  handleGetClassPasscode,
+  handleRotateClassPasscode,
+  handleEnroll,
+} from './api/enrollment.js';
+// ── class-enrollment-passcode:imports END ──────────────────────────────────
 
 let server: http.Server | null = null;
 
@@ -379,6 +386,25 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
   }
   // <<< classroom-pin:routes END
 
+  // ── class-enrollment-passcode:routes START ────────────────────────────────
+  if (method === 'POST' && url.pathname === '/login/enroll') {
+    void (async () => {
+      try {
+        const body = (await readJsonBody(req)) as { email?: unknown; passcode?: unknown };
+        const result = handleEnroll(body);
+        const headers: Record<string, string> = { 'content-type': 'application/json' };
+        if (result.setCookie) headers['set-cookie'] = result.setCookie;
+        res.writeHead(result.status, headers);
+        res.end(JSON.stringify(result.body));
+      } catch (err) {
+        log.error('enrollment handler error', { err });
+        if (!res.headersSent) send(res, 500, { error: 'enrollment failed' });
+      }
+    })();
+    return;
+  }
+  // ── class-enrollment-passcode:routes END ──────────────────────────────────
+
   const session = authenticate(req);
   if (!session) {
     if (method === 'GET' && isHtmlPagePath(url.pathname)) {
@@ -414,6 +440,19 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
     if (!ct) return send(res, 404, { error: `Not served: ${rel}` });
     return serveStatic(res, rel, ct);
   }
+
+  // ── class-enrollment-passcode:routes START ────────────────────────────────
+  if (method === 'GET' && url.pathname === '/api/admin/class-passcode') {
+    const result = handleGetClassPasscode(session);
+    send(res, result.status, result.body);
+    return;
+  }
+  if (method === 'POST' && url.pathname === '/api/admin/class-passcode/rotate') {
+    const result = handleRotateClassPasscode(session);
+    send(res, result.status, result.body);
+    return;
+  }
+  // ── class-enrollment-passcode:routes END ──────────────────────────────────
 
   // API
   void route(req, res, url, method, session).catch((err) => {

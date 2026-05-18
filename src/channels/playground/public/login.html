@@ -14,10 +14,15 @@
       <span>Agent Playground</span>
     </div>
     <h1>Sign in</h1>
-    <p>Use your school Google account to access the class playground.</p>
-    <p>
-      <a class="primary-btn" href="/oauth/google/start">Sign in with Google</a>
-    </p>
+    <p>Enter your school email and today's class passcode.</p>
+    <form id="enroll-form" autocomplete="off">
+      <label for="enroll-email">Email</label>
+      <input id="enroll-email" name="email" type="email" required autocomplete="email" placeholder="you@clemson.edu">
+      <label for="enroll-passcode" style="margin-top: 0.75rem;">Class passcode</label>
+      <input id="enroll-passcode" name="passcode" type="text" required inputmode="numeric" pattern="\d{4}" maxlength="4" placeholder="4-digit code" autocomplete="off">
+      <p id="enroll-error" class="muted" role="alert" aria-live="assertive" style="color: #c0392b; display: none;"></p>
+      <button type="submit" class="primary-btn" style="margin-top: 0.75rem;">Sign in</button>
+    </form>
     <hr>
     <p class="muted">
       Instructor or TA on Telegram?

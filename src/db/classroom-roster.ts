@@ -76,3 +76,53 @@ export function lookupRosterByUserId(userId: string): ClassroomRosterEntry | nul
     .get(userId) as ClassroomRosterEntry | undefined;
   return row ?? null;
 }
+
+
+// ── class-enrollment-passcode:roster-helpers START ────────────────────────
+
+/**
+ * Mark a roster row as enrolled. Sets enrolled_at to the current ISO
+ * timestamp and records the session cookie value. Only updates if the
+ * row exists and enrolled_at is currently NULL (first-come-first-served).
+ * Returns true if the row was updated (i.e., this caller won the race),
+ * false if already claimed or email not found.
+ */
+export function markEnrolled(email: string, sessionId: string): boolean {
+  const info = getDb()
+    .prepare(
+      `UPDATE classroom_roster
+          SET enrolled_at = ?, enrollment_session_id = ?
+        WHERE email = ? AND enrolled_at IS NULL`,
+    )
+    .run(new Date().toISOString(), sessionId, normalizeEmail(email));
+  return info.changes > 0;
+}
+
+/**
+ * Reset a student's enrollment so they can re-enroll (e.g., instructor
+ * intervention when the original claim was by the wrong device). Clears
+ * both enrolled_at and enrollment_session_id. Returns true if a row
+ * was found and updated.
+ */
+export function resetEnrollment(email: string): boolean {
+  const info = getDb()
+    .prepare(
+      `UPDATE classroom_roster
+          SET enrolled_at = NULL, enrollment_session_id = NULL
+        WHERE email = ?`,
+    )
+    .run(normalizeEmail(email));
+  return info.changes > 0;
+}
+
+/** Returns true if the roster row for this email has been claimed. */
+export function isEnrolled(email: string): boolean {
+  const row = getDb()
+    .prepare('SELECT enrolled_at FROM classroom_roster WHERE email = ?')
+    .get(normalizeEmail(email)) as { enrolled_at: string | null } | undefined;
+  if (!row) return false;
+  return row.enrolled_at !== null;
+}
+
+
+// ── class-enrollment-passcode:roster-helpers END ──────────────────────────
