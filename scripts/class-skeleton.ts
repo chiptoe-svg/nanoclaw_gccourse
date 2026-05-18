@@ -383,7 +383,7 @@ function provisionGroup(args: CliArgs, classConfig: Record<string, unknown>, tar
       // which calls Anthropic — wrong direction for a Codex class.
       // TODO: make configurable when classes diverge (CLI flag or class-config).
       agent_provider: 'codex',
-      model: 'gpt-5.5',
+      model: 'gpt-5.4-mini',
       created_at: nowIso(),
     } as AgentGroup;
     createAgentGroup(group);
