@@ -5,36 +5,149 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sign in — Agent Playground</title>
   <link rel="icon" type="image/png" href="/favicon.png">
-  <link rel="stylesheet" href="home.css">
+  <link rel="stylesheet" href="style.css">
+  <style>
+    body.login-page {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 24px;
+    }
+    .login-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-sm);
+      padding: 32px;
+      width: 100%;
+      max-width: 420px;
+    }
+    .login-card .login-brand {
+      font-weight: 700;
+      font-size: 15px;
+      color: var(--brand-navy);
+      margin-bottom: 24px;
+    }
+    .login-card h1 {
+      margin: 0 0 8px;
+      color: var(--brand-navy);
+      font-size: 22px;
+      font-weight: 700;
+    }
+    .login-card > p {
+      margin: 0 0 20px;
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+    .login-card label {
+      display: block;
+      font-size: 13px;
+      color: var(--text);
+      font-weight: 600;
+      margin-top: 14px;
+      margin-bottom: 4px;
+    }
+    .login-card input[type="email"],
+    .login-card input[type="text"] {
+      width: 100%;
+      padding: 9px 12px;
+      font-size: 14px;
+      font-family: inherit;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-sm);
+      background: var(--surface);
+      color: var(--text);
+    }
+    .login-card input:focus {
+      outline: 2px solid var(--brand-blue);
+      outline-offset: -1px;
+      border-color: var(--brand-blue);
+    }
+    .login-card .primary-btn {
+      width: 100%;
+      padding: 10px 12px;
+      background: var(--brand-blue);
+      color: white;
+      border: none;
+      border-radius: var(--radius-sm);
+      font-size: 14px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      margin-top: 18px;
+    }
+    .login-card .primary-btn:hover { background: var(--brand-blue-hover); }
+    .login-card .primary-btn:focus-visible {
+      outline: 2px solid var(--brand-blue-hover);
+      outline-offset: 2px;
+    }
+    .login-card hr {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 24px 0;
+    }
+    .login-card .muted {
+      color: var(--text-muted);
+      font-size: 13px;
+      margin: 0;
+      line-height: 1.5;
+    }
+    .login-card code {
+      background: var(--surface-alt);
+      padding: 1px 5px;
+      border-radius: 3px;
+      font-size: 12px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    .login-card details {
+      margin-top: 4px;
+    }
+    .login-card details summary {
+      cursor: pointer;
+      color: var(--text-muted);
+      font-size: 13px;
+      user-select: none;
+    }
+    .login-card details[open] summary {
+      margin-bottom: 12px;
+    }
+    .login-card #enroll-error {
+      color: var(--danger);
+      background: var(--danger-soft);
+      padding: 8px 10px;
+      border-radius: var(--radius-sm);
+      margin-top: 10px;
+      font-size: 13px;
+    }
+    .login-card #recover-status {
+      margin-top: 10px;
+    }
+  </style>
 </head>
-<body class="centered">
-  <main class="card">
-    <div class="brand-hero">
-      <img src="/agent-playground-icon.png" alt="">
-      <span>Agent Playground</span>
-    </div>
+<body class="login-page">
+  <main class="login-card">
+    <div class="login-brand">Agent Playground</div>
     <h1>Sign in</h1>
     <p>Enter your school email and today's class passcode.</p>
     <form id="enroll-form" autocomplete="off">
       <label for="enroll-email">Email</label>
       <input id="enroll-email" name="email" type="email" required autocomplete="email" placeholder="you@clemson.edu">
-      <label for="enroll-passcode" style="margin-top: 0.75rem;">Class passcode</label>
+      <label for="enroll-passcode">Class passcode</label>
       <input id="enroll-passcode" name="passcode" type="text" required inputmode="numeric" pattern="\d{4}" maxlength="4" placeholder="4-digit code" autocomplete="off">
-      <p id="enroll-error" class="muted" role="alert" aria-live="assertive" style="color: #c0392b; display: none;"></p>
-      <button type="submit" class="primary-btn" style="margin-top: 0.75rem;">Sign in</button>
+      <p id="enroll-error" role="alert" aria-live="assertive" style="display: none;"></p>
+      <button type="submit" class="primary-btn">Sign in</button>
     </form>
     <hr>
     <p class="muted">
-      Instructor or TA on Telegram?
-      Send <code>/playground</code> on Telegram for a magic link instead.
+      Instructor or TA? Send <code>/playground</code> on Telegram for a magic link instead.
     </p>
     <hr>
     <details>
       <summary>Lost your link?</summary>
-      <p class="muted" style="margin-top: 0.5rem;">
-        If your class uses bookmark-URL login and you've misplaced
-        yours, enter your email below. We'll send a fresh link if
-        you're on the roster.
+      <p class="muted">
+        If your class uses bookmark-URL login and you've misplaced yours,
+        enter your email below. We'll send a fresh link if you're on the roster.
       </p>
       <form id="recover-form">
         <label for="recover-email">Email</label>

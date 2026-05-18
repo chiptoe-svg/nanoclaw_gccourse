@@ -77,6 +77,30 @@ landed here.
 **Verification:** email-PIN sign-in flow confirmed working
 end-to-end during class with the 10 real Clemson students.
 
+## Phase 1.6 — sign-in friction reduction (shipped 2026-05-18)
+
+Internal-network deployment made the email-PIN-via-Resend + Google
+sign-in dance unnecessary. Replaced with in-class passcode entry:
+sign-in page asks for email + 4-digit passcode; instructor displays
++ rotates the current passcode from a new Home card. No outbound
+email sender needed. First-come-first-served by roster email via
+atomic SQLite UPDATE (`WHERE enrolled_at IS NULL`).
+
+| Slice | Commit |
+|---|---|
+| Class enrollment passcode — schema migration, scrypt-hashed storage, 3 handlers (get/rotate/enroll), roster `enrolled_at` + `enrollment_session_id` columns, login.html rewrite, Home owner-card | `1567c00` on `main` |
+| Mirror enrollment Home card to `origin/classroom-x7-provider-auth` so X.7 install skill doesn't blow it away | `e73442f` on `classroom-x7-provider-auth` |
+| Login page cosmetic — match playground style.css (brand-navy + brand-blue tokens), drop the raccoon icon from the landing card, switch from missing `home.css` to `style.css` | (uncommitted as of this entry — pure HTML/CSS update on `src/channels/playground/public/login.html`) |
+| Plan doc | `plans/class-enrollment-passcode.md` |
+
+**Design note:** `/add-classroom` does NOT need an install-side change.
+The enrollment-passcode feature lives entirely in trunk; it activates
+whenever the `classroom_roster` table has rows in it (which is what
+`/add-classroom` already provisions). Telegram `/playground` magic-
+link path is preserved for owner/admin convenience. Google sign-in
+moves to an opt-in "Connect" card on student Home (deferred until
+Phase 14 GCP setup unblocks).
+
 ## Phase 1 — shared-classroom MVP
 
 **Goal.** A class can deploy with: one Google Workspace OAuth
