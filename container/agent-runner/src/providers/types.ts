@@ -41,6 +41,16 @@ export interface QueryInput {
   cwd: string;
 
   /**
+   * Container-visible absolute paths to image files attached to this turn.
+   * Populated by the formatter from inbound `content.images[]` (see
+   * src/channels/telegram.ts:processForkAttachments on the host). Providers
+   * with vision support forward these to the upstream model — codex via
+   * `local_image` UserInput items, claude via image content blocks. Text-
+   * only providers ignore the array.
+   */
+  imagePaths?: string[];
+
+  /**
    * System context to inject. Providers translate this into whatever their
    * SDK expects (preset append, full system prompt, per-turn injection…).
    */
@@ -71,7 +81,18 @@ export interface AgentQuery {
 
 export type ProviderEvent =
   | { type: 'init'; continuation: string }
-  | { type: 'result'; text: string | null }
+  | {
+      type: 'result';
+      text: string | null;
+      /** Token usage as reported by the provider SDK (best-effort; absent if SDK doesn't expose). */
+      tokens?: { input: number; output: number };
+      /** End-to-end turn latency in milliseconds (query-start → result event timestamp). */
+      latencyMs?: number;
+      /** Provider id at the moment of completion ("claude" / "codex" / ...). */
+      provider?: string;
+      /** Model id used for this turn. */
+      model?: string;
+    }
   | { type: 'error'; message: string; retryable: boolean; classification?: string }
   | { type: 'progress'; message: string }
   /**
@@ -79,4 +100,42 @@ export type ProviderEvent =
    * event (tool call, thinking, partial message, anything) so the
    * poll-loop's idle timer stays honest during long tool runs.
    */
-  | { type: 'activity' };
+  | { type: 'activity' }
+  /**
+   * The provider's underlying SDK auto-compacted the conversation context.
+   * The poll-loop reacts by injecting a destination reminder back into
+   * the live query so the agent doesn't drop `<message to="…">` wrapping
+   * after compaction. Distinct from `result` so it doesn't mark the turn
+   * completed or get dispatched as a chat message. See qwibitai/nanoclaw#2325.
+   */
+  | { type: 'compacted'; text: string }
+  /**
+   * Tool invocation by the agent. Providers MUST emit this when the
+   * model calls a tool (Bash, file read, MCP, etc.) so the playground
+   * trace panel can surface what the agent is doing under the hood.
+   * Other delivery surfaces (Telegram, Slack, etc.) drop trace events;
+   * they only ever land on a `playground` channel destination.
+   */
+  | { type: 'tool_use'; toolUseId: string; toolName: string; input: unknown }
+  /**
+   * Tool result returning to the agent. Paired with a prior tool_use by
+   * `toolUseId`. `isError` is the SDK-reported execution outcome (not
+   * "the tool reported a failure logically" — that's domain-specific
+   * and lives in the content).
+   */
+  | { type: 'tool_result'; toolUseId: string; content: unknown; isError?: boolean }
+  /**
+   * One round-trip to the underlying LLM (one OpenAI/Anthropic API call).
+   * Codex turns may make several of these in sequence — one per agent
+   * message, separated by tool execution. Providers SHOULD emit this so
+   * the playground trace pane can show per-call breakdowns, not just the
+   * cumulative `result` summary at end-of-turn. Tokens are this call's
+   * delta, NOT cumulative.
+   */
+  | {
+      type: 'model_call';
+      tokensIn: number;
+      tokensCached: number;
+      tokensOut: number;
+      tokensReasoning: number;
+    };

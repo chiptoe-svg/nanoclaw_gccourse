@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in — Agent Playground</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="stylesheet" href="home.css">
+</head>
+<body class="centered">
+  <main class="card">
+    <div class="brand-hero">
+      <img src="/agent-playground-icon.png" alt="">
+      <span>Agent Playground</span>
+    </div>
+    <h1>Sign in</h1>
+    <p>Use your school Google account to access the class playground.</p>
+    <p>
+      <a class="primary-btn" href="/oauth/google/start">Sign in with Google</a>
+    </p>
+    <hr>
+    <p class="muted">
+      Instructor or TA on Telegram?
+      Send <code>/playground</code> on Telegram for a magic link instead.
+    </p>
+    <hr>
+    <details>
+      <summary>Lost your link?</summary>
+      <p class="muted" style="margin-top: 0.5rem;">
+        If your class uses bookmark-URL login and you've misplaced
+        yours, enter your email below. We'll send a fresh link if
+        you're on the roster.
+      </p>
+      <form id="recover-form">
+        <label for="recover-email">Email</label>
+        <input id="recover-email" name="email" type="email" required autocomplete="email" placeholder="alice@example.com">
+        <button type="submit" class="primary-btn">Send me a fresh link</button>
+      </form>
+      <p id="recover-status" class="muted" role="status" aria-live="polite"></p>
+    </details>
+  </main>
+  <script src="/login.js"></script>
+</body>
+</html>

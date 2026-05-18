@@ -15,6 +15,9 @@ import { migration015 } from './015-agent-group-metadata.js';
 import { migration016 } from './016-classroom-roster.js';
 import { moduleApprovalsPendingApprovals } from './module-approvals-pending-approvals.js';
 import { moduleApprovalsTitleOptions } from './module-approvals-title-options.js';
+import { moduleClassLoginTokens } from './module-class-login-tokens.js';
+import { moduleClassLoginPins } from './module-class-login-pins.js';
+import { moduleClassTelegramPair } from './module-class-telegram-pair.js';
 
 export interface Migration {
   version: number;
@@ -37,6 +40,9 @@ const migrations: Migration[] = [
   migration014,
   migration015,
   migration016,
+  moduleClassLoginTokens,
+  moduleClassLoginPins,
+  moduleClassTelegramPair,
 ];
 
 export function runMigrations(db: Database.Database): void {

@@ -1,19 +1,43 @@
 /**
  * Credential proxy for container isolation.
- * Containers connect here instead of directly to the Anthropic API.
+ * Containers connect here instead of directly to upstream APIs.
  * The proxy injects real credentials so containers never see them.
  *
- * Two auth modes:
+ * Routes by URL path prefix:
+ *   /openai/*      → OpenAI API (strip prefix, inject Authorization)
+ *   /omlx/*        → Local OpenAI-compatible server (mlx-omni, Ollama, etc.)
+ *                    (strip prefix, inject Bearer OMLX_API_KEY)
+ *   /googleapis/*  → Google APIs (strip prefix, inject OAuth Bearer
+ *                    refreshed from ~/.config/gws/credentials.json)
+ *   everything else → Anthropic API (default)
+ *
+ * Anthropic auth modes:
  *   API key:  Proxy injects x-api-key on every request.
  *   OAuth:    Container CLI exchanges its placeholder token for a temp
  *             API key via /api/oauth/claude_cli/create_api_key.
  *             Proxy injects real OAuth token on that exchange request;
  *             subsequent requests carry the temp key which is valid as-is.
  *
- * OAuth token source (in order of priority):
+ * Anthropic OAuth source (in order of priority):
  *   1. CLAUDE_CODE_OAUTH_TOKEN in .env (static, user-managed)
- *   2. ~/.claude/.credentials.json (auto-refreshed by Claude CLI)
+ *   2. ~/.claude/.credentials.json (file written by Claude Code CLI)
+ *   3. macOS keychain ("Claude Code-credentials" generic password) — only
+ *      consulted on darwin when the file is absent
+ *
+ * Anthropic OAuth tokens expire (~1 hour). The proxy proactively refreshes
+ * them via platform.claude.com/v1/oauth/token before expiry, persists the
+ * refreshed token back to the credentials file (so process restarts pick
+ * up the latest), and treats unknown expiry (keychain path) as "needs
+ * refresh now" so the proxy learns the real expiry time. This makes the
+ * proxy self-sufficient — it does NOT rely on Claude CLI running on the
+ * same host to keep the file fresh, which is the common case on a Linux
+ * server running NanoClaw as a long-lived service.
+ *
+ * Google OAuth source: ~/.config/gws/credentials.json (authorized_user
+ * format with refresh_token). Proxy refreshes the access token on
+ * demand and caches it in memory until ~5 min before expiry.
  */
+import { execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { createServer, Server } from 'http';
@@ -21,7 +45,67 @@ import { request as httpsRequest } from 'https';
 import { request as httpRequest, RequestOptions } from 'http';
 
 import { readEnvFile } from './env.js';
+import { getGoogleAccessTokenForAgentGroup } from './gws-token.js';
 import { log } from './log.js';
+
+/**
+ * Per-request credential resolution outcome returned by the
+ * studentCredsHook. The trunk proxy understands four shapes:
+ *   - apiKey / oauth: real creds; proxy injects them
+ *   - connect_required: 402 envelope (classroom-skill policy)
+ *   - forbidden:       403 envelope (classroom-skill policy)
+ *   - null:            no per-student creds; proxy falls through to
+ *                      the existing .env / file / keychain chain
+ */
+export type ResolvedCreds =
+  | { kind: 'apiKey'; value: string }
+  | { kind: 'oauth'; accessToken: string }
+  | { kind: 'connect_required'; provider: string; message: string; connect_url: string }
+  | { kind: 'forbidden'; provider: string }
+  | null;
+
+export type StudentCredsHook = (agentGroupId: string, providerId: string) => Promise<ResolvedCreds>;
+
+/**
+ * Trunk default — no-op. Solo installs see this and the proxy falls
+ * through to existing .env / file / keychain resolution. The classroom
+ * skill calls setStudentCredsHook() at startup to install its real
+ * resolver.
+ */
+export let studentCredsHook: StudentCredsHook = async () => null;
+
+export function setStudentCredsHook(fn: StudentCredsHook): void {
+  studentCredsHook = fn;
+}
+
+export function serializeResolvedCredsError(
+  result: Extract<ResolvedCreds, { kind: 'connect_required' | 'forbidden' }>,
+): { status: number; body: Record<string, unknown> } {
+  if (result.kind === 'connect_required') {
+    return {
+      status: 402,
+      body: {
+        type: 'connect_required',
+        provider: result.provider,
+        message: result.message,
+        connect_url: result.connect_url,
+      },
+    };
+  }
+  return {
+    status: 403,
+    body: { type: 'forbidden', provider: result.provider },
+  };
+}
+
+/** Header containers send to identify which agent group is calling. */
+const AGENT_GROUP_HEADER = 'x-nanoclaw-agent-group';
+
+/**
+ * OAuth client id used by Claude Code CLI for the refresh-token grant.
+ * Matches the value Claude Code itself uses; not a secret.
+ */
+const OAUTH_CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e';
 
 export type AuthMode = 'api-key' | 'oauth';
 
@@ -46,37 +130,207 @@ let cachedOAuthToken: string | null = null;
 let cachedExpiresAt = 0;
 
 /**
- * Read the OAuth access token, preferring .env but falling back to
- * Claude CLI's credentials file. Returns null if neither is available.
+ * Read the full OAuth credential object (accessToken + refreshToken +
+ * expiresAt) from `~/.claude/.credentials.json`, falling back to the
+ * macOS keychain when the file is absent.
+ *
+ * Keychain path is gated by `process.platform === 'darwin'`; on Linux
+ * the fallback is a no-op. The keychain entry stores only the access
+ * token shape — `expiresAt` is undefined there, which the caller treats
+ * as "refresh now" so we learn the real expiry on the first API call.
  */
-function getOAuthToken(envToken?: string): string | null {
-  // Static token from .env always wins
+function readFullOAuthCredentials(): ClaudeCredentials['claudeAiOauth'] | null {
+  // Primary: credentials file written by Claude Code CLI
+  try {
+    if (fs.existsSync(CLAUDE_CREDENTIALS_PATH)) {
+      const data = JSON.parse(fs.readFileSync(CLAUDE_CREDENTIALS_PATH, 'utf-8')) as ClaudeCredentials;
+      if (data.claudeAiOauth?.accessToken) return data.claudeAiOauth;
+    }
+  } catch (err) {
+    log.warn('Failed to read Claude credentials file', { err: String(err) });
+  }
+
+  // Fallback: macOS keychain. No-op on Linux.
+  if (process.platform !== 'darwin') return null;
+  try {
+    const raw = execSync('security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null', {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+    const data = JSON.parse(raw) as ClaudeCredentials;
+    if (data.claudeAiOauth?.accessToken) return data.claudeAiOauth;
+  } catch {
+    // keychain not available or no entry — silent fallthrough
+  }
+  return null;
+}
+
+/**
+ * Persist refreshed OAuth credentials back to the credentials file so the
+ * next process restart picks up the latest token. Best-effort: failure is
+ * logged but does not propagate; the in-memory cache is the source of
+ * truth for the running process.
+ */
+function saveOAuthCredentials(updated: { accessToken: string; refreshToken: string; expiresAt: number }): void {
+  try {
+    let root: Record<string, unknown> = {};
+    if (fs.existsSync(CLAUDE_CREDENTIALS_PATH)) {
+      try {
+        root = JSON.parse(fs.readFileSync(CLAUDE_CREDENTIALS_PATH, 'utf-8')) as Record<string, unknown>;
+      } catch {
+        // file unreadable — start fresh; we own the claudeAiOauth field anyway
+      }
+    } else {
+      // Ensure parent dir exists (rare — /home/<user>/.claude is created
+      // by the Claude CLI on first run; if it isn't here, create it 0700).
+      fs.mkdirSync(path.dirname(CLAUDE_CREDENTIALS_PATH), { recursive: true, mode: 0o700 });
+    }
+    root.claudeAiOauth = {
+      ...((root.claudeAiOauth as object | undefined) ?? {}),
+      ...updated,
+    };
+    const tmp = `${CLAUDE_CREDENTIALS_PATH}.tmp-${process.pid}-${Date.now()}`;
+    fs.writeFileSync(tmp, JSON.stringify(root, null, 2), { mode: 0o600 });
+    fs.renameSync(tmp, CLAUDE_CREDENTIALS_PATH);
+  } catch (err) {
+    log.warn('Failed to persist refreshed OAuth credentials', { err: String(err) });
+  }
+}
+
+/**
+ * Exchange a refresh token for a new access token via Anthropic's OAuth
+ * endpoint. Returns the updated credentials, or null on failure.
+ */
+function refreshAnthropicOAuthToken(
+  refreshToken: string,
+): Promise<{ accessToken: string; refreshToken: string; expiresAt: number } | null> {
+  const body = new URLSearchParams({
+    grant_type: 'refresh_token',
+    refresh_token: refreshToken,
+    client_id: OAUTH_CLIENT_ID,
+  }).toString();
+
+  return new Promise((resolve) => {
+    const req = httpsRequest(
+      {
+        hostname: 'platform.claude.com',
+        port: 443,
+        path: '/v1/oauth/token',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Content-Length': Buffer.byteLength(body),
+        },
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (c) => chunks.push(c as Buffer));
+        res.on('end', () => {
+          const text = Buffer.concat(chunks).toString('utf-8');
+          if (res.statusCode !== 200) {
+            log.error('Anthropic OAuth refresh failed', {
+              status: res.statusCode,
+              body: text.slice(0, 500),
+            });
+            resolve(null);
+            return;
+          }
+          try {
+            const json = JSON.parse(text) as { access_token: string; refresh_token?: string; expires_in?: number };
+            if (!json.access_token) {
+              log.error('Anthropic OAuth refresh: no access_token in response');
+              resolve(null);
+              return;
+            }
+            const expiresAt = json.expires_in ? Date.now() + json.expires_in * 1000 : Date.now() + 60 * 60 * 1000;
+            resolve({
+              accessToken: json.access_token,
+              refreshToken: json.refresh_token ?? refreshToken,
+              expiresAt,
+            });
+          } catch (err) {
+            log.error('Anthropic OAuth refresh parse failed', { err: String(err) });
+            resolve(null);
+          }
+        });
+      },
+    );
+    req.on('error', (err) => {
+      log.error('Anthropic OAuth refresh request error', { err: String(err) });
+      resolve(null);
+    });
+    req.write(body);
+    req.end();
+  });
+}
+
+/**
+ * Single-flight refresh guard — multiple concurrent requests that hit a
+ * near-expiry condition share one in-flight refresh instead of stampeding
+ * the OAuth server.
+ */
+let refreshInFlight: Promise<void> | null = null;
+
+/**
+ * Read the OAuth access token, proactively refreshing when expired or
+ * near-expiry. Returns null if no credentials are configured at all.
+ *
+ * Order of preference:
+ *   1. Static `envToken` (CLAUDE_CODE_OAUTH_TOKEN / ANTHROPIC_AUTH_TOKEN
+ *      from .env) — never refreshed; user manages it.
+ *   2. Cached token if not near-expiry.
+ *   3. Refreshed token (file → keychain → POST /v1/oauth/token), saved
+ *      back to file and cache.
+ */
+async function getOAuthToken(envToken?: string): Promise<string | null> {
+  // Static token from .env always wins.
   if (envToken) return envToken;
 
-  // Check if cached token is still valid
+  // Cached token still has comfortable headroom — return immediately.
   if (cachedOAuthToken && Date.now() < cachedExpiresAt - REFRESH_BUFFER_MS) {
     return cachedOAuthToken;
   }
 
-  // Read from Claude CLI credentials
-  try {
-    if (!fs.existsSync(CLAUDE_CREDENTIALS_PATH)) return null;
-    const creds: ClaudeCredentials = JSON.parse(fs.readFileSync(CLAUDE_CREDENTIALS_PATH, 'utf-8'));
-    if (!creds.claudeAiOauth?.accessToken) return null;
+  const oauth = readFullOAuthCredentials();
+  if (!oauth) return null;
 
-    cachedOAuthToken = creds.claudeAiOauth.accessToken;
-    cachedExpiresAt = creds.claudeAiOauth.expiresAt;
-
-    const expiresIn = Math.round((cachedExpiresAt - Date.now()) / 1000 / 60 / 60);
-    log.debug('Loaded OAuth token from Claude CLI credentials', {
-      expiresInHours: expiresIn,
-    });
-
+  // Token has time left — adopt it as the cache and return.
+  // expiresAt is undefined on the keychain path; treat that as "refresh now"
+  // so we learn the real expiry from Anthropic's response.
+  if (oauth.expiresAt !== undefined && Date.now() < oauth.expiresAt - REFRESH_BUFFER_MS) {
+    cachedOAuthToken = oauth.accessToken;
+    cachedExpiresAt = oauth.expiresAt;
     return cachedOAuthToken;
-  } catch (err) {
-    log.warn('Failed to read Claude CLI credentials', { err });
-    return null;
   }
+
+  // Need to refresh. Coalesce concurrent callers behind one in-flight refresh.
+  if (!refreshInFlight && oauth.refreshToken) {
+    const refreshToken = oauth.refreshToken;
+    refreshInFlight = (async () => {
+      try {
+        const updated = await refreshAnthropicOAuthToken(refreshToken);
+        if (updated) {
+          cachedOAuthToken = updated.accessToken;
+          cachedExpiresAt = updated.expiresAt;
+          saveOAuthCredentials(updated);
+          log.info('Anthropic OAuth token refreshed', {
+            expiresInMin: Math.round((updated.expiresAt - Date.now()) / 60_000),
+          });
+        }
+      } finally {
+        refreshInFlight = null;
+      }
+    })();
+  }
+
+  if (refreshInFlight) {
+    await refreshInFlight;
+  }
+
+  // After refresh attempt: prefer the freshly-cached token; fall back to the
+  // pre-refresh access token from the file/keychain (better than null even
+  // if it's near-expiry — Anthropic may still accept it for a few minutes).
+  return cachedOAuthToken ?? oauth.accessToken ?? null;
 }
 
 export function startCredentialProxy(port: number, host = '127.0.0.1'): Promise<Server> {
@@ -87,6 +341,8 @@ export function startCredentialProxy(port: number, host = '127.0.0.1'): Promise<
     'ANTHROPIC_BASE_URL',
     'OPENAI_API_KEY',
     'OPENAI_BASE_URL',
+    'OMLX_API_KEY',
+    'OMLX_BASE_URL',
   ]);
 
   const authMode: AuthMode = secrets.ANTHROPIC_API_KEY ? 'api-key' : 'oauth';
@@ -94,6 +350,11 @@ export function startCredentialProxy(port: number, host = '127.0.0.1'): Promise<
 
   const anthropicUpstream = new URL(secrets.ANTHROPIC_BASE_URL || 'https://api.anthropic.com');
   const openaiUpstream = new URL(secrets.OPENAI_BASE_URL || 'https://api.openai.com');
+  const googleUpstream = new URL('https://www.googleapis.com');
+  // Local OpenAI-compatible server (mlx-omni-server, Ollama, LM Studio).
+  // Routed via the /omlx/* prefix so agents on the `local` provider send
+  // codex traffic here while `codex` agents still hit cloud OpenAI.
+  const omlxUpstream = new URL(secrets.OMLX_BASE_URL || 'http://localhost:8000');
 
   const requestFor = (isHttps: boolean) => (isHttps ? httpsRequest : httpRequest);
 
@@ -101,17 +362,40 @@ export function startCredentialProxy(port: number, host = '127.0.0.1'): Promise<
     const server = createServer((req, res) => {
       const chunks: Buffer[] = [];
       req.on('data', (c) => chunks.push(c));
-      req.on('end', () => {
+      req.on('end', async () => {
         const body = Buffer.concat(chunks);
 
         // Route by path prefix:
-        //   /openai/*  → OpenAI (strip prefix, inject Authorization)
+        //   /openai/*       → OpenAI (strip prefix, inject Authorization)
+        //   /googleapis/*   → Google APIs (strip prefix, inject OAuth Bearer)
         //   everything else → Anthropic (existing behaviour)
         const rawUrl = req.url || '/';
         const isOpenAI = rawUrl.startsWith('/openai/') || rawUrl === '/openai';
+        const isOmlx = rawUrl.startsWith('/omlx/') || rawUrl === '/omlx';
+        const isGoogle = rawUrl.startsWith('/googleapis/') || rawUrl === '/googleapis';
 
-        const upstreamUrl = isOpenAI ? openaiUpstream : anthropicUpstream;
-        const upstreamPath = isOpenAI ? rawUrl.replace(/^\/openai/, '') || '/' : rawUrl;
+        // Per-call attribution: which agent group is calling? Used by the
+        // per-student GWS resolver below; per-student Anthropic / OpenAI
+        // resolvers (Phase 4) will consult the same primitive. Missing
+        // header is fine — every resolver gracefully falls back to the
+        // class-default credential.
+        const rawAgentGroup = req.headers[AGENT_GROUP_HEADER];
+        const agentGroupId = typeof rawAgentGroup === 'string' && rawAgentGroup.length > 0 ? rawAgentGroup : null;
+
+        const upstreamUrl = isGoogle
+          ? googleUpstream
+          : isOpenAI
+            ? openaiUpstream
+            : isOmlx
+              ? omlxUpstream
+              : anthropicUpstream;
+        const upstreamPath = isGoogle
+          ? rawUrl.replace(/^\/googleapis/, '') || '/'
+          : isOpenAI
+            ? rawUrl.replace(/^\/openai/, '') || '/'
+            : isOmlx
+              ? rawUrl.replace(/^\/omlx/, '') || '/'
+              : rawUrl;
         const isHttps = upstreamUrl.protocol === 'https:';
         const makeRequest = requestFor(isHttps);
 
@@ -125,8 +409,57 @@ export function startCredentialProxy(port: number, host = '127.0.0.1'): Promise<
         delete headers['connection'];
         delete headers['keep-alive'];
         delete headers['transfer-encoding'];
+        // Don't leak the attribution header upstream — it's a NanoClaw-internal hint.
+        delete headers[AGENT_GROUP_HEADER];
 
-        if (isOpenAI) {
+        // ── per-student-provider-auth:proxy-invocation START ──────────────────────
+        let studentCredsApplied = false;
+        if (agentGroupId && (isOpenAI || (!isGoogle && !isOmlx))) {
+          const providerId = isOpenAI ? 'codex' : 'claude';
+          const resolved = await studentCredsHook(agentGroupId, providerId);
+          if (resolved) {
+            if (resolved.kind === 'connect_required' || resolved.kind === 'forbidden') {
+              const err = serializeResolvedCredsError(resolved);
+              res.writeHead(err.status, { 'content-type': 'application/json' });
+              res.end(JSON.stringify(err.body));
+              return;
+            }
+            delete headers['authorization'];
+            delete headers['x-api-key'];
+            if (resolved.kind === 'apiKey') {
+              if (isOpenAI) headers['authorization'] = `Bearer ${resolved.value}`;
+              else headers['x-api-key'] = resolved.value;
+            } else {
+              headers['authorization'] = `Bearer ${resolved.accessToken}`;
+            }
+            studentCredsApplied = true;
+          }
+        }
+        // ── per-student-provider-auth:proxy-invocation END ────────────────────────
+
+        if (isGoogle) {
+          // Google APIs: refresh access token if needed, inject as Bearer.
+          // Returns 502 with an actionable message if no creds configured.
+          // Per-student token preferred when the agent group has one;
+          // instructor / class-default token otherwise.
+          const resolved = await getGoogleAccessTokenForAgentGroup(agentGroupId);
+          if (!resolved) {
+            res.writeHead(502, { 'content-type': 'application/json' });
+            res.end(
+              JSON.stringify({
+                error: {
+                  message:
+                    'Google OAuth not configured. Authorize via /add-gmail-tool / /add-gcal-tool (or any flow that writes ~/.config/gws/credentials.json).',
+                  type: 'proxy_misconfiguration',
+                },
+              }),
+            );
+            return;
+          }
+          delete headers['authorization'];
+          delete headers['x-goog-api-key'];
+          headers['authorization'] = `Bearer ${resolved.token}`;
+        } else if (isOpenAI && !studentCredsApplied) {
           // OpenAI mode: replace any placeholder Authorization with the
           // real key. If OPENAI_API_KEY isn't set on the host, 502 with
           // a clear message so the container-side error is actionable.
@@ -145,11 +478,19 @@ export function startCredentialProxy(port: number, host = '127.0.0.1'): Promise<
           delete headers['authorization'];
           delete headers['x-api-key'];
           headers['authorization'] = `Bearer ${secrets.OPENAI_API_KEY}`;
-        } else if (authMode === 'api-key') {
+        } else if (isOmlx) {
+          // Local OpenAI-compatible server. Container sends OPENAI_API_KEY=placeholder
+          // or OMLX_API_KEY=placeholder; we replace with OMLX_API_KEY here. Defaults
+          // to literal "local" if unset, since many local servers ignore auth entirely
+          // but the SDK still sends a header.
+          delete headers['authorization'];
+          delete headers['x-api-key'];
+          headers['authorization'] = `Bearer ${secrets.OMLX_API_KEY || 'local'}`;
+        } else if (authMode === 'api-key' && !studentCredsApplied) {
           // Anthropic API key mode: inject x-api-key on every request
           delete headers['x-api-key'];
           headers['x-api-key'] = secrets.ANTHROPIC_API_KEY;
-        } else {
+        } else if (!studentCredsApplied) {
           // Anthropic OAuth mode: replace placeholder Bearer token with
           // the real one only when the container actually sends an
           // Authorization header (exchange request + auth probes).
@@ -157,7 +498,7 @@ export function startCredentialProxy(port: number, host = '127.0.0.1'): Promise<
           // through without token injection.
           if (headers['authorization']) {
             delete headers['authorization'];
-            const token = getOAuthToken(envOAuthToken);
+            const token = await getOAuthToken(envOAuthToken);
             if (token) {
               headers['authorization'] = `Bearer ${token}`;
             }
@@ -182,7 +523,7 @@ export function startCredentialProxy(port: number, host = '127.0.0.1'): Promise<
           log.error('Credential proxy upstream error', {
             err,
             url: req.url,
-            isOpenAI,
+            route: isGoogle ? 'google' : isOpenAI ? 'openai' : isOmlx ? 'omlx' : 'anthropic',
           });
           if (!res.headersSent) {
             res.writeHead(502);

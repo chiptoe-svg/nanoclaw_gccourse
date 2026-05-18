@@ -6,13 +6,14 @@
  */
 import path from 'path';
 
-import { DATA_DIR, CREDENTIAL_PROXY_PORT } from './config.js';
+import { DATA_DIR, CREDENTIAL_PROXY_PORT, GWS_MCP_RELAY_PORT } from './config.js';
 import { enforceStartupBackoff, resetCircuitBreaker } from './circuit-breaker.js';
 import { migrateGroupsToClaudeLocal } from './claude-md-compose.js';
 import { initDb } from './db/connection.js';
 import { runMigrations } from './db/migrations/index.js';
 import { ensureContainerRuntimeRunning, cleanupOrphans, PROXY_BIND_HOST } from './container-runtime.js';
 import { startCredentialProxy } from './credential-proxy.js';
+import { startGwsMcpRelay, stopGwsMcpRelay } from './gws-mcp-relay.js';
 import { startActiveDeliveryPoll, startSweepDeliveryPoll, setDeliveryAdapter, stopDeliveryPolls } from './delivery.js';
 import { startHostSweep, stopHostSweep } from './host-sweep.js';
 import { routeInbound } from './router.js';
@@ -28,10 +29,12 @@ import {
   getResponseHandlers,
   onShutdown,
   getShutdownCallbacks,
+  onHostReady,
+  getHostReadyCallbacks,
   type ResponsePayload,
   type ResponseHandler,
 } from './response-registry.js';
-export { registerResponseHandler, onShutdown };
+export { registerResponseHandler, onShutdown, onHostReady };
 export type { ResponsePayload, ResponseHandler };
 
 async function dispatchResponse(payload: ResponsePayload): Promise<void> {
@@ -54,21 +57,25 @@ import './channels/index.js';
 // append registry-based modules. Imported for side effects (registrations).
 import './modules/index.js';
 
-// Class feature: registers gates, consumers, env contributors, auth
-// resolvers, command handlers, and the request_reauth delivery action.
-// Each module is no-op when nothing class-related is provisioned.
-// Phase 8 will eventually pull these out of main into an install skill;
-// for now they sit here as a self-contained block.
-import './class-codex-auth.js';
-import './class-container-env.js';
-import './class-pair-auth.js';
-import './class-pair-drive.js';
+// Class feature is not part of trunk — installs via /add-classroom,
+// /add-classroom-gws, /add-classroom-auth (sibling `classroom` branch).
+// Each skill appends its own imports here for the registries it
+// registers against (codex auth resolver, container env contributor,
+// playground draft gate, pair consumer, telegram command).
 import './class-pair-greeting.js';
 import './class-pair-instructor.js';
 import './class-pair-ta.js';
 import './class-playground-gate.js';
-import './class-telegram-commands.js';
-import './student-auth-handlers.js';
+import './class-container-env.js';
+import './class-codex-auth.js';
+import './class-login-tokens.js';
+import './class-telegram-pair.js';
+
+// CLI command barrel — populates the `ncl` registry before the CLI server
+// accepts connections.
+import './cli/commands/index.js';
+import './cli/delivery-action.js';
+import { startCliServer, stopCliServer } from './cli/socket-server.js';
 
 import type { ChannelAdapter, ChannelSetup } from './channels/adapter.js';
 import { initChannelAdapters, teardownChannelAdapters, getChannelAdapter } from './channels/channel-registry.js';
@@ -95,9 +102,18 @@ async function main(): Promise<void> {
   cleanupOrphans();
 
   // 2b. Credential proxy — containers route API calls through this so they
-  // never see real secrets. Binds to loopback only; containers reach it via
-  // the host-gateway address injected by buildContainerArgs.
+  // never see real secrets. Apple Container has no host-loopback default
+  // (bridge100 only exists while a container is running), so PROXY_BIND_HOST
+  // must be explicitly set in .env via /convert-to-apple-container.
+  if (!PROXY_BIND_HOST) {
+    throw new Error('CREDENTIAL_PROXY_HOST is not set in .env. Run /convert-to-apple-container to configure.');
+  }
   proxyServer = await startCredentialProxy(CREDENTIAL_PROXY_PORT, PROXY_BIND_HOST);
+
+  // 2c. GWS MCP relay — host-side Google Workspace tools. Containers reach
+  // it via the same host-gateway pattern as the credential proxy; per-call
+  // attribution header authenticates the calling agent group. Loopback only.
+  await startGwsMcpRelay(PROXY_BIND_HOST);
 
   // 3. Channel adapters
   await initChannelAdapters((adapter: ChannelAdapter): ChannelSetup => {
@@ -163,13 +179,14 @@ async function main(): Promise<void> {
       kind: string,
       content: string,
       files?: import('./channels/adapter.js').OutboundFile[],
+      meta?: import('./delivery.js').ChannelDeliveryMeta,
     ): Promise<string | undefined> {
       const adapter = getChannelAdapter(channelType);
       if (!adapter) {
         log.warn('No adapter for channel type', { channelType });
         return;
       }
-      return adapter.deliver(platformId, threadId, { kind, content: JSON.parse(content), files });
+      return adapter.deliver(platformId, threadId, { kind, content: JSON.parse(content), files, meta });
     },
     async setTyping(channelType: string, platformId: string, threadId: string | null): Promise<void> {
       const adapter = getChannelAdapter(channelType);
@@ -187,7 +204,21 @@ async function main(): Promise<void> {
   startHostSweep();
   log.info('Host sweep started');
 
+  // 7. Start the `ncl` CLI socket server (data/ncl.sock).
+  await startCliServer();
+
   log.info('NanoClaw running');
+
+  // 8. Fire onHostReady callbacks (e.g. classroom auto-starting the
+  //    playground HTTP server). Best-effort: errors are logged but don't
+  //    take the host down — the rest of the stack is already running.
+  for (const cb of getHostReadyCallbacks()) {
+    try {
+      await cb();
+    } catch (err) {
+      log.error('Host-ready callback threw', { err });
+    }
+  }
 }
 
 /** Graceful shutdown. */
@@ -203,6 +234,8 @@ async function shutdown(signal: string): Promise<void> {
   stopDeliveryPolls();
   stopHostSweep();
   proxyServer?.close();
+  await stopGwsMcpRelay();
+  await stopCliServer();
   try {
     await teardownChannelAdapters();
   } finally {

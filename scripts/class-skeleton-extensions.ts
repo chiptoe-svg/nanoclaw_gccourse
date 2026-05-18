@@ -12,5 +12,6 @@
  * Skills that need to extend the skeleton append imports here:
  *   `/add-classroom-gws` adds `import '../src/class-skeleton-drive-mount.js';`
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-import '../src/class-skeleton-drive-mount.js';
+// (Empty barrel — /add-classroom-gws appends
+// `import '../src/class-skeleton-drive-mount.js';` here when installed.
+// Reinstate that line manually if you later run /add-classroom-gws.)

@@ -48,6 +48,12 @@ import { tryConsume } from './telegram-pairing.js';
 import { runPairConsumers } from './pair-consumer-registry.js';
 import { dispatchTelegramCommand, registerTelegramCommand } from './telegram-commands.js';
 
+// Admin-handler barrel: each installed admin tool (auth/model/provider) self-
+// registers via registerTelegramCommand at module scope. Importing this barrel
+// triggers all installed registrations as a side effect. Empty when no admin
+// tools are installed; the /add-admintools skill appends import lines into it.
+import '../admin-handlers/index.js';
+
 /**
  * Retry a one-shot operation that can fail on transient network errors at
  * cold-start (DNS hiccups, brief upstream outages). Exponential backoff capped
@@ -380,10 +386,20 @@ async function processAttachments(platformId: string, message: InboundMessage): 
           const savePath = path.join(attachDir, `photo_${msgId}.jpg`);
           const processed = await processImage(buffer, savePath);
 
-          // Inject processed image into content for multimodal delivery
+          // Inject processed image into content for multimodal delivery.
+          // `containerPath` is the path the agent-runner will pass to the
+          // upstream provider (codex `local_image`, claude image content
+          // block). The group folder mounts at /workspace/agent in the
+          // container, so the attachment file the host just wrote at
+          // `<groupDir>/attachments/photo_<msgId>.jpg` is reachable inside
+          // at `/workspace/agent/attachments/photo_<msgId>.jpg`.
           updatedContent.images = [
             ...(Array.isArray(updatedContent.images) ? updatedContent.images : []),
-            { base64: processed.base64, mimeType: processed.mimeType },
+            {
+              base64: processed.base64,
+              mimeType: processed.mimeType,
+              containerPath: `/workspace/agent/attachments/photo_${msgId}.jpg`,
+            },
           ];
           // Update text to reference the saved file
           const caption = updatedContent.text ? ` ${updatedContent.text}` : '';
@@ -461,22 +477,38 @@ async function processAttachments(platformId: string, message: InboundMessage): 
 
 /**
  * Handle the /playground Telegram command.
- *   /playground       → start the HTTP server (idempotent), reply with URL
- *   /playground stop  → stop the server
- *   /playground       → if already running, just reports the URL
+ *   /playground             → start server (idempotent), reply with magic-link URL
+ *   /playground stop        → stop the server (revokes every authed session)
+ *   /playground stop --self → revoke only the caller's sessions; others stay live
+ *   /playground status      → report whether the server is running
  *
  * Returns true if consumed.
  */
-async function handlePlaygroundCommand(token: string, platformId: string, text: string): Promise<boolean> {
+async function handlePlaygroundCommand(
+  token: string,
+  platformId: string,
+  text: string,
+  authorUserId: string | null,
+): Promise<boolean> {
   if (!text.startsWith('/playground')) return false;
 
   const chatId = platformId.split(':').slice(1).join(':');
   if (!chatId) return false;
 
-  const { startPlaygroundServer, stopPlaygroundServer, getPlaygroundStatus } = await import('./playground.js');
+  const { startPlaygroundServer, stopPlaygroundServer, getPlaygroundStatus, revokeSessionsForUser } =
+    await import('./playground.js');
+
+  // Normalize the caller's user_id to the canonical `<channel>:<handle>`
+  // form used by the rest of the entity model (agent_group_members,
+  // user_roles, sessions). The bare handle Telegram gives us — e.g.
+  // "8731035088" — would otherwise fail every later lookup, landing the
+  // user on the wrong default agent in the playground.
+  const normalizedAuthorUserId =
+    authorUserId && !authorUserId.includes(':') ? `telegram:${authorUserId}` : authorUserId;
 
   const parts = text.trim().split(/\s+/);
   const sub = parts[1]?.toLowerCase();
+  const flag = parts[2]?.toLowerCase();
 
   let reply: string;
   try {
@@ -484,110 +516,33 @@ async function handlePlaygroundCommand(token: string, platformId: string, text: 
       const status = getPlaygroundStatus();
       if (!status.running) {
         reply = 'Playground is not running.';
+      } else if (flag === '--self') {
+        if (!normalizedAuthorUserId) {
+          reply = '❌ /playground stop --self requires an identified caller.';
+        } else {
+          const removed = revokeSessionsForUser(normalizedAuthorUserId);
+          reply =
+            removed > 0
+              ? `✅ Revoked ${removed} of your session(s). Other users unaffected.`
+              : 'No active sessions for you to revoke.';
+        }
       } else {
         await stopPlaygroundServer();
-        reply = '✅ Playground stopped.';
+        reply = '✅ Playground stopped (all sessions revoked).';
       }
     } else if (!sub || sub === 'start') {
-      const { url, alreadyRunning } = await startPlaygroundServer();
-      reply = alreadyRunning ? `Playground already running at ${url}` : `✅ Playground started.\n${url}`;
+      const { url, alreadyRunning } = await startPlaygroundServer({ userId: normalizedAuthorUserId });
+      reply = alreadyRunning
+        ? `Playground already running.\nFresh magic link: ${url}`
+        : `✅ Playground started.\n${url}`;
     } else if (sub === 'status') {
       const status = getPlaygroundStatus();
       reply = status.running ? `Running: ${status.url}` : 'Not running. Send /playground to start.';
     } else {
-      reply = `Unknown subcommand: ${sub}\nUsage: /playground | /playground stop | /playground status`;
+      reply = `Unknown subcommand: ${sub}\nUsage: /playground | /playground stop [--self] | /playground status`;
     }
   } catch (err) {
     reply = `❌ Playground command failed: ${(err as Error).message}`;
-  }
-
-  await sendTelegram(token, chatId, reply);
-  return true;
-}
-
-/**
- * Handle the /model Telegram command.
- * - `/model`        → show current model (per agent group wired to this chat) + hint list
- * - `/model <name>` → persist <name> as the group's model, kill running container
- *                     so the next inbound spawns with the new model.
- *
- * Trust-first: any string is accepted. If the model is invalid, the
- * provider's server-side rejection surfaces as the agent's reply.
- *
- * Returns true if consumed.
- */
-async function handleModelCommand(token: string, platformId: string, text: string): Promise<boolean> {
-  if (!text.startsWith('/model')) return false;
-
-  const chatId = platformId.split(':').slice(1).join(':');
-  if (!chatId) return false;
-
-  const { getMessagingGroupByPlatform, getMessagingGroupAgents } = await import('../db/messaging-groups.js');
-  const { getAgentGroup } = await import('../db/agent-groups.js');
-  const { hintsForProvider, resolveEffectiveModel, setModel } = await import('../model-switch.js');
-  const { isContainerRunning, killContainer } = await import('../container-runner.js');
-  const { getActiveSessions } = await import('../db/sessions.js');
-
-  const mg = getMessagingGroupByPlatform('telegram', platformId);
-  const agents = mg ? getMessagingGroupAgents(mg.id) : [];
-  if (agents.length === 0) {
-    await sendTelegram(token, chatId, 'No agent group wired to this chat.');
-    return true;
-  }
-  if (agents.length > 1) {
-    await sendTelegram(
-      token,
-      chatId,
-      `${agents.length} agent groups wired to this chat — /model on multi-agent chats not yet supported.`,
-    );
-    return true;
-  }
-  const group = getAgentGroup(agents[0].agent_group_id);
-  if (!group) {
-    await sendTelegram(token, chatId, 'Agent group lookup failed.');
-    return true;
-  }
-
-  const parts = text.trim().split(/\s+/);
-  const arg = parts.slice(1).join(' ').trim();
-  let reply: string;
-
-  if (!arg) {
-    const hints = hintsForProvider(group.agent_provider);
-    const list =
-      hints.length > 0 ? hints.map((h) => `  • ${h.name} — ${h.note}`).join('\n') : '  (no hints for this provider)';
-    const effective = resolveEffectiveModel(group);
-    const modelLine = group.model ? `Model: ${group.model}` : `Model: ${effective} (provider default)`;
-    reply =
-      `Group: ${group.name}\n` +
-      `Provider: ${group.agent_provider ?? 'claude (default)'}\n` +
-      `${modelLine}\n` +
-      `\n` +
-      `Suggested models:\n${list}\n` +
-      `\n` +
-      `Use /model <name> to switch. Any string is accepted; the server validates.`;
-  } else {
-    const newModel = arg === 'reset' || arg === 'default' ? null : arg;
-    const ok = setModel(group.folder, newModel);
-    if (!ok) {
-      reply = 'Failed to persist — group not found by folder.';
-    } else {
-      // Kill any running container for sessions in this group so the next
-      // inbound spawns fresh with the new model.
-      const sessions = getActiveSessions().filter((s) => s.agent_group_id === group.id);
-      for (const s of sessions) {
-        if (isContainerRunning(s.id)) {
-          try {
-            killContainer(s.id, 'model change');
-          } catch {
-            /* best-effort */
-          }
-        }
-      }
-      reply = newModel
-        ? `✅ Model set to \`${newModel}\`. Next message uses it. (Server rejects unknown models with a clear error.)`
-        : `✅ Model reset — group will use provider default.`;
-    }
   }
 
   await sendTelegram(token, chatId, reply);
@@ -600,7 +555,7 @@ async function handleModelCommand(token: string, platformId: string, text: strin
  * escaping a long list of metacharacters; plain text is the most
  * predictable for multi-line status replies.
  */
-async function sendTelegram(token: string, chatId: string, text: string): Promise<void> {
+export async function sendTelegram(token: string, chatId: string, text: string): Promise<void> {
   try {
     const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: 'POST',
@@ -616,68 +571,13 @@ async function sendTelegram(token: string, chatId: string, text: string): Promis
   }
 }
 
-/**
- * Handle the /auth Telegram command.
- * - `/auth`       → show current mode + OAuth status
- * - `/auth api`   → switch to API key mode
- * - `/auth oauth` → switch to OAuth mode (checks credentials first)
- *
- * Returns true if the message was consumed (short-circuit), false if not.
- */
-async function handleAuthCommand(token: string, platformId: string, text: string): Promise<boolean> {
-  if (!text.startsWith('/auth')) return false;
-
-  const chatId = platformId.split(':').slice(1).join(':');
-  if (!chatId) return false;
-
-  const { getCurrentAuthMode, hasValidOAuthCredentials, switchAuthMode } = await import('../auth-switch.js');
-
-  const parts = text.trim().split(/\s+/);
-  const subcommand = parts[1]?.toLowerCase();
-
-  let reply: string;
-
-  if (!subcommand) {
-    const mode = getCurrentAuthMode();
-    const oauthOk = hasValidOAuthCredentials();
-    reply =
-      `Current mode: *${mode}*\n` +
-      `OAuth credentials: ${oauthOk ? '✅ valid' : '❌ missing or expired'}\n\n` +
-      `Use \`/auth api\` or \`/auth oauth\` to switch.`;
-  } else if (subcommand === 'api') {
-    await switchAuthMode('api-key');
-    reply = '✅ Switched to API key mode. Restarting…';
-  } else if (subcommand === 'oauth') {
-    if (!hasValidOAuthCredentials()) {
-      reply = '❌ No valid OAuth credentials found. Run `claude login` first.';
-    } else {
-      await switchAuthMode('oauth');
-      reply = '✅ Switched to OAuth mode. Restarting…';
-    }
-  } else {
-    reply = `Unknown subcommand: \`${subcommand}\`\nUsage: /auth | /auth api | /auth oauth`;
-  }
-
-  try {
-    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, text: reply, parse_mode: 'Markdown' }),
-    });
-  } catch (err) {
-    log.warn('Failed to send /auth reply', { platformId, err });
-  }
-
-  return true;
-}
-
 // ── Built-in command registrations ─────────────────────────────────────────
-// /auth, /model, /playground all ship with main. /login (class feature)
-// registers itself from src/class-telegram-commands.ts when imported.
+// /auth, /model, /provider, /playground all ship with main. /login (class
+// feature) registers itself from src/class-telegram-commands.ts when imported.
 
-registerTelegramCommand('/auth', (ctx) => handleAuthCommand(ctx.token, ctx.platformId, ctx.text));
-registerTelegramCommand('/model', (ctx) => handleModelCommand(ctx.token, ctx.platformId, ctx.text));
-registerTelegramCommand('/playground', (ctx) => handlePlaygroundCommand(ctx.token, ctx.platformId, ctx.text));
+registerTelegramCommand('/playground', (ctx) =>
+  handlePlaygroundCommand(ctx.token, ctx.platformId, ctx.text, ctx.authorUserId),
+);
 
 /**
  * Outer interceptor that applies fork customizations (attachment processing,

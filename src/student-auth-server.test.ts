@@ -17,7 +17,14 @@ import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest';
 const { TEST_DIR } = vi.hoisted(() => {
   const nodePath = require('path') as typeof import('path');
   const nodeOs = require('os') as typeof import('os');
-  return { TEST_DIR: nodePath.join(nodeOs.tmpdir(), 'nanoclaw-student-auth-server-test') };
+  const testDir = nodePath.join(nodeOs.tmpdir(), 'nanoclaw-student-auth-server-test');
+  // Set env vars before student-auth-server.ts module is imported so the
+  // module-level consts pick up the test values (they were removed from
+  // config.ts in Phase 11.3 and are now inlined in student-auth-server.ts).
+  process.env.STUDENT_AUTH_PORT = '0';
+  process.env.STUDENT_AUTH_BIND_HOST = '127.0.0.1';
+  process.env.NANOCLAW_PUBLIC_URL = 'https://nano.example.com';
+  return { TEST_DIR: testDir };
 });
 
 vi.mock('./config.js', async () => {
@@ -25,9 +32,6 @@ vi.mock('./config.js', async () => {
   return {
     ...actual,
     DATA_DIR: TEST_DIR,
-    STUDENT_AUTH_PORT: 0,
-    STUDENT_AUTH_BIND_HOST: '127.0.0.1',
-    NANOCLAW_PUBLIC_URL: 'https://nano.example.com',
   };
 });
 

@@ -5,40 +5,15 @@
  * passes the resolved model into container.json so the in-container
  * provider reads it from the RO mount.
  *
- * Hint lists are *not* a contract — codex/anthropic both reject unknown
- * models server-side with a clear error message that surfaces in chat.
- * The list is purely so the `/model` reply has nameable suggestions.
+ * Suggested-model hints (`/model` listing) and alias expansion live in
+ * `./model-discovery.js`, which fetches the live list from the provider
+ * with a 1-hour cache and a hardcoded fallback.
  */
 import { getAgentGroupByFolder, updateAgentGroup } from './db/agent-groups.js';
+import { getActiveSessions } from './db/sessions.js';
 
-export interface ModelHint {
-  name: string;
-  note: string;
-}
-
-const CODEX_HINTS: ModelHint[] = [
-  { name: 'gpt-5.5', note: 'strongest — complex coding, research, knowledge work' },
-  { name: 'gpt-5.4', note: 'rollout fallback if 5.5 unavailable' },
-  { name: 'gpt-5.4-mini', note: 'fast/cheap for light tasks, subagents' },
-  { name: 'gpt-5.3-codex', note: 'older codex-tuned' },
-];
-
-const CLAUDE_HINTS: ModelHint[] = [
-  { name: 'claude-opus-4-7', note: 'Opus — strongest reasoning' },
-  { name: 'claude-sonnet-4-6', note: 'Sonnet — balanced' },
-  { name: 'claude-haiku-4-5-20251001', note: 'Haiku — fast/cheap' },
-];
-
-export function hintsForProvider(provider: string | null): ModelHint[] {
-  switch ((provider || 'claude').toLowerCase()) {
-    case 'codex':
-      return CODEX_HINTS;
-    case 'claude':
-      return CLAUDE_HINTS;
-    default:
-      return [];
-  }
-}
+export { expandAlias, hintsForProvider } from './model-discovery.js';
+export type { ModelHint } from './model-discovery.js';
 
 export function getCurrentModel(folder: string): { provider: string | null; model: string | null } | null {
   const group = getAgentGroupByFolder(folder);
@@ -67,5 +42,24 @@ export function setModel(folder: string, model: string | null): boolean {
   const group = getAgentGroupByFolder(folder);
   if (!group) return false;
   updateAgentGroup(group.id, { model });
+
+  // Stop any running session containers so the model change is visible on the
+  // next inbound message. The in-container provider reads model from the
+  // container.json snapshot at spawn time; a live container keeps using the
+  // old model until it exits. Mirrors the kill pattern in setProvider.
+  // Best-effort: errors are non-fatal — the next host sweep tick reaps stale
+  // containers anyway.
+  for (const session of getActiveSessions().filter((s) => s.agent_group_id === group.id)) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { isContainerRunning, killContainer } = require('./container-runner.js') as {
+        isContainerRunning: (id: string) => boolean;
+        killContainer: (id: string, reason: string) => void;
+      };
+      if (isContainerRunning(session.id)) killContainer(session.id, 'model change');
+    } catch {
+      /* best-effort */
+    }
+  }
   return true;
 }

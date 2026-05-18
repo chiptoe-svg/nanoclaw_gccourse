@@ -54,7 +54,7 @@ import { createAgentGroup, getAgentGroupByFolder } from '../src/db/agent-groups.
 import { upsertRosterEntry } from '../src/db/classroom-roster.js';
 import { initDb, getDb } from '../src/db/connection.js';
 import { runMigrations } from '../src/db/migrations/index.js';
-import { writeContainerConfig, type ContainerConfig } from '../src/container-config.js';
+import { readContainerConfig, writeContainerConfig, type ContainerConfig } from '../src/container-config.js';
 import { collectSkeletonMounts } from '../src/skeleton-mount-registry.js';
 import type { AgentGroup } from '../src/types.js';
 
@@ -154,6 +154,11 @@ const STUDENT_PERSONA = (name: string): string => `# ${name}'s agent
 
 You are ${name}'s personal class agent. Help with class assignments,
 research, and questions about course material.
+
+## Quirk
+
+End every response with a short dad joke (one line, groan-worthy). The
+student can remove this section if they don't like it.
 
 ## Resources you have
 
@@ -289,11 +294,38 @@ const NON_STUDENT_CLAUDE_MD = `@./.claude-shared.md
 @./CLAUDE.local.md
 `;
 
+/**
+ * Resolve the instructor's currently-active skill set. New student agents
+ * inherit from this so the class starts in a consistent skill state. If no
+ * instructor agent exists (or the read fails), fall back to the global
+ * default (empty list).
+ */
+function inheritedSkills(): ContainerConfig['skills'] {
+  try {
+    // Prefer instructor_01 (class instructor convention); fall back to any
+    // dm-with-* group (single-user installs without classroom scaffolding).
+    const instructor =
+      getAgentGroupByFolder('instructor_01') ||
+      (getDb()
+        .prepare("SELECT * FROM agent_groups WHERE folder LIKE 'dm-with-%' ORDER BY created_at ASC LIMIT 1")
+        .get() as AgentGroup | undefined) ||
+      null;
+    if (instructor) {
+      const cfg = readContainerConfig(instructor.folder);
+      if (cfg.skills === 'all' || Array.isArray(cfg.skills)) return cfg.skills;
+    }
+  } catch (err) {
+    console.warn('  [warn] inheritedSkills failed, defaulting to empty:', err);
+  }
+  return [];
+}
+
 function makeContainerConfig(opts: {
   kb: string | null;
   wiki: string | null;
   folder: string;
   extraMounts: ContainerConfig['additionalMounts'];
+  isStudent?: boolean;
 }): ContainerConfig {
   const additionalMounts: ContainerConfig['additionalMounts'] = [];
   if (opts.kb) {
@@ -309,7 +341,10 @@ function makeContainerConfig(opts: {
     mcpServers: {},
     packages: { apt: [], npm: [] },
     additionalMounts,
-    skills: 'all',
+    // Student agents inherit the instructor's currently-active skill set
+    // at creation time. TAs / instructors / non-classroom groups use the
+    // generic empty default (manual curation via Skills tab afterwards).
+    skills: opts.isStudent ? inheritedSkills() : [],
     groupName: opts.folder,
     assistantName: opts.folder,
   };
@@ -384,7 +419,13 @@ function provisionGroup(args: CliArgs, classConfig: Record<string, unknown>, tar
   });
   writeContainerConfig(
     target.folder,
-    makeContainerConfig({ kb: args.kb, wiki: args.wiki, folder: target.folder, extraMounts }),
+    makeContainerConfig({
+      kb: args.kb,
+      wiki: args.wiki,
+      folder: target.folder,
+      extraMounts,
+      isStudent: target.role === 'student',
+    }),
   );
 
   return group.id;

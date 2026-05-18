@@ -63,3 +63,16 @@ export function removeRosterEntry(email: string): boolean {
   const info = getDb().prepare('DELETE FROM classroom_roster WHERE email = ?').run(normalizeEmail(email));
   return info.changes > 0;
 }
+
+/**
+ * Look up a roster entry by its canonical user_id (e.g. `class:student_03`).
+ * Returns null when no row has that user_id. Companion to `lookupRosterByEmail`
+ * for cases where we know the userId (e.g. inside an authenticated session)
+ * and need the email or agent_group_id.
+ */
+export function lookupRosterByUserId(userId: string): ClassroomRosterEntry | null {
+  const row = getDb()
+    .prepare('SELECT email, user_id, agent_group_id, added_at FROM classroom_roster WHERE user_id = ?')
+    .get(userId) as ClassroomRosterEntry | undefined;
+  return row ?? null;
+}

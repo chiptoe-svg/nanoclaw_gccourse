@@ -18,7 +18,7 @@
 import fs from 'fs';
 import path from 'path';
 
-import { google, drive_v3, type Auth } from 'googleapis';
+import { drive as driveApi, auth as gAuth, drive_v3 } from '@googleapis/drive';
 
 import { log } from './log.js';
 
@@ -36,7 +36,7 @@ interface StoredCredentials {
   scope?: string;
 }
 
-let cachedDrive: drive_v3.Drive | null = null;
+let cachedDrive: ReturnType<typeof driveApi> | null = null;
 
 function loadCredentials(): StoredCredentials {
   if (!fs.existsSync(CREDENTIALS_PATH)) {
@@ -55,10 +55,10 @@ function loadCredentials(): StoredCredentials {
   return parsed as StoredCredentials;
 }
 
-function getDriveClient(): drive_v3.Drive {
+function getDriveClient(): ReturnType<typeof driveApi> {
   if (cachedDrive) return cachedDrive;
   const creds = loadCredentials();
-  const oauth2: Auth.OAuth2Client = new google.auth.OAuth2(creds.client_id, creds.client_secret);
+  const oauth2 = new gAuth.OAuth2(creds.client_id, creds.client_secret);
   oauth2.setCredentials({
     refresh_token: creds.refresh_token,
     access_token: creds.access_token,
@@ -66,7 +66,7 @@ function getDriveClient(): drive_v3.Drive {
     token_type: creds.token_type,
     scope: creds.scope,
   });
-  cachedDrive = google.drive({ version: 'v3', auth: oauth2 });
+  cachedDrive = driveApi({ version: 'v3', auth: oauth2 });
   return cachedDrive;
 }
 
@@ -133,7 +133,7 @@ export async function createStudentFolder(opts: CreateStudentFolderOpts): Promis
     fields: 'permissions(id, emailAddress, role)',
   });
   const alreadyShared = (perms.data.permissions ?? []).some(
-    (p) => p.emailAddress?.toLowerCase() === opts.studentEmail.toLowerCase(),
+    (p: drive_v3.Schema$Permission) => p.emailAddress?.toLowerCase() === opts.studentEmail.toLowerCase(),
   );
   let shared = false;
   if (!alreadyShared) {

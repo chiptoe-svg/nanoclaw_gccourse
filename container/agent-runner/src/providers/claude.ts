@@ -34,7 +34,11 @@ const SDK_DISALLOWED_TOOLS = [
   'ExitWorktree',
 ];
 
-// Tool allowlist for NanoClaw agent containers
+// Tool allowlist for NanoClaw agent containers. MCP-tool entries are derived
+// at the call site from the registered `mcpServers` map so that any server
+// added via `add_mcp_server` (or wired in container.json directly) is
+// reachable to the agent — without this, the SDK's allowedTools filter
+// silently drops every MCP namespace not listed here.
 const TOOL_ALLOWLIST = [
   'Bash',
   'Read',
@@ -54,14 +58,65 @@ const TOOL_ALLOWLIST = [
   'ToolSearch',
   'Skill',
   'NotebookEdit',
-  'mcp__nanoclaw__*',
 ];
+
+// MCP server names are sanitized by the SDK when forming tool prefixes:
+// any character outside [A-Za-z0-9_-] becomes '_'. Mirror that here so our
+// allowlist patterns match what the SDK actually exposes.
+function mcpAllowPattern(serverName: string): string {
+  return `mcp__${serverName.replace(/[^a-zA-Z0-9_-]/g, '_')}__*`;
+}
+
+/**
+ * Anthropic API content block for images. The SDK accepts these inside
+ * a user message's `content` array alongside `{ type: 'text', ... }`
+ * blocks. See https://docs.anthropic.com/en/api/messages content-blocks.
+ */
+interface ImageBlock {
+  type: 'image';
+  source: { type: 'base64'; media_type: string; data: string };
+}
+interface TextBlock {
+  type: 'text';
+  text: string;
+}
+type ContentBlock = TextBlock | ImageBlock;
 
 interface SDKUserMessage {
   type: 'user';
-  message: { role: 'user'; content: string };
+  message: { role: 'user'; content: string | ContentBlock[] };
   parent_tool_use_id: null;
   session_id: string;
+}
+
+function mimeForExt(p: string): string {
+  const ext = p.slice(p.lastIndexOf('.')).toLowerCase();
+  if (ext === '.png') return 'image/png';
+  if (ext === '.gif') return 'image/gif';
+  if (ext === '.webp') return 'image/webp';
+  return 'image/jpeg';
+}
+
+/**
+ * Build a content-block array from text + local image paths. Each path
+ * is read off disk and base64-encoded; images come first (matches the
+ * convention codex's CLI uses with --image, and tends to produce more
+ * coherent vision responses than image-after-text). Failed reads are
+ * silently skipped — the text still goes through.
+ */
+function buildContentBlocks(text: string, imagePaths: string[] | undefined): string | ContentBlock[] {
+  if (!imagePaths || imagePaths.length === 0) return text;
+  const blocks: ContentBlock[] = [];
+  for (const p of imagePaths) {
+    try {
+      const data = fs.readFileSync(p).toString('base64');
+      blocks.push({ type: 'image', source: { type: 'base64', media_type: mimeForExt(p), data } });
+    } catch (err) {
+      log(`buildContentBlocks: skipping ${p} — ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  blocks.push({ type: 'text', text });
+  return blocks;
 }
 
 /**
@@ -72,10 +127,10 @@ class MessageStream {
   private waiting: (() => void) | null = null;
   private done = false;
 
-  push(text: string): void {
+  push(text: string, imagePaths?: string[]): void {
     this.queue.push({
       type: 'user',
-      message: { role: 'user', content: text },
+      message: { role: 'user', content: buildContentBlocks(text, imagePaths) },
       parent_tool_use_id: null,
       session_id: '',
     });
@@ -265,7 +320,11 @@ export class ClaudeProvider implements AgentProvider {
 
   query(input: QueryInput): AgentQuery {
     const stream = new MessageStream();
-    stream.push(input.prompt);
+    // Initial message gets the image attachments (if any). Subsequent
+    // follow-up push() calls from the poll-loop are text-only by
+    // construction — they're system reminders or accumulated context,
+    // not user uploads.
+    stream.push(input.prompt, input.imagePaths);
 
     const instructions = input.systemContext?.instructions;
 
@@ -277,7 +336,10 @@ export class ClaudeProvider implements AgentProvider {
         resume: input.continuation,
         pathToClaudeCodeExecutable: '/pnpm/claude',
         systemPrompt: instructions ? { type: 'preset' as const, preset: 'claude_code' as const, append: instructions } : undefined,
-        allowedTools: TOOL_ALLOWLIST,
+        allowedTools: [
+          ...TOOL_ALLOWLIST,
+          ...Object.keys(this.mcpServers).map(mcpAllowPattern),
+        ],
         disallowedTools: SDK_DISALLOWED_TOOLS,
         env: this.env,
         permissionMode: 'bypassPermissions',
@@ -296,6 +358,7 @@ export class ClaudeProvider implements AgentProvider {
     let aborted = false;
 
     async function* translateEvents(): AsyncGenerator<ProviderEvent> {
+      const startedAt = Date.now();
       let messageCount = 0;
       for await (const message of sdkResult) {
         if (aborted) return;
@@ -308,7 +371,22 @@ export class ClaudeProvider implements AgentProvider {
           yield { type: 'init', continuation: message.session_id };
         } else if (message.type === 'result') {
           const text = 'result' in message ? (message as { result?: string }).result ?? null : null;
-          yield { type: 'result', text };
+          const usage = (message as { usage?: { input_tokens?: number; output_tokens?: number } }).usage;
+          const tokens =
+            usage && typeof usage.input_tokens === 'number' && typeof usage.output_tokens === 'number'
+              ? { input: usage.input_tokens, output: usage.output_tokens }
+              : undefined;
+          // Derive model from modelUsage keys (first key is the primary model).
+          const modelUsage = (message as { modelUsage?: Record<string, unknown> }).modelUsage;
+          const model = modelUsage ? Object.keys(modelUsage)[0] : undefined;
+          yield {
+            type: 'result',
+            text,
+            ...(tokens ? { tokens } : {}),
+            latencyMs: Date.now() - startedAt,
+            provider: 'claude',
+            ...(model ? { model } : {}),
+          };
         } else if (message.type === 'system' && (message as { subtype?: string }).subtype === 'api_retry') {
           yield { type: 'error', message: 'API retry', retryable: true };
         } else if (message.type === 'system' && (message as { subtype?: string }).subtype === 'rate_limit_event') {
@@ -316,10 +394,37 @@ export class ClaudeProvider implements AgentProvider {
         } else if (message.type === 'system' && (message as { subtype?: string }).subtype === 'compact_boundary') {
           const meta = (message as { compact_metadata?: { pre_tokens?: number } }).compact_metadata;
           const detail = meta?.pre_tokens ? ` (${meta.pre_tokens.toLocaleString()} tokens compacted)` : '';
-          yield { type: 'result', text: `Context compacted${detail}.` };
+          yield { type: 'compacted', text: `Context compacted${detail}.` };
         } else if (message.type === 'system' && (message as { subtype?: string }).subtype === 'task_notification') {
           const tn = message as { summary?: string };
           yield { type: 'progress', message: tn.summary || 'Task notification' };
+        } else if (message.type === 'assistant' || message.type === 'user') {
+          // Scan the message's content array for tool_use / tool_result
+          // blocks and emit them as trace events. Skip plain text blocks —
+          // those collapse into the final `result` message anyway.
+          const content = (message as { message?: { content?: unknown[] } }).message?.content;
+          if (Array.isArray(content)) {
+            for (const block of content) {
+              if (!block || typeof block !== 'object') continue;
+              const b = block as { type?: string };
+              if (b.type === 'tool_use') {
+                const tu = block as { id?: string; name?: string; input?: unknown };
+                if (tu.id && tu.name) {
+                  yield { type: 'tool_use', toolUseId: tu.id, toolName: tu.name, input: tu.input };
+                }
+              } else if (b.type === 'tool_result') {
+                const tr = block as { tool_use_id?: string; content?: unknown; is_error?: boolean };
+                if (tr.tool_use_id) {
+                  yield {
+                    type: 'tool_result',
+                    toolUseId: tr.tool_use_id,
+                    content: tr.content,
+                    isError: tr.is_error,
+                  };
+                }
+              }
+            }
+          }
         }
       }
       log(`Query completed after ${messageCount} SDK messages`);

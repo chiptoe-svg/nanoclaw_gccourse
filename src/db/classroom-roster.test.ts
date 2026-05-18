@@ -5,6 +5,7 @@ import { runMigrations } from './migrations/index.js';
 import {
   listRoster,
   lookupRosterByEmail,
+  lookupRosterByUserId,
   removeRosterEntry,
   upsertRosterEntry,
 } from './classroom-roster.js';
@@ -50,5 +51,17 @@ describe('classroom_roster', () => {
     expect(removeRosterEntry('dan@school.edu')).toBe(true);
     expect(removeRosterEntry('dan@school.edu')).toBe(false);
     expect(lookupRosterByEmail('dan@school.edu')).toBeNull();
+  });
+
+  it('lookupRosterByUserId returns the entry for a known userId', () => {
+    upsertRosterEntry({ email: 'eve@school.edu', user_id: 'class:student_07', agent_group_id: 'ag_eve' });
+    const entry = lookupRosterByUserId('class:student_07');
+    expect(entry).not.toBeNull();
+    expect(entry!.email).toBe('eve@school.edu');
+    expect(entry!.agent_group_id).toBe('ag_eve');
+  });
+
+  it('lookupRosterByUserId returns null for an unknown userId', () => {
+    expect(lookupRosterByUserId('class:nobody')).toBeNull();
   });
 });

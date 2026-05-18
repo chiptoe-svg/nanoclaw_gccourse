@@ -22,8 +22,15 @@
 import crypto from 'crypto';
 import http from 'http';
 
-import { NANOCLAW_PUBLIC_URL, STUDENT_AUTH_BIND_HOST, STUDENT_AUTH_PORT } from './config.js';
+import { readEnvFile } from './env.js';
 import { log } from './log.js';
+
+const studentAuthEnv = readEnvFile(['NANOCLAW_PUBLIC_URL', 'STUDENT_AUTH_BIND_HOST']);
+const STUDENT_AUTH_PORT = parseInt(process.env.STUDENT_AUTH_PORT || '3003', 10);
+const STUDENT_AUTH_BIND_HOST: string =
+  process.env.STUDENT_AUTH_BIND_HOST || studentAuthEnv.STUDENT_AUTH_BIND_HOST || '0.0.0.0';
+const NANOCLAW_PUBLIC_URL: string =
+  process.env.NANOCLAW_PUBLIC_URL || studentAuthEnv.NANOCLAW_PUBLIC_URL || '';
 import { storeStudentAuth } from './student-auth.js';
 
 const TOKEN_TTL_MS = 30 * 60 * 1000;

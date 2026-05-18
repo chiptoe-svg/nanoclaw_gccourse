@@ -12,7 +12,7 @@
  *   other sessions or leaking per-session paths back to the host.
  *
  * Env passthrough is deliberately narrow:
- *   CODEX_MODEL — model override the runner reads to pick the codex model.
+ *   CODEX_MODEL — optional model override; unset lets Codex use its default.
  *
  * NOT passed through:
  *   OPENAI_API_KEY  — would override the credential-proxy `placeholder` and
