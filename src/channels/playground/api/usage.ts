@@ -19,6 +19,8 @@ import path from 'path';
 import Database from 'better-sqlite3';
 
 import { getAgentGroup, getAgentGroupByFolder } from '../../../db/agent-groups.js';
+import { lookupRosterByUserId } from '../../../db/classroom-roster.js';
+import { readClassConfig } from '../../../class-config.js';
 import { getActiveSessions } from '../../../db/sessions.js';
 import { type ModelEntry, getModelCatalog } from '../../../model-catalog.js';
 import { sessionsBaseDir } from '../../../session-manager.js';
@@ -170,21 +172,13 @@ export function handleGetUsage(folder: string, providers?: string[]): ApiResult<
  */
 export function handleGetStudentsUsage(
   providers?: string[],
-): ApiResult<{ students: (UsageResponse & { agentGroupId: string })[] }> {
-  // Walk sessions root → agent_group_ids that have data. Cross-check the
-  // sessions table for active groups + the agent_groups table for naming.
-  const baseDir = sessionsBaseDir();
-  const agentGroupIds = fs.existsSync(baseDir)
-    ? fs
-        .readdirSync(baseDir, { withFileTypes: true })
-        .filter((e) => e.isDirectory())
-        .map((e) => e.name)
-    : [];
-  // Distinct agent groups appearing in active sessions. Used to make sure we
-  // include rows even when no on-disk session dir survived past TTL.
-  for (const s of getActiveSessions()) {
-    if (!agentGroupIds.includes(s.agent_group_id)) agentGroupIds.push(s.agent_group_id);
-  }
+): ApiResult<{ students: (UsageResponse & { agentGroupId: string; enrolled: boolean })[] }> {
+  // Source of truth for "who's in the class" is class-config.json's
+  // students[] array. That gives us every student, including those who
+  // haven't signed in yet (zero-usage rows). Enrolled status comes from
+  // classroom_roster.enrolled_at (set on first sign-in via /login/enroll).
+  const classCfg = readClassConfig();
+  const rosterStudents = classCfg?.students ?? [];
 
   const allow = providers && providers.length > 0 ? new Set(providers) : null;
   function filterBucket(b: UsageBucket): UsageBucket {
@@ -199,25 +193,41 @@ export function handleGetStudentsUsage(
     };
   }
 
-  const students: (UsageResponse & { agentGroupId: string })[] = [];
-  for (const id of agentGroupIds) {
-    // Need a folder to filter on. Look it up via the agent_groups table.
-    // (Avoid importing getAgentGroup directly here to keep this file
-    // dependency-light; we'll fall back to a sessions-table join.)
-    const sessions = getActiveSessions().filter((s) => s.agent_group_id === id);
-    if (sessions.length === 0) continue;
-    // The session table doesn't expose folder; pull from agent_groups via
-    // an id lookup. (getAgentGroupByFolder isn't suitable here — we already
-    // have the id.) Static-import is safe; db/agent-groups.ts has no edge
-    // that loops back into usage.ts.
-    const group = getAgentGroup(id);
-    if (!group || !group.folder.startsWith('student_')) continue;
-    const usage = aggregateAgentUsage(id);
+  const emptyBucket = (): UsageBucket => ({
+    byModel: [],
+    tokensIn: 0,
+    tokensOut: 0,
+    tokensCached: 0,
+    costUsd: 0,
+  });
+
+  const students: (UsageResponse & { agentGroupId: string; enrolled: boolean })[] = [];
+  for (const cfgStudent of rosterStudents) {
+    const group = getAgentGroupByFolder(cfgStudent.folder);
+    const rosterRow = lookupRosterByUserId(`class:${cfgStudent.folder}`);
+    const enrolled = rosterRow ? rosterRow.enrolled_at != null : false;
+    if (!group) {
+      // Roster entry without a provisioned agent group — should be rare,
+      // means class-skeleton didn't finish provisioning this student.
+      // Render with zero-usage so the instructor sees the missing row.
+      students.push({
+        agentGroupId: '',
+        agentGroup: { id: '', folder: cfgStudent.folder, name: cfgStudent.name || cfgStudent.folder },
+        thisMonth: emptyBucket(),
+        total: emptyBucket(),
+        enrolled,
+      });
+      continue;
+    }
+    const usage = aggregateAgentUsage(group.id);
     students.push({
-      agentGroupId: id,
-      agentGroup: { id, folder: group.folder, name: group.name },
+      agentGroupId: group.id,
+      // Prefer class-config.json's name (the real one) over agent_groups.name
+      // in case the DB row is stale (older provisioning runs set name=folder).
+      agentGroup: { id: group.id, folder: group.folder, name: cfgStudent.name || group.name },
       thisMonth: filterBucket(usage.thisMonth),
       total: filterBucket(usage.total),
+      enrolled,
     });
   }
   students.sort((a, b) => a.agentGroup.folder.localeCompare(b.agentGroup.folder));

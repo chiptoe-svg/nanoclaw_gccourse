@@ -165,20 +165,22 @@ async function renderStudentsRosterCard(body) {
       .map(
         (s) => `
           <tr>
-            <td><code>${escapeHtml(s.agentGroup.folder)}</code></td>
+            <td>${s.enrolled ? '<span class="roster-enrolled" title="Has signed in">✅</span>' : '<span class="roster-not-enrolled" title="Not yet signed in">⚪</span>'}</td>
             <td>${escapeHtml(s.agentGroup.name || '?')}</td>
+            <td><code class="muted">${escapeHtml(s.agentGroup.folder)}</code></td>
             <td>${fmtUsd(s.thisMonth.costUsd)}</td>
             <td>${fmtUsd(s.total.costUsd)}</td>
             <td>${fmtTokens(s.total.tokensIn)} in · ${fmtTokens(s.total.tokensOut)} out</td>
           </tr>`,
       )
       .join('');
+    const enrolledCount = data.students.filter((s) => s.enrolled).length;
     body.innerHTML = `
       <table class="roster-table">
-        <thead><tr><th>Folder</th><th>Agent</th><th>This month</th><th>All-time</th><th>Tokens (lifetime)</th></tr></thead>
+        <thead><tr><th></th><th>Name</th><th>Folder</th><th>This month</th><th>All-time</th><th>Tokens (lifetime)</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
-      <p class="muted small">Cost computed from token counts × per-model rate. Refresh the page for updated numbers.</p>
+      <p class="muted small">${enrolledCount} of ${data.students.length} students have signed in. Cost computed from token counts × per-model rate.</p>
     `;
   } catch (err) {
     body.innerHTML = `<p class="muted">Couldn't load roster: ${escapeHtml(String(err))}</p>`;
