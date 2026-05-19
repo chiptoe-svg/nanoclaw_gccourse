@@ -618,6 +618,56 @@
   .gcard.accent { background: var(--brand-teal-soft); border-color: var(--brand-teal); }
   .gcard.accent h4 { color: var(--brand-teal-deep); }
 
+  /* ─── Concept list (classroom section) ──────────────────────────── */
+  .concepts { margin: 32px 0; padding: 0; }
+  .concept {
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    gap: 24px;
+    padding: 20px 0;
+    border-bottom: 1px dashed var(--border);
+  }
+  .concept:last-child { border-bottom: none; }
+  .concept-name {
+    font-family: "Fraunces", Georgia, serif;
+    font-size: 20px;
+    font-weight: 500;
+    color: var(--brand-navy);
+    font-variation-settings: "opsz" 30, "SOFT" 30;
+    line-height: 1.2;
+  }
+  .concept-name .subtle {
+    display: block;
+    font-family: "IBM Plex Sans", sans-serif;
+    font-size: 11px;
+    color: var(--text-faint);
+    font-weight: 400;
+    letter-spacing: 0.05em;
+    margin-top: 3px;
+  }
+  .concept-body {
+    font-size: 15px;
+    color: var(--text);
+    line-height: 1.55;
+  }
+  .concept-body strong { color: var(--brand-navy); }
+  .concept-loc {
+    display: inline-block;
+    margin-top: 8px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    color: var(--brand-teal-deep);
+    background: var(--brand-teal-soft);
+    padding: 3px 8px;
+    border-radius: 3px;
+  }
+  .concept-loc.future { color: var(--brand-orange); background: rgba(217, 119, 87, 0.08); }
+  @media (max-width: 720px) {
+    .concept { grid-template-columns: 1fr; gap: 6px; padding: 14px 0; }
+  }
+
   /* ─── Inline aside ───────────────────────────────────────────────── */
   .inline-aside {
     background: var(--surface-alt);
@@ -687,12 +737,12 @@
     </p>
     <nav class="toc" aria-label="Sections">
       <a href="#what">What it is</a>
-      <a href="#philosophy">Architecture</a>
+      <a href="#classroom">In the classroom</a>
       <a href="#today">The playground today</a>
       <a href="#tomorrow">Tabs coming next</a>
-      <a href="#classroom">Using it in a classroom</a>
+      <a href="#philosophy">Architecture</a>
       <a href="#timeline">Phase timeline</a>
-      <a href="#economics">Cost economics</a>
+      <a href="#economics">Cost in practice</a>
       <a href="#next">Open questions</a>
     </nav>
   </div>
@@ -729,71 +779,104 @@
   </div>
 </section>
 
-<!-- ─── PHILOSOPHY / ARCHITECTURE ──────────────────────────────────── -->
-<section id="philosophy">
+<!-- ─── IN THE CLASSROOM ───────────────────────────────────────────── -->
+<section id="classroom">
   <div class="container">
-    <p class="section-eyebrow">Section 02 — Architectural philosophy</p>
-    <h2>Small trunk. Skills install everything else.</h2>
+    <p class="section-eyebrow">Section 02 — In the classroom</p>
+    <h2>Built for teaching, organized around concepts.</h2>
     <p>
-      Every NanoClaw install gets the same trunk: a Node host that routes messages, a credential
-      proxy that keeps real keys out of containers, a per-session container runtime, an entity
-      model that ties users to messaging groups to agent groups to sessions. <strong>Trunk is
-      infrastructure every install needs.</strong> Anything optional — channels, providers,
-      classroom features, Google Workspace integration — lives on a long-lived branch and gets
-      copied in by an install skill.
+      Every tab in NanoClaw Classroom maps to something specific being taught. The design works
+      backward from a teacher's intent — "today we're covering retrieval strategy" — to the
+      surface that lets a student experience it. Each concept below has a clear home in the
+      tool.
     </p>
 
-    <div class="arch-stack">
-      <div class="arch-axis"><span class="arch-axis-label">platform · agent · ui</span></div>
-      <div class="arch-layers">
-        <div class="arch-layer trunk">
-          <div class="arch-layer-name">Channel adapters</div>
-          <div class="arch-layer-desc">Telegram, playground (web), Discord, Slack, WhatsApp, iMessage, Teams, Resend, Matrix, gChat, GitHub, Linear, Webex, Signal, DeltaChat, WeChat. Each is a skill install.</div>
-          <div class="arch-layer-badge">trunk + skills</div>
-        </div>
-        <div class="arch-layer trunk">
-          <div class="arch-layer-name">Router · entity model</div>
-          <div class="arch-layer-desc">Users → messaging groups → agent groups → sessions. Per-channel adapters land messages here. <code>&lt;message to=&quot;name&quot;&gt;</code> routes across agent groups.</div>
-          <div class="arch-layer-badge">trunk</div>
-        </div>
-        <div class="arch-layer trunk">
-          <div class="arch-layer-name">Credential proxy</div>
-          <div class="arch-layer-desc">Real keys live on host. Containers send placeholder credentials; proxy substitutes per-request. Multi-provider: Anthropic, OpenAI, Google Workspace, local MLX.</div>
-          <div class="arch-layer-badge">trunk</div>
-        </div>
-        <div class="arch-layer trunk">
-          <div class="arch-layer-name">Per-session container</div>
-          <div class="arch-layer-desc">Apple Container (or Docker). Two-DB session split: <code>inbound.db</code> + <code>outbound.db</code>. One agent-runner instance per student session.</div>
-          <div class="arch-layer-badge">trunk</div>
-        </div>
-        <div class="arch-layer trunk">
-          <div class="arch-layer-name">Agent providers</div>
-          <div class="arch-layer-desc">Claude Agent SDK · Codex app-server · OpenCode · Ollama · local MLX. Vendor SDK boundary lives here; the upper layers don't care which provider is active.</div>
-          <div class="arch-layer-badge">trunk + branches</div>
-        </div>
-        <div class="arch-layer skills">
-          <div class="arch-layer-name">Classroom features</div>
-          <div class="arch-layer-desc">Roster, login passcode, magic-link enrollment, per-student Google folders, per-student LLM auth, instructor home dashboard. <code>/add-classroom</code>, <code>/add-classroom-gws</code>, <code>/add-classroom-provider-auth</code>.</div>
-          <div class="arch-layer-badge">skill installs</div>
-        </div>
-        <div class="arch-layer skills">
-          <div class="arch-layer-name">Workspace integrations</div>
-          <div class="arch-layer-desc">Google Drive Docs / Sheets / Slides / Calendar / Gmail via MCP relay. Bedrock-style ownership tag for shared-classroom mode. <code>/add-gws-tool</code>.</div>
-          <div class="arch-layer-badge">skill installs</div>
-        </div>
-        <div class="arch-layer skills">
-          <div class="arch-layer-name">Admin tooling</div>
-          <div class="arch-layer-desc">Telegram-driven <code>/auth</code>, <code>/model</code>, <code>/provider</code> for live operator switching. Status bar, dashboard, install handoff.</div>
-          <div class="arch-layer-badge">skill installs</div>
-        </div>
+    <dl class="concepts">
+      <div class="concept">
+        <dt class="concept-name">LLM vs agent<span class="subtle">the conceptual pivot</span></dt>
+        <dd class="concept-body">
+          Run the same prompt through direct mode (raw model) and agent mode (configured persona,
+          skills, models). The trace panel surfaces what the agent <em>adds</em> — tool calls,
+          memory, intermediate steps — so the difference between asking a chatbot and running an
+          agent is visible, not abstract.
+          <span class="concept-loc">Chat tab</span>
+        </dd>
       </div>
-    </div>
+      <div class="concept">
+        <dt class="concept-name">Persona<span class="subtle">shaping how an agent thinks</span></dt>
+        <dd class="concept-body">
+          Edit Layer 3 of the agent's instructions and feel the difference in the next turn.
+          Global → role → per-agent layers are visible side by side so students see exactly what
+          they're changing and what's inherited.
+          <span class="concept-loc">Persona tab</span>
+        </dd>
+      </div>
+      <div class="concept">
+        <dt class="concept-name">Skills<span class="subtle">what the agent knows how to do</span></dt>
+        <dd class="concept-body">
+          Toggle capabilities on and off and re-run the same task. Skills are <code>SKILL.md</code>
+          files the agent reads on demand; turning one on changes what the agent knows is
+          available, not what it can technically execute.
+          <span class="concept-loc">Skills tab</span>
+        </dd>
+      </div>
+      <div class="concept">
+        <dt class="concept-name">Tool wiring<span class="subtle">real APIs, real outputs</span></dt>
+        <dd class="concept-body">
+          Google Workspace (Docs / Sheets / Slides), web fetch, email, Telegram — wired through
+          install skills at the platform level. Students don't install them, but they run real
+          tasks against real Drive folders and watch the agent call tools live in the trace
+          panel.
+          <span class="concept-loc">Install layer · visible in Chat trace</span>
+        </dd>
+      </div>
+      <div class="concept">
+        <dt class="concept-name">Knowledge retrieval<span class="subtle">what an agent knows beyond its training</span></dt>
+        <dd class="concept-body">
+          Build pipelines — chunk → embed → retrieve → rerank — and run them against shared
+          documents. Compare strategies on the same query and see where each one breaks.
+          <span class="concept-loc future">RAG tab · forthcoming</span>
+        </dd>
+      </div>
+      <div class="concept">
+        <dt class="concept-name">Evaluation<span class="subtle">measuring strategies against each other</span></dt>
+        <dd class="concept-body">
+          Two strategies side by side on a shared question set. LLM-as-judge scoring plus
+          human-spot-check; cost-normalized so quality-per-dollar settles out across runs.
+          <span class="concept-loc future">Eval tab · forthcoming</span>
+        </dd>
+      </div>
+      <div class="concept">
+        <dt class="concept-name">Take it home<span class="subtle">portable agents</span></dt>
+        <dd class="concept-body">
+          Export the tuned agent in one of four formats. The walkaway script stands it up on
+          the participant's own infrastructure — persona, skills, and connections move off the
+          classroom server cleanly.
+          <span class="concept-loc future">Export + walkaway · Phase 4</span>
+        </dd>
+      </div>
+      <div class="concept">
+        <dt class="concept-name">Cost monitoring<span class="subtle">instructor view</span></dt>
+        <dd class="concept-body">
+          Real-time per-student cost, model selection, enrollment status. The whole room visible
+          at a glance, so an instructor catches a runaway thread or a provider going sideways
+          before it disrupts class.
+          <span class="concept-loc">Home tab</span>
+        </dd>
+      </div>
+    </dl>
 
+    <h3>Why this works in practice</h3>
     <p>
-      The dashed-border layers can be added or removed without trunk modification. The teal-border
-      layers can't — they're load-bearing for every install. The contract between the two: skills
-      may append to trunk barrels and call trunk-registered hooks, but trunk doesn't know skills
-      exist. Net effect: the same trunk runs a one-person agent and a classroom of thirty.
+      A few practical things matter when you're teaching with this. The whole install is
+      self-contained — one bootstrap script on a fresh machine, no IT department in the loop,
+      no cloud provisioning, no waiting on institutional accounts. A new course or section can
+      be stood up in about an hour. Once it's running, students get going with a single email
+      containing their playground URL plus the class passcode the instructor displays. Email
+      magic-link and Telegram (for instructor admin) are wired through the same install — no
+      per-student configuration. And because every session runs in its own container, students
+      can break things in their own sandbox without affecting the room; an instructor recovers
+      by killing one session, not by rebooting the install.
     </p>
   </div>
 </section>
@@ -1266,44 +1349,71 @@
   </div>
 </section>
 
-<!-- ─── USING IT IN A CLASSROOM ────────────────────────────────────── -->
-<section id="classroom">
+<!-- ─── PHILOSOPHY / ARCHITECTURE ──────────────────────────────────── -->
+<section id="philosophy">
   <div class="container">
-    <p class="section-eyebrow">Section 05 — Using NanoClaw in a classroom</p>
-    <h2>Each concept lands in a tab.</h2>
+    <p class="section-eyebrow">Section 05 — Architectural philosophy</p>
+    <h2>Small trunk. Skills install everything else.</h2>
     <p>
-      Each concept that comes up in teaching maps to a piece of the playground. The
-      <strong>LLM-vs-agent distinction</strong> is taught by running the <em>same prompt</em>
-      through both modes in the Chat tab — direct mode hits the raw model, agent mode goes
-      through the configured Persona, Skills, and Models — and participants watch the trace
-      panel side-by-side to see what an agent <em>adds</em>. <strong>Persona</strong> is taught
-      in the Persona tab: participants edit Layer 3 of their own agent's instructions and
-      immediately feel the difference. <strong>Skills</strong> are taught in the Skills tab by
-      toggling capabilities on and off and re-running the same task. <strong>Tool wiring</strong>
-      (Google Workspace, Resend, web fetch) lands through the <code>/add-gws-tool</code> and
-      channel-install skills — students don't install them, but they see what's available and
-      run tasks against real Drive folders.
+      Every NanoClaw install gets the same trunk: a Node host that routes messages, a credential
+      proxy that keeps real keys out of containers, a per-session container runtime, an entity
+      model that ties users to messaging groups to agent groups to sessions. <strong>Trunk is
+      infrastructure every install needs.</strong> Anything optional — channels, providers,
+      classroom features, Google Workspace integration — lives on a long-lived branch and gets
+      copied in by an install skill.
     </p>
+
+    <div class="arch-stack">
+      <div class="arch-axis"><span class="arch-axis-label">platform · agent · ui</span></div>
+      <div class="arch-layers">
+        <div class="arch-layer trunk">
+          <div class="arch-layer-name">Channel adapters</div>
+          <div class="arch-layer-desc">Telegram, playground (web), Discord, Slack, WhatsApp, iMessage, Teams, Resend, Matrix, gChat, GitHub, Linear, Webex, Signal, DeltaChat, WeChat. Each is a skill install.</div>
+          <div class="arch-layer-badge">trunk + skills</div>
+        </div>
+        <div class="arch-layer trunk">
+          <div class="arch-layer-name">Router · entity model</div>
+          <div class="arch-layer-desc">Users → messaging groups → agent groups → sessions. Per-channel adapters land messages here. <code>&lt;message to=&quot;name&quot;&gt;</code> routes across agent groups.</div>
+          <div class="arch-layer-badge">trunk</div>
+        </div>
+        <div class="arch-layer trunk">
+          <div class="arch-layer-name">Credential proxy</div>
+          <div class="arch-layer-desc">Real keys live on host. Containers send placeholder credentials; proxy substitutes per-request. Multi-provider: Anthropic, OpenAI, Google Workspace, local MLX.</div>
+          <div class="arch-layer-badge">trunk</div>
+        </div>
+        <div class="arch-layer trunk">
+          <div class="arch-layer-name">Per-session container</div>
+          <div class="arch-layer-desc">Apple Container (or Docker). Two-DB session split: <code>inbound.db</code> + <code>outbound.db</code>. One agent-runner instance per student session.</div>
+          <div class="arch-layer-badge">trunk</div>
+        </div>
+        <div class="arch-layer trunk">
+          <div class="arch-layer-name">Agent providers</div>
+          <div class="arch-layer-desc">Claude Agent SDK · Codex app-server · OpenCode · Ollama · local MLX. Vendor SDK boundary lives here; the upper layers don't care which provider is active.</div>
+          <div class="arch-layer-badge">trunk + branches</div>
+        </div>
+        <div class="arch-layer skills">
+          <div class="arch-layer-name">Classroom features</div>
+          <div class="arch-layer-desc">Roster, login passcode, magic-link enrollment, per-student Google folders, per-student LLM auth, instructor home dashboard. <code>/add-classroom</code>, <code>/add-classroom-gws</code>, <code>/add-classroom-provider-auth</code>.</div>
+          <div class="arch-layer-badge">skill installs</div>
+        </div>
+        <div class="arch-layer skills">
+          <div class="arch-layer-name">Workspace integrations</div>
+          <div class="arch-layer-desc">Google Drive Docs / Sheets / Slides / Calendar / Gmail via MCP relay. Bedrock-style ownership tag for shared-classroom mode. <code>/add-gws-tool</code>.</div>
+          <div class="arch-layer-badge">skill installs</div>
+        </div>
+        <div class="arch-layer skills">
+          <div class="arch-layer-name">Admin tooling</div>
+          <div class="arch-layer-desc">Telegram-driven <code>/auth</code>, <code>/model</code>, <code>/provider</code> for live operator switching. Status bar, dashboard, install handoff.</div>
+          <div class="arch-layer-badge">skill installs</div>
+        </div>
+      </div>
+    </div>
+
     <p>
-      <strong>Knowledge retrieval</strong> lives in the RAG tab (forthcoming) — participants
-      build pipelines (chunk → embed → retrieve → rerank) and run them against shared
-      documents. <strong>Evaluation</strong> lands in the Eval tab (forthcoming): two strategies
-      side-by-side, quality-per-dollar settling out across a question set. <strong>Take it
-      home</strong> uses Export + the Phase 4 walkaway script to stand up the tuned agent on
-      infrastructure the participant owns. Throughout, the instructor's Home tab is showing
-      roster, per-student costs, and live activity — the room visible at a glance.
-    </p>
-    <h3>Why this works for teaching</h3>
-    <p>
-      A few practical things matter when you're teaching with this. The whole install is
-      self-contained — one bootstrap script on a fresh machine, no IT department in the loop,
-      no cloud provisioning, no waiting on institutional accounts. A new course or section can
-      be stood up in about an hour. Once it's running, students get going with a single email
-      containing their playground URL plus the class passcode the instructor displays. Email
-      magic-link and Telegram (for instructor admin) are wired through the same install — no
-      per-student configuration. And because every session runs in its own container, students
-      can break things in their own sandbox without affecting the room; an instructor recovers
-      by killing one session, not by rebooting the install.
+      The dashed-border layers can be added or removed without trunk modification. The teal-border
+      layers can't — they're load-bearing for every install. The contract between the two: skills
+      may append to trunk barrels and call trunk-registered hooks, but trunk doesn't know skills
+      exist. Net effect: the same trunk runs a one-person agent and a classroom of thirty.
     </p>
   </div>
 </section>
