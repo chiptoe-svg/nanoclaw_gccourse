@@ -253,6 +253,87 @@ each near-100% fresh prefix, the caching-mismatch hypothesis holds.
 The bench plan should not commit to specific optimizations until B5
 has produced wire-level evidence.
 
+## Findings from the pre-bench exploration (2026-05-18)
+
+Before the suite was even built, the act of diagnosing the
+"$1.10 yolo" surfaced three things that re-shape what the
+benchmark is actually measuring:
+
+1. **The "$1.10 yolo" was a trace-UI artifact, not a per-turn cost.**
+   Codex's `tokenUsage.total` is cumulative since the *thread* started,
+   not the current turn. Our `agent_call` event surfaced it as
+   "agent call: 364653 in" which looked like a single turn's bill but
+   was actually 30+ prior turns aggregated. The trace footer
+   compounded the misread by labeling it "turn total." Fixed in
+   `3471608` (turn total now sums model_call deltas; thread cumulative
+   shown as a separate footer line).
+
+2. **Codex on 0.131 with `effort: low` makes ~1 OpenAI API call per
+   simple turn, not 6–10.** The "multiple internal calls per turn"
+   narrative was wrong. Per-turn cost on a fresh thread: ~$0.005 once
+   the cache warms up (turn 2+). The cost we *were* seeing was
+   accumulated history × growing thread → cumulative `total` that
+   inflated alarmingly but represented many turns' worth of spend, not
+   one. This means Path A (custom OpenAI loop) and Path B
+   (`@openai/agents-js`) are not needed for cost reasons. **Path C
+   (codex flag tuning) is the right place**, and most of the win is
+   already booked from `effort: low` alone.
+
+3. **Anthropic's three-tier input pricing was zero-counted in our UI.**
+   `cache_creation_input_tokens` (1.25× full input) and
+   `cache_read_input_tokens` (0.10× full input) were dropped at the
+   provider-SDK boundary. For a long classroom thread with ~80% cache
+   read fraction, the claude cost was being under-stated by ~25%.
+   Fixed in `397abf8` (cache tokens captured in the claude provider,
+   plumbed through `ProviderEvent.tokens` → `content` JSON →
+   `ChannelDeliveryMeta` → playground trace; `computeAgentCallCost`
+   now applies Anthropic's 1.25× / 0.10× and OpenAI's 0.50× rates
+   based on which cache field is populated).
+
+**Implication for B1–B5:** the bench plan still stands, but the
+gating question we wanted it to answer ("is codex structurally
+expensive, do we need Path A/B?") is answered without it: codex is
+fine, the UI was misleading us. The bench's value now is
+*comparative* (which model for which task) and *regression detection*
+(future codex version doesn't suddenly bloat), not architectural
+decision support.
+
+## Discovered codex knobs (post-0.131 upgrade)
+
+Surfaced from <https://developers.openai.com/codex/app-server>
+while researching Path C. None of these were on our radar before
+2026-05-18; document so the bench can A/B them in B6+.
+
+- **`effort` on `turn/start`** (`low`/`medium`/`high`). Now wired,
+  defaulting to `low`. Cuts reasoning output tokens dramatically.
+  Per-group override via `container.json.codexEffort`.
+- **`summary` on `turn/start`** — controls conversation-history
+  summarization strategy. Accepted values not yet characterized;
+  worth digging in codex source for the enum.
+- **`thread/compact/start`** JSON-RPC method — manual compaction
+  trigger. Could fire from the host after `tokenUsage.total` crosses
+  a threshold to bound thread growth. (C3 task — deferred.)
+- **`thread/rollback`** — drop the last N turns from in-memory
+  context. Direct attack on "tool outputs live in context forever."
+- **`thread/inject_items`** — append raw Responses API items to
+  thread history without starting a user turn. Hypothetical lever
+  for pre-stamping curated context that codex won't re-summarize.
+- **`dynamicTools` on `turn/start`** (experimental) — pass MCP tool
+  definitions per turn rather than thread-wide. We'd only use it
+  when the tool set actually changes per turn; using it carelessly
+  *breaks* cache stability across turns. (C2 task — deferred.)
+- **`excludeTurns` on `thread/resume`** (experimental, added 0.125)
+  — selectively drop big-tool-output turns when resuming a thread.
+  Direct knob for the "web-scrape lives forever" problem.
+- **`service_tier`** in 0.131 session protocol — `default` / `flex`
+  / `priority`. Affects latency and possibly caching. On apikey mode
+  codex deliberately strips service_tier on compact requests
+  (0.130 #21676); preserving it requires ChatGPT subscription auth.
+
+The C2 and C3 tasks were on the cost-crisis path. With the
+crisis resolved, they become bench experiments rather than urgent
+fixes — useful for finding additional headroom but not load-bearing.
+
 ## Why this matters now
 
 The 2026-05-18 cost spike (one "yolo" message billed at $1.10
