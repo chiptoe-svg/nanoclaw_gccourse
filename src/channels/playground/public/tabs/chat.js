@@ -487,13 +487,30 @@ function finalizeTurn(turnEl) {
   if (!turnEl) return;
   const foot = turnEl.querySelector('.trace-turn-foot');
   if (!foot) return;
+  // model_call entries are PER-CALL deltas; agent_call (when present) is the
+  // turn CUMULATIVE total (codex's tokenUsage.total). Summing both
+  // double-counts the deltas — they're already included in the total.
+  // Preferred source of truth: agent_call if present, else sum of model_calls.
+  const agentCall = turnEl.querySelector('.trace-agent-call');
   let tokensIn = 0, tokensOut = 0, tokensCached = 0, tokensReasoning = 0, cost = 0;
-  for (const li of turnEl.querySelectorAll('[data-tokens-in], [data-tokens-out], [data-cost]')) {
-    tokensIn       += parseFloat(li.dataset.tokensIn       || '0') || 0;
-    tokensOut      += parseFloat(li.dataset.tokensOut      || '0') || 0;
-    tokensCached   += parseFloat(li.dataset.tokensCached   || '0') || 0;
-    tokensReasoning += parseFloat(li.dataset.tokensReasoning || '0') || 0;
-    cost           += parseFloat(li.dataset.cost           || '0') || 0;
+  if (agentCall) {
+    tokensIn  = parseFloat(agentCall.dataset.tokensIn  || '0') || 0;
+    tokensOut = parseFloat(agentCall.dataset.tokensOut || '0') || 0;
+    cost      = parseFloat(agentCall.dataset.cost      || '0') || 0;
+    // agent_call doesn't carry cached/reasoning today (codex result event
+    // only forwards input+output); pull those from sibling model_calls.
+    for (const li of turnEl.querySelectorAll('.trace-model-call')) {
+      tokensCached    += parseFloat(li.dataset.tokensCached    || '0') || 0;
+      tokensReasoning += parseFloat(li.dataset.tokensReasoning || '0') || 0;
+    }
+  } else {
+    for (const li of turnEl.querySelectorAll('[data-tokens-in], [data-tokens-out], [data-cost]')) {
+      tokensIn       += parseFloat(li.dataset.tokensIn       || '0') || 0;
+      tokensOut      += parseFloat(li.dataset.tokensOut      || '0') || 0;
+      tokensCached   += parseFloat(li.dataset.tokensCached   || '0') || 0;
+      tokensReasoning += parseFloat(li.dataset.tokensReasoning || '0') || 0;
+      cost           += parseFloat(li.dataset.cost           || '0') || 0;
+    }
   }
   if (tokensIn === 0 && tokensOut === 0 && cost === 0) {
     foot.textContent = '(no usage)';

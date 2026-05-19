@@ -27,6 +27,7 @@ import { getDb } from './db/connection.js';
 import { getAgentGroupByFolder } from './db/agent-groups.js';
 import { getActiveSessions } from './db/sessions.js';
 import { getModelCatalog } from './model-catalog.js';
+import { isContainerRunning, killContainer } from './container-runner.js';
 
 // Read at call time, not import time, so tests can flip TEST_GROUPS_DIR
 // between cases without resetting modules. Production code never sets the
@@ -136,13 +137,6 @@ export function setProvider(folder: string, provider: string): SetProviderResult
   let containersStopped = 0;
   for (const session of getActiveSessions().filter((s) => s.agent_group_id === group.id)) {
     try {
-      // Lazy import — avoids pulling docker-runner code into test environments
-      // that exercise setProvider via DB-only paths.
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { isContainerRunning, killContainer } = require('./container-runner.js') as {
-        isContainerRunning: (id: string) => boolean;
-        killContainer: (id: string, reason: string) => void;
-      };
       if (isContainerRunning(session.id)) {
         killContainer(session.id, 'provider change');
         containersStopped += 1;
