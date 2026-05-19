@@ -152,13 +152,15 @@ Bench script starts/stops it.
 
 | Phase | Scope | Estimate |
 |---|---|---|
+| **B0 (prereq, must land first).** | Fix token-accounting on both providers so benchmark cost numbers are comparable. Three sub-fixes: (a) `container/agent-runner/src/providers/claude.ts:374` — widen the `usage` type cast to include `cache_creation_input_tokens` and `cache_read_input_tokens`; (b) extend the `ProviderEvent.tokens` shape with `cacheCreation` and `cacheRead` fields and forward both providers' values through the `result` event (codex already captures `tot.cachedInputTokens` locally — just plumb it); (c) update `computeAgentCallCost` in `chat.js` to apply Anthropic's cache-write (1.25×) and cache-read (0.1×) rates from the catalog, retire the chat.js sibling-walk-for-cached hack from today's `finalizeTurn` fix. **Gate:** rerun the same 5-message claude thread and same codex thread; verify cost moves to within ±2% of provider-reported billing. | 1.5 hr |
 | **B1.** | `bench.ts` skeleton, `benchmarks.db` schema, the 5 requests as data, single-system runner against `claude / claude-sonnet-4-6` only, trace capture + DB writes. Produces a single-system report. **Gate:** numbers match what we see in the live playground for the same requests. | 2 hr |
 | **B2.** | Programmatic-gate functions per request, claude-haiku-judge integration for quality rubric. Spot-check first 10 outputs by hand. | 1 hr |
 | **B3.** | Multi-system matrix runner (system-under-test as config), report renderer (markdown table: system × metric × request). | 1 hr |
 | **B4.** | Run the full matrix against codex variants + local variants. Capture forensic events. **First real diagnostic dataset for the codex cost-gap.** | 1 hr setup + run-time |
-| **B5 (optional, deferred).** | Add harness-config dimensions (with/without skills, with/without reasoning, with/without continuation pruning) so we can isolate which knobs matter most for the gap. | 2 hr |
+| **B5.** | Context-window observability — `src/credential-proxy.ts` gains a debug flag (`PROXY_LOG_PAYLOADS=1`) that logs per-request upstream-body size and, when full-dump is enabled, the redacted payload itself to `logs/proxy-payloads.jsonl`. Partitioned by route (anthropic / openai / omlx). One row per upstream API call so we can see exactly what each harness sent. Used to answer: "claude turn 7 of a long thread — what bytes went up the wire? Were the cache breakpoints honored?" Off by default; bench script flips it on for the runs we want to forensically dissect. | 1 hr |
+| **B6 (optional, deferred).** | Add harness-config dimensions (with/without skills, with/without reasoning, with/without continuation pruning) so we can isolate which knobs matter most for the gap. | 2 hr |
 
-Total to land B1–B4 (the useful data point): **~5 hr** of focused work.
+Total to land B0–B5 (the useful + observable data point): **~7.5 hr** of focused work.
 
 ## Open decisions (resolve before starting)
 
@@ -206,6 +208,50 @@ The suite is "done enough to act on" when:
   llamaindex agents, etc.). Same instrumentation could compare them
   but we don't deploy them — out of scope.
 - **Student-facing eval UI.** That's Phase 2 #9.
+
+## Why claude looks so much smaller — what to confirm with B5
+
+Working hypothesis going in (to test with the observability tooling):
+
+- **Claude Agent SDK keeps the full conversation** between calls. It's
+  not throwing history away. The session UUID we store as
+  `continuation:claude` resumes the same on-disk transcript at
+  `~/.claude/projects/<…>/` and the SDK loads it.
+- **It marks aggressive cache breakpoints** — `cache_control` on the
+  system prompt + on tool definitions + on the first user turn so the
+  large prefix is served from Anthropic's 5-min cache at 0.1× rate
+  after the first call. The 5-min TTL plays well with the
+  single-call-per-turn pattern: a follow-up within the cache window
+  pays ~10% of the prefix.
+- **One Anthropic API call per user turn** — even when tool use
+  happens, the SDK streams a single `query()` whose internal
+  message-pump round-trips tool_use/tool_result blocks within one
+  conversation that the model continues to elaborate. That single
+  call gets cached well.
+- **Auto-compaction is reactive, not proactive.** Claude lets the
+  conversation grow until it nears the context window and only then
+  emits a `compact_boundary` event (which our claude.ts already
+  forwards as `compacted`). So the small per-turn cost isn't from
+  pruning — it's from caching most of the prefix and only billing
+  the new turn at full rate.
+
+Codex by contrast:
+- Maintains its own session transcript in `~/.codex/sessions/`
+- Makes 6–10 internal OpenAI calls per user turn (plan, decide-tool,
+  reflect, etc.)
+- Each call's payload mutates (plan state, scratchpad) so OpenAI's
+  automatic prefix caching invalidates between sub-calls
+- Tool definitions are bigger (codex's own `apply_patch` / `shell` /
+  `update_plan` schemas plus our MCP tools) and reset prefix more
+  often
+
+B5 (the proxy payload logger) is how we confirm vs. falsify this. If
+claude's wire payloads on a long thread are mostly being marked
+`cache_control` and most input shows up as `cache_read_input_tokens`,
+hypothesis holds. If codex's wire payloads on the same thread are
+each near-100% fresh prefix, the caching-mismatch hypothesis holds.
+The bench plan should not commit to specific optimizations until B5
+has produced wire-level evidence.
 
 ## Why this matters now
 
