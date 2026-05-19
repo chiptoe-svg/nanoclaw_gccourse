@@ -831,6 +831,17 @@
         </dd>
       </div>
       <div class="concept">
+        <dt class="concept-name">Agent harness<span class="subtle">memory, context, reasoning</span></dt>
+        <dd class="concept-body">
+          What an agent <em>remembers</em>, how much it can hold in mind at once, and when it
+          decides to summarize. Three memory tiers (session, persistent
+          <code>CLAUDE.local.md</code>, wiki), a live context-window utilization bar, the
+          compaction trigger, and the reasoning-effort knob — all visible and adjustable. The
+          "why did my agent forget?" lesson lives here.
+          <span class="concept-loc future">Harness tab · forthcoming</span>
+        </dd>
+      </div>
+      <div class="concept">
         <dt class="concept-name">Knowledge retrieval<span class="subtle">what an agent knows beyond its training</span></dt>
         <dd class="concept-body">
           Build pipelines — chunk → embed → retrieve → rerank — and run them against shared
@@ -1103,13 +1114,15 @@
 <section id="tomorrow">
   <div class="container">
     <p class="section-eyebrow">Section 04 — Tabs forthcoming</p>
-    <h2>Three new tabs — Bench, RAG, Eval.</h2>
+    <h2>Four new tabs — Bench, Harness, Knowledge, Eval.</h2>
     <p>
       The shipped tabs cover authoring and operating one agent at a time. The forthcoming tabs
-      add the things that matter when you're comparing across agents: measurement, retrieval
-      strategy, and side-by-side evaluation. Below are schematic mockups drawn before
-      implementation, to settle the visual language and the user's mental model before any
-      code lands.
+      add the four things that matter when you're teaching what's <em>inside</em> agents and
+      comparing across them: <strong>Bench</strong> measures cost and quality across systems,
+      <strong>Harness</strong> exposes the agent's memory and context window, <strong>Knowledge</strong>
+      is where retrieval pipelines and expert assistants get built, and <strong>Eval</strong>
+      compares strategies side by side. Below are schematic mockups drawn before implementation,
+      to settle the visual language and the user's mental model before any code lands.
     </p>
 
     <div class="tab-gallery">
@@ -1133,7 +1146,8 @@
             <span class="mk-tab">Chat</span>
             <span class="mk-tab">Models</span>
             <span class="mk-tab active">Bench</span>
-            <span class="mk-tab">RAG</span>
+            <span class="mk-tab">Harness</span>
+            <span class="mk-tab">Know.</span>
             <span class="mk-tab">Eval</span>
           </div>
           <div class="mk-body">
@@ -1220,15 +1234,17 @@
         </div>
       </div>
 
-      <!-- RAG -->
+      <!-- HARNESS -->
       <div class="tab-card coming">
         <div class="tab-meta">
-          <span class="tab-name">RAG</span>
+          <span class="tab-name">Harness</span>
           <span class="tab-tag future">○ Phase 4 · planned</span>
         </div>
         <p class="tab-summary">
-          Author RAG strategies as pipelines. Drag-arrange retrieval steps, embedding models,
-          rerankers, prompt templates. Save as named strategies; share between students.
+          The agent's internals made visible. Three memory tiers, a live context-window
+          utilization bar, the compaction trigger, the reasoning-effort knob, tool-execution
+          mode. The tab where "why did my agent forget?" and "why is it suddenly slow?"
+          get answered.
         </p>
         <div class="tab-mockup">
           <div class="mk-topbar">
@@ -1236,7 +1252,68 @@
             <span class="mk-tab">Chat</span>
             <span class="mk-tab">Models</span>
             <span class="mk-tab">Bench</span>
-            <span class="mk-tab active">RAG</span>
+            <span class="mk-tab active">Harness</span>
+            <span class="mk-tab">Know.</span>
+            <span class="mk-tab">Eval</span>
+          </div>
+          <div class="mk-body">
+            <div class="mk-card">
+              <div class="mk-card-head">Memory · three tiers</div>
+              <div class="mk-row"><span class="mk-row-name">Session</span><span class="mk-row-value">cleared on container exit</span></div>
+              <div class="mk-row"><span class="mk-row-name">Persistent · <code style="font-size:0.85em;">CLAUDE.local.md</code></span><span class="mk-row-value">412 lines · 9.2 KB</span></div>
+              <div class="mk-row"><span class="mk-row-name">Wiki</span><span class="mk-row-value">14 entries · 38 KB</span></div>
+            </div>
+            <div class="mk-card">
+              <div class="mk-card-head">Context window · live</div>
+              <div style="display:flex; align-items:center; gap:6px; margin:6px 0 4px;">
+                <div style="flex:1; height:14px; background:var(--bg); border-radius:3px; overflow:hidden;">
+                  <div style="width:24%; height:100%; background:var(--brand-blue);"></div>
+                </div>
+                <span style="font-family:'IBM Plex Mono',monospace; font-size:9px; color:var(--text);">47.4k / 200k</span>
+              </div>
+              <div class="mk-row"><span class="mk-row-name">Cache hit</span><span class="mk-row-value" style="color:var(--brand-teal-deep);">38,200 · 81%</span></div>
+              <div class="mk-row"><span class="mk-row-name">Fresh input</span><span class="mk-row-value">9,232</span></div>
+              <div class="mk-row"><span class="mk-row-name">Compact trigger</span><span class="mk-row-value">160k · auto</span></div>
+            </div>
+            <div class="mk-card">
+              <div class="mk-card-head">Reasoning effort</div>
+              <div style="display:flex; gap:6px; margin-top:6px;">
+                <span class="mk-chip on">low</span>
+                <span class="mk-chip">medium</span>
+                <span class="mk-chip">high</span>
+              </div>
+              <div style="font-size:9px; color:var(--text-muted); margin-top:6px; font-family:'IBM Plex Mono',monospace;">12 reasoning tok last turn · ~150 saved vs medium</div>
+            </div>
+            <div class="mk-card">
+              <div class="mk-card-head">Tool execution</div>
+              <div class="mk-row"><span class="mk-row-name">Mode</span><span class="mk-row-value">parallel · 4 max</span></div>
+              <div class="mk-row"><span class="mk-row-name">Pending</span><span class="mk-row-value">0</span></div>
+              <div class="mk-row"><span class="mk-row-name">Approval</span><span class="mk-row-value">never · sandboxed</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- KNOWLEDGE / RAG / EXPERT ASSISTANT -->
+      <div class="tab-card coming">
+        <div class="tab-meta">
+          <span class="tab-name">Knowledge</span>
+          <span class="tab-tag future">○ Phase 4 · planned</span>
+        </div>
+        <p class="tab-summary">
+          Where RAG strategies and expert assistants get built. Author retrieval pipelines —
+          chunk, embed, retrieve, rerank — save them as named strategies, and query them
+          through Chat to turn the assembled corpus into a subject-matter expert students can
+          interrogate.
+        </p>
+        <div class="tab-mockup">
+          <div class="mk-topbar">
+            <span class="mk-tab">Home</span>
+            <span class="mk-tab">Chat</span>
+            <span class="mk-tab">Models</span>
+            <span class="mk-tab">Bench</span>
+            <span class="mk-tab">Harness</span>
+            <span class="mk-tab active">Know.</span>
             <span class="mk-tab">Eval</span>
           </div>
           <div class="mk-body">
@@ -1297,7 +1374,8 @@
             <span class="mk-tab">Chat</span>
             <span class="mk-tab">Models</span>
             <span class="mk-tab">Bench</span>
-            <span class="mk-tab">RAG</span>
+            <span class="mk-tab">Harness</span>
+            <span class="mk-tab">Know.</span>
             <span class="mk-tab active">Eval</span>
           </div>
           <div class="mk-body">
@@ -1567,7 +1645,8 @@
             <li class="future">Classroom Phase 4 (Phase-2 slice) — student-facing provider settings panel</li>
             <li class="future">Classroom Phase 5b — Agent Library (save / open / branch named agents)</li>
             <li class="future">Classroom Phase 5 — Agent Export (nanoclaw / claude-code / codex / json)</li>
-            <li class="future">Classroom Phase 7 — RAG strategies + pipeline builder</li>
+            <li class="future">Harness tab — three memory tiers, live context-window utilization, compaction trigger, reasoning-effort knob</li>
+            <li class="future">Classroom Phase 7 — Knowledge / RAG strategies + expert-assistant pipeline builder</li>
             <li class="future">Classroom Phase 8 — Evaluation framework + LLM-as-judge</li>
             <li class="future">Classroom Phase 9 — Walkaway cloud deploy (bundle + bootstrap script)</li>
           </ul>
