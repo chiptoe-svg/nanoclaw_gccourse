@@ -855,11 +855,19 @@ function appendAgentTraceCall(trace, data) {
   const parts = [];
   const tokensIn = data.tokens && typeof data.tokens.input === 'number' ? data.tokens.input : null;
   const tokensOut = data.tokens && typeof data.tokens.output === 'number' ? data.tokens.output : null;
+  const cacheCreation =
+    data.tokens && typeof data.tokens.cacheCreation === 'number' ? data.tokens.cacheCreation : 0;
+  const cacheRead =
+    data.tokens && typeof data.tokens.cacheRead === 'number' ? data.tokens.cacheRead : 0;
   if (tokensIn != null && tokensOut != null) {
-    parts.push(`${tokensIn} in · ${tokensOut} out`);
+    const cacheNote = [];
+    if (cacheCreation > 0) cacheNote.push(`${cacheCreation} cache+`);
+    if (cacheRead > 0) cacheNote.push(`${cacheRead} cache-`);
+    const inLabel = cacheNote.length > 0 ? `${tokensIn} in (${cacheNote.join(', ')})` : `${tokensIn} in`;
+    parts.push(`${inLabel} · ${tokensOut} out`);
   }
   if (typeof data.latencyMs === 'number') parts.push(`${(data.latencyMs / 1000).toFixed(1)}s`);
-  const cost = computeAgentCallCost(data.provider, data.model, tokensIn, tokensOut);
+  const cost = computeAgentCallCost(data.provider, data.model, tokensIn, tokensOut, cacheRead, cacheCreation);
   if (cost != null) parts.push(cost < 0.001 ? `$${cost.toFixed(5)}` : `$${cost.toFixed(4)}`);
   const body = parts.length > 0 ? parts.join(' · ') : '(no usage reported)';
   li.innerHTML = `
@@ -871,6 +879,8 @@ function appendAgentTraceCall(trace, data) {
   `;
   if (tokensIn != null) li.dataset.tokensIn = tokensIn;
   if (tokensOut != null) li.dataset.tokensOut = tokensOut;
+  if (cacheCreation > 0) li.dataset.tokensCacheCreation = cacheCreation;
+  if (cacheRead > 0) li.dataset.tokensCacheRead = cacheRead;
   if (cost != null) li.dataset.cost = cost;
   const target = trace._currentTurnUl || trace;
   target.appendChild(li);
@@ -887,20 +897,44 @@ function appendAgentTraceCall(trace, data) {
  * cost field entirely rather than showing "$0" (which is misleading for
  * cloud models we just don't have prices for).
  */
-function computeAgentCallCost(provider, model, tokensIn, tokensOut, tokensCached = 0) {
+function computeAgentCallCost(
+  provider,
+  model,
+  tokensIn,
+  tokensOut,
+  cacheRead = 0,
+  cacheCreation = 0,
+) {
   if (tokensIn == null || tokensOut == null) return null;
   const catalog = (window.__pg && window.__pg.catalog) || [];
   const entry = catalog.find((e) => e.provider === provider && e.id === model);
   if (!entry) return null;
   if (entry.costPer1kInUsd != null || entry.costPer1kOutUsd != null) {
-    // Cached input bills at a discounted rate (when the catalog exposes it).
-    // Falls back to the regular input rate if costPer1kCachedInUsd is unset.
-    const billedIn = Math.max(0, tokensIn - tokensCached);
-    return (
-      (billedIn / 1000) * (entry.costPer1kInUsd || 0) +
-      (tokensCached / 1000) * (entry.costPer1kCachedInUsd ?? entry.costPer1kInUsd ?? 0) +
-      (tokensOut / 1000) * (entry.costPer1kOutUsd || 0)
-    );
+    // Three cache treatments depending on provider:
+    //   - Anthropic returns input_tokens (uncached) + cache_creation_input_tokens
+    //     (billed at 1.25× input) + cache_read_input_tokens (billed at 0.10× input).
+    //     The three fields are DISJOINT; sum = wire bytes.
+    //   - OpenAI/codex returns total inputTokens (which already INCLUDES cached)
+    //     plus cachedInputTokens (the cached subset, ~0.50× input rate).
+    //     `cacheCreation` is unset; we use the legacy "subtract cached from
+    //     total" math via the tokensIn-cacheRead-cacheCreation calc.
+    const baseInRate = entry.costPer1kInUsd || 0;
+    const cachedRateAnthropic = entry.costPer1kCachedInUsd ?? baseInRate * 0.1;
+    const cacheCreationRate = entry.costPer1kCacheCreationUsd ?? baseInRate * 1.25;
+    const cachedRateOpenAI = entry.costPer1kCachedInUsd ?? baseInRate * 0.5;
+    let inCost;
+    if (cacheCreation > 0) {
+      // Anthropic-style: input + creation + read are disjoint.
+      inCost =
+        (tokensIn / 1000) * baseInRate +
+        (cacheCreation / 1000) * cacheCreationRate +
+        (cacheRead / 1000) * cachedRateAnthropic;
+    } else {
+      // OpenAI-style: cacheRead is a subset of tokensIn (or no caching at all).
+      const billedIn = Math.max(0, tokensIn - cacheRead);
+      inCost = (billedIn / 1000) * baseInRate + (cacheRead / 1000) * cachedRateOpenAI;
+    }
+    return inCost + (tokensOut / 1000) * (entry.costPer1kOutUsd || 0);
   }
   if (entry.costPer1kTokensUsd != null) {
     return ((tokensIn + tokensOut) / 1000) * entry.costPer1kTokensUsd;

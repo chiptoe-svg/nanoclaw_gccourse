@@ -84,8 +84,23 @@ export type ProviderEvent =
   | {
       type: 'result';
       text: string | null;
-      /** Token usage as reported by the provider SDK (best-effort; absent if SDK doesn't expose). */
-      tokens?: { input: number; output: number };
+      /**
+       * Token usage as reported by the provider SDK (best-effort; absent if
+       * SDK doesn't expose).
+       * - `input`: uncached new input tokens (billed at full rate)
+       * - `output`: assistant output tokens
+       * - `cacheCreation`: Anthropic only. Tokens written to prompt cache,
+       *   billed at 1.25× base input rate.
+       * - `cacheRead`: tokens served from prompt cache. Anthropic bills at
+       *   0.10× base input rate; OpenAI prefix-cache at 0.50×. Codex sets
+       *   this from `tokenUsage.total.cachedInputTokens`.
+       */
+      tokens?: {
+        input: number;
+        output: number;
+        cacheCreation?: number;
+        cacheRead?: number;
+      };
       /** End-to-end turn latency in milliseconds (query-start → result event timestamp). */
       latencyMs?: number;
       /** Provider id at the moment of completion ("claude" / "codex" / ...). */

@@ -371,10 +371,34 @@ export class ClaudeProvider implements AgentProvider {
           yield { type: 'init', continuation: message.session_id };
         } else if (message.type === 'result') {
           const text = 'result' in message ? (message as { result?: string }).result ?? null : null;
-          const usage = (message as { usage?: { input_tokens?: number; output_tokens?: number } }).usage;
+          // Anthropic returns four usage fields; input_tokens is uncached/new
+          // input only, with cache_creation_input_tokens billed at 1.25× and
+          // cache_read_input_tokens at 0.10× the base input rate. Capture both
+          // separately so cost math is accurate for cache-heavy classroom
+          // threads — without these the trace under-counts claude cost by
+          // (cache_creation × 0.25 + cache_read × 0.10) of base input.
+          const usage = (
+            message as {
+              usage?: {
+                input_tokens?: number;
+                output_tokens?: number;
+                cache_creation_input_tokens?: number;
+                cache_read_input_tokens?: number;
+              };
+            }
+          ).usage;
           const tokens =
             usage && typeof usage.input_tokens === 'number' && typeof usage.output_tokens === 'number'
-              ? { input: usage.input_tokens, output: usage.output_tokens }
+              ? {
+                  input: usage.input_tokens,
+                  output: usage.output_tokens,
+                  ...(typeof usage.cache_creation_input_tokens === 'number'
+                    ? { cacheCreation: usage.cache_creation_input_tokens }
+                    : {}),
+                  ...(typeof usage.cache_read_input_tokens === 'number'
+                    ? { cacheRead: usage.cache_read_input_tokens }
+                    : {}),
+                }
               : undefined;
           // Derive model from modelUsage keys (first key is the primary model).
           const modelUsage = (message as { modelUsage?: Record<string, unknown> }).modelUsage;

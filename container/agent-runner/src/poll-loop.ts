@@ -387,6 +387,8 @@ async function processQuery(
           const cost: ResultCost = {
             tokensIn: event.tokens?.input,
             tokensOut: event.tokens?.output,
+            tokensCacheCreation: event.tokens?.cacheCreation,
+            tokensCacheRead: event.tokens?.cacheRead,
             latencyMs: event.latencyMs,
             provider: event.provider,
             model: event.model,
@@ -495,6 +497,14 @@ function emitTraceToPlayground(
 interface ResultCost {
   tokensIn?: number;
   tokensOut?: number;
+  /** Anthropic only: tokens written to prompt cache, billed at 1.25× base input. */
+  tokensCacheCreation?: number;
+  /**
+   * Tokens served from prompt cache. Anthropic bills at 0.10× base input;
+   * OpenAI prefix-cache typically at 0.50×. Provider-specific rate applied
+   * client-side in chat.js computeAgentCallCost.
+   */
+  tokensCacheRead?: number;
   latencyMs?: number;
   provider?: string;
   model?: string;
@@ -591,6 +601,19 @@ function sendToDestination(dest: DestinationEntry, body: string, routing: Routin
   // different destinations have different thread contexts — using a single
   // routing.threadId would stamp one channel's thread onto another.
   const destRouting = resolveDestinationThread(channelType, platformId);
+  // Cache token counts ride inside the content JSON rather than getting
+  // their own messages_out columns — keeps the session-DB schema stable
+  // across upgrades. delivery.ts on the host parses these back out and
+  // adds them to the channel-meta block so the playground trace can
+  // apply provider-specific cache rates (Anthropic 1.25×/0.10×, OpenAI
+  // prefix-cache 0.50×).
+  const contentObj: Record<string, unknown> = { text: body };
+  if (cost?.tokensCacheCreation != null && cost.tokensCacheCreation > 0) {
+    contentObj.cacheCreation = cost.tokensCacheCreation;
+  }
+  if (cost?.tokensCacheRead != null && cost.tokensCacheRead > 0) {
+    contentObj.cacheRead = cost.tokensCacheRead;
+  }
   writeMessageOut({
     id: generateId(),
     in_reply_to: destRouting?.inReplyTo ?? routing.inReplyTo,
@@ -598,7 +621,7 @@ function sendToDestination(dest: DestinationEntry, body: string, routing: Routin
     platform_id: platformId,
     channel_type: channelType,
     thread_id: destRouting?.threadId ?? null,
-    content: JSON.stringify({ text: body }),
+    content: JSON.stringify(contentObj),
     tokens_in: cost?.tokensIn ?? null,
     tokens_out: cost?.tokensOut ?? null,
     latency_ms: cost?.latencyMs ?? null,

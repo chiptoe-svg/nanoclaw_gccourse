@@ -50,8 +50,23 @@ const deliveryAttempts = new Map<string, number>();
 const inflightDeliveries = new Set<string>();
 
 export interface ChannelDeliveryMeta {
-  /** Token usage from the provider (best-effort). */
-  tokens?: { input: number; output: number };
+  /**
+   * Token usage from the provider (best-effort).
+   * `input` is uncached new input tokens (billed at full input rate).
+   * `cacheCreation` (Anthropic only) is tokens written to prompt cache,
+   * billed at 1.25× full input rate.
+   * `cacheRead` is tokens served from prompt cache. Anthropic bills at
+   * 0.10× full input; OpenAI prefix-cache typically at 0.50×.
+   * For Anthropic these three fields are disjoint (sum = wire input).
+   * For OpenAI/codex `input` already includes any cached portion and
+   * `cacheRead` is the cached subset.
+   */
+  tokens?: {
+    input: number;
+    output: number;
+    cacheCreation?: number;
+    cacheRead?: number;
+  };
   /** End-to-end turn latency in milliseconds. */
   latencyMs?: number;
   /** Provider id at completion ("claude" / "codex" / ...). */
@@ -388,6 +403,13 @@ async function deliverMessage(
       ? readOutboxFiles(session.agent_group_id, session.id, msg.id, content.files as string[])
       : undefined;
 
+  // Cache fields are smuggled inside `content` rather than getting their
+  // own DB columns (keeps session-DB schema stable across upgrades).
+  // The container's poll-loop.ts writes them in alongside { text }; we
+  // extract here and hoist into the meta block for the channel adapter.
+  const contentCacheCreation =
+    typeof content.cacheCreation === 'number' ? content.cacheCreation : null;
+  const contentCacheRead = typeof content.cacheRead === 'number' ? content.cacheRead : null;
   const meta: ChannelDeliveryMeta | undefined =
     msg.tokens_in != null ||
     msg.tokens_out != null ||
@@ -396,7 +418,14 @@ async function deliverMessage(
     msg.model != null
       ? {
           ...(msg.tokens_in != null && msg.tokens_out != null
-            ? { tokens: { input: msg.tokens_in, output: msg.tokens_out } }
+            ? {
+                tokens: {
+                  input: msg.tokens_in,
+                  output: msg.tokens_out,
+                  ...(contentCacheCreation != null ? { cacheCreation: contentCacheCreation } : {}),
+                  ...(contentCacheRead != null ? { cacheRead: contentCacheRead } : {}),
+                },
+              }
             : {}),
           ...(msg.latency_ms != null ? { latencyMs: msg.latency_ms } : {}),
           ...(msg.provider != null ? { provider: msg.provider } : {}),
