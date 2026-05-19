@@ -25,6 +25,8 @@ export interface ProviderOptions {
   mcpServers?: Record<string, McpServerConfig>;
   env?: Record<string, string | undefined>;
   additionalDirectories?: string[];
+  /** Explicit model override — takes priority over user Claude Code settings. */
+  model?: string;
 }
 
 export interface QueryInput {
