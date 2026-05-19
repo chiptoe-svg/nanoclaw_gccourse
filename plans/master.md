@@ -77,6 +77,141 @@ landed here.
 **Verification:** email-PIN sign-in flow confirmed working
 end-to-end during class with the 10 real Clemson students.
 
+## Phase 1.6 — sign-in friction reduction (shipped 2026-05-18)
+
+Internal-network deployment made the email-PIN-via-Resend + Google
+sign-in dance unnecessary. Replaced with in-class passcode entry:
+sign-in page asks for email + 4-digit passcode; instructor displays
++ rotates the current passcode from a new Home card. No outbound
+email sender needed. First-come-first-served by roster email via
+atomic SQLite UPDATE (`WHERE enrolled_at IS NULL`).
+
+| Slice | Commit |
+|---|---|
+| Class enrollment passcode — schema migration, scrypt-hashed storage, 3 handlers (get/rotate/enroll), roster `enrolled_at` + `enrollment_session_id` columns, login.html rewrite, Home owner-card | `1567c00` on `main` |
+| Mirror enrollment Home card to `origin/classroom-x7-provider-auth` so X.7 install skill doesn't blow it away | `e73442f` on `classroom-x7-provider-auth` |
+| Login page cosmetic — match playground style.css (brand-navy + brand-blue tokens), drop the raccoon icon from the landing card, switch from missing `home.css` to `style.css` | (uncommitted as of this entry — pure HTML/CSS update on `src/channels/playground/public/login.html`) |
+| Plan doc | `plans/class-enrollment-passcode.md` |
+
+**Design note:** `/add-classroom` does NOT need an install-side change.
+The enrollment-passcode feature lives entirely in trunk; it activates
+whenever the `classroom_roster` table has rows in it (which is what
+`/add-classroom` already provisions). Telegram `/playground` magic-
+link path is preserved for owner/admin convenience. Google sign-in
+moves to an opt-in "Connect" card on student Home (deferred until
+Phase 14 GCP setup unblocks).
+
+## Phase 1.7 — classroom polish + provisioning fixes (shipped 2026-05-18)
+
+Slate of fixes + cosmetic improvements that came out of live testing
+during X.7 verification + the enrollment-passcode rollout. Mostly
+small, with one architectural cleanup (class-skeleton was silently
+provisioning students with the wrong agent provider — a bug that would
+make every student message touch Anthropic instead of OpenAI).
+
+| Slice | Commit(s) |
+|---|---|
+| **Brand identity.** Raccoon-unicycle icon retired across login + topbar. Replaced with the NanoClaw Classroom wordmark (`/classroom-nano.png`). | `cb01716` |
+| **Login page redesign.** Self-contained `<style>` (no external stylesheet dependency since `/style.css` was 401'ing pre-auth), email + passcode form, paste-back flow with a clickable "Open sign-in page" button (popup-blocker fallback). | `787ae67`, `08c3492`, `3e36ad5` (X.7 branch), `e92a928` (style.css) |
+| **Class-skeleton bugs.** Students were provisioned with `agent_provider=null` (defaulting to claude) — fix: hard-code `'codex'` for all class members. Same for `container.json.provider`. Also `agent_groups.name` was being set to the folder slug (`student_03`) instead of the real student name from `class-config.json` — fix wires through `target.name`. Model default changed to `gpt-5.4-mini` for cost. Bulk-applied to the 12 existing students. | `6aac696`, `1c0b796`, `e5ba324`, `fc9b429` |
+| **Trunk hot-fix.** `handleGetStudentsUsage` used CommonJS `require()` in an ESM module → 500 on every roster fetch. Hoisted to static import. | `5eb10bd` |
+| **Roster card overhaul.** Walks `class-config.json`'s `students[]` + `tas[]` instead of session directories — now shows every roster member, not just those with active sessions. Columns: Name / TA badge / This-month $ / Total $ / Activated ✅. "Activated" = `classroom_roster.enrolled_at != null` (set by `/login/enroll`). Strict definition; students who chatted via the older Telegram + email-PIN flow re-activate by signing in via the new passcode flow. | `3a210ae`, `4869147`, `27c0efd`, `983a90a`, `6ed2459` |
+| **Trace panel rework.** Each user submit starts a new turn group with timestamp header + live-updating totals footer (turn-aggregate of in/out/cached/cost). Disclosure triangles on tool entries now visibly indicate clickable expansion. | `e92a928`, `787ae67` |
+| **Caroline Yaman provisioned as `ta_01`** via class-skeleton (`cyaman@clemson.edu`). First TA on the roster. | (provisioned at this commit's run time) |
+| **`apikey` backport** from classroom-x7-provider-auth → main. Codex CLI's `auth.json` schema uses `'apikey'`, not `'api_key'`. | `b99d47c` |
+| **Trunk admintools rehydration.** `b938228` had extracted too much: `models.ts` imports survived but their helpers (`model-discovery`, `model-switch`, `model-providers/*`) moved to admintools-only. A fresh `git clone` of main wouldn't build. Hoisted the helpers back to trunk; admintools now only ships the Telegram-command surface. | `e3c8613` |
+| **`origin/classroom` modernization (path-a).** 616 commits of drift wiped with a "main wins" merge + 12 classroom-skill-managed files restored + API-surface refactors for current trunk (googleapis → @googleapis/drive; inline classroom-specific config consts that Phase 11.3 stripped from trunk). | `bfa1175` on `origin/classroom` + `1819c3b` on `main` |
+| **CI: nightly long-lived-branch sync.** `.github/workflows/sync-long-lived-branches.yml` runs daily; conflict-free fast-forwards push, conflicts open issues with the path-(a) recipe. | `4ae748e` |
+
+**Live verification.** Student OAuth confirmed end-to-end —
+`data/student-provider-creds/class_student_01/codex.json` written with
+`active: 'oauth'`, `oauth.account: 'tonkin@clemson.edu'`, refresh-token
+intact. Per-request credential proxy hook resolves to the student's
+OAuth token. The "use my own credentials" path students will follow
+is the same one this test exercised.
+
+**Architecture decision to revisit (not blocking).**
+
+Today's churn surfaced that this fork's trunk has accumulated a lot
+of classroom-specific code (X.7 Providers card, Phase 14 Google
+integration, enrollment passcode, Roster card, email+passcode login,
+class-skeleton, classroom_roster) — some by design, some by today's
+commit-pattern accidents. CLAUDE.md rule 5 says "trunk should be
+infrastructure every install needs, not features any subset uses,"
+but in practice this fork only ever deploys as a classroom-product.
+
+Three options when ready to clean up: (A) strict rule-5 split, pull
+classroom out of trunk back to branches; (B) declare this fork's
+trunk = classroom-ready Codex-pool, retire `origin/classroom*` branches,
+make skills layer ONLY truly-optional things; (C) hybrid — slim
+classroom path stays in trunk, X.7/Phase14-style advanced layers stay
+skill-installable for upstream-portability.
+
+Decision deferred. For now: trunk-with-classroom-stuff is the deployed
+reality; living with it. Revisit when one of:
+- Upstream `qwibitai/nanoclaw` wants to merge something from this fork
+- A second classroom install diverges enough to need real separation
+- The "X.7 install skill but X.7 also in trunk" duplication causes a real
+  sync bug
+
+**Open follow-ups (not blocking the phase).**
+- *Trace disclosure for model_call / agent_call.* Today's trace UI
+  added disclosure for tool calls (which carry rich payload) and
+  direct calls (full prompt+response client-side). model_call and
+  agent_call still show one-line summaries; making them disclosable
+  requires the agent-runner's provider modules to emit prompt+response
+  in the ProviderEvent. Plan: [`trace-call-disclosure.md`](./trace-call-disclosure.md).
+- *Phase 14 GCP step.* Still operator-blocked. 5-min GCP Console
+  click-through (redirect URI + test users + scopes). Gates the
+  Google "Connect" card on student Home.
+- *Deprecate `/add-classroom-auth`.* Old Codex-only magic-link
+  auth.json upload, superseded by `/add-classroom-provider-auth`. Mark
+  its `SKILL.md` description with a deprecation pointer (5 min).
+- *Three long-lived branches still drift* (providers 737, admin 273,
+  gws-mcp 210 commits behind main). Sync action runs nightly; first
+  fire will file 3 conflict issues. Apply path-(a) treatment when
+  each one next needs an update.
+- *Trunk vs. X.7-install state asymmetry.* During today's churn, main's
+  `home.js` accumulated the X.7 install state (the "Providers card"
+  section, `renderProvidersCard` impl, etc.). Strictly violates the
+  "X.7 stays skill-installable" rule but in practice trunk-with-X.7
+  is the deployed reality. Document or revert in a follow-up commit.
+
+## Phase 1.8 — agent-harness benchmark suite (planned)
+
+Triggered by the 2026-05-18 cost spike: a single "yolo" message on
+codex/gpt-5.4 billed at $1.10 because codex makes 6–10 internal API
+calls per user turn and each one replays the full conversation +
+prior tool outputs. We don't have a calibrated picture of the cost
+surface we're shipping to instructors.
+
+**Goal.** A repeatable benchmark suite that produces comparable
+cost / latency / quality metrics across (provider × model × harness
+config) combinations. Used to quantify the codex / claude gap,
+inform harness optimization, and give instructors data-backed model
+recommendations.
+
+**Distinct from Phase 2 #9 (classroom evaluation framework).** That
+is the student-facing side-by-side comparison UI; this is internal
+developer tooling. Lands first because the eval-framework's design
+benefits from us having concrete cross-harness data already.
+
+**5-request suite** spans the cost curve: trivial no-tool greeting,
+single-tool clock, single-fetch synthesis, three-turn continuation,
+multi-fetch comparative research. Each isolates a different
+amplification factor. Three reps per (system × request) cell. Six
+V1 systems in the matrix (Anthropic Sonnet + Haiku, Codex
+gpt-5.4 + gpt-5.4-mini, two local MLX models). Three assessment
+layers: token/cost/latency (auto), programmatic correctness per
+request (deterministic), claude-haiku-as-judge quality rubric.
+
+**Phasing.** B1 baseline runner against `claude-sonnet-4-6` (2 hr) →
+B2 gates + judge (1 hr) → B3 matrix + report (1 hr) → B4 full matrix
+run, first diagnostic dataset (1 hr setup + run-time). ~5 hr to land
+B1–B4. B5 (harness-config knobs) optional.
+
+Detailed plan: [`agent-benchmark-suite.md`](./agent-benchmark-suite.md).
+
 ## Phase 1 — shared-classroom MVP
 
 **Goal.** A class can deploy with: one Google Workspace OAuth
@@ -390,28 +525,46 @@ Slot into Phase 2 or a small interleave when convenient.
 - **Branch hygiene.** Merges to `main` and to `origin/classroom` use
   `--no-ff` so each phase stays revertable as a single merge commit.
   Feature branches deleted (local + remote) once merged.
-- **Modernize the `origin/classroom` long-lived branch.** Surfaced
-  during Phase X.7 (per-student provider auth) work on 2026-05-17:
-  `origin/classroom` is 606 commits behind `main` with 9+ conflicts
-  in files both branches independently evolved (`class-codex-auth`,
-  `class-login-tokens`, `classroom-roster`, etc.). The merge isn't
-  in any single phase's scope. **Workaround in use:** new
-  classroom-skill work branches off current `main` with feature-style
-  names (`classroom-x7-provider-auth`, etc.) and the install skill
-  fetches from there — same install pattern as `add-gws-tool`. Two
-  paths to a clean state, pick one when this becomes important:
-  (a) Sit down for a 1-2 hr "main wins" merge into `origin/classroom`,
-      audit for any classroom-side improvements that need to be
-      preserved, then go back to slash-style per-skill branches off
-      it.
-  (b) Retire `origin/classroom` entirely. Future classroom skills all
-      live on per-feature dash-style branches off `main`. The legacy
-      branch becomes a historical reference. Phase 14 trunk files
-      (`student-google-auth.ts`, `google-auth.ts` routes, Home/Models
-      patches) — which were noted as an asymmetry in the X.7 design
-      spec — move to one or more new branches at the same time.
-  Until decided, the workaround keeps every new classroom skill
-  unblocked. Decision can wait until after Phase X.7 ships.
+- ~~**Modernize the `origin/classroom` long-lived branch.**~~
+  **RESOLVED 2026-05-17 via path (a).** Merged `origin/main` into
+  `origin/classroom` as commit `bfa1175`. Main-wins on 9 conflicts.
+  12 classroom-skill-source-of-truth files restored (main had deleted
+  them via Phase 11.3 "strip class feature from main"). Three files
+  needed API surface updates against current trunk: `class-drive.ts`
+  migrated `googleapis` → `@googleapis/drive`; `student-auth-server.ts`
+  inlined the 3 classroom-specific config consts that Phase 11.3
+  stripped from trunk; `student-auth-server.test.ts` mock fix. One
+  classroom-side fix preserved: `auth_mode: 'apikey'` in
+  `class-codex-auth.ts` (commit `44562b5`) — flagged as possible
+  backport-to-main since trunk currently has `'api_key'` which may
+  also be wrong. Build clean, 816/816 tests on merged tip.
+  Future cadence: re-merge `main` forward into `origin/classroom`
+  periodically (same pattern as `origin/channels`, `origin/providers`,
+  `origin/gws-mcp`) to prevent drift accumulating again.
+  - Backported the `auth_mode: 'apikey'` fix to `main` as commit
+    `b99d47c` (empirically verified against `~/.codex/auth.json` —
+    Codex CLI writes `'apikey'`, not `'api_key'` or `'apiKey'`).
+- **Long-lived branch sync — automation in place.** Surfaced
+  2026-05-17 after fixing classroom: the same drift problem applies
+  to every long-lived category branch. Audit at the time:
+  `providers` was 737 commits behind main, `admin` 273, `gws-mcp`
+  210. Nobody was running the periodic sync the rule-5 pattern
+  assumes. Fix: `.github/workflows/sync-long-lived-branches.yml`
+  runs daily at 12:17 UTC, attempts `git merge origin/main` on each
+  of `classroom`, `providers`, `admin`, `gws-mcp`. Conflict-free →
+  push. Conflicts → open a GitHub issue with the resolve recipe
+  (auto-deduplicated by title, auto-closed on next clean run).
+  - **Path-(a) treatment still needed for 3 branches before
+    automation can take over them cleanly:**
+    - `providers` (737 behind) — sync when next updating
+      `/add-opencode` or any future provider install skill.
+    - `admin` (273 behind) — sync when next updating
+      `/add-admintools`.
+    - `gws-mcp` (210 behind) — sync when next updating
+      `/add-gws-tool`.
+    Until each path-(a) sync lands, the nightly job will keep
+    filing fresh conflict issues for that branch — that's working
+    as intended; the issue is the prompt to do the path-(a) work.
 - **`/ultrareview` policy.** Per the `feedback_ultrareview_before_merge`
   memory: run `/ultrareview` *before* merging feature work, not
   after. Going forward, build phase items on feature branches and

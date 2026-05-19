@@ -97,11 +97,14 @@ function loadModelDropdowns(el, folder) {
 
       // Filter providers by class-controls — owner sees everything;
       // students see only what the instructor authorized.
-      const cc = window.__pg && window.__pg.classControls;
+      const ac = window.__pg && window.__pg.activeClass;
       const isOwner = window.__pg && window.__pg.user && window.__pg.user.role === 'owner';
-      const allowedProviders = isOwner || !cc ? null : new Set(cc.providersAvailable || []);
+      // v2 shape: providers is a map of { allow, provideDefault, allowByo }.
+      const providerAllowed = isOwner || !ac
+        ? null
+        : (p) => !!(ac.providers && ac.providers[p] && ac.providers[p].allow);
       const providers = [...new Set(visible.map((m) => m.provider))].filter(
-        (p) => !allowedProviders || allowedProviders.has(p),
+        (p) => !providerAllowed || providerAllowed(p),
       );
       provSel.innerHTML = '';
       for (const p of providers) provSel.add(new Option(p, p));
@@ -356,6 +359,7 @@ function wireChatForm(el, folder) {
       const provSel = el.querySelector('#provider-sel');
       const modelSel = el.querySelector('#model-sel');
       const trace = el.querySelector('#trace-log');
+      startNewTurn(trace);
       const traceLi = appendDirectTraceCall(trace, provSel.value, modelSel.value, directHistory.length);
       // Client-side timing — direct-chat.ts doesn't return latencyMs (it's a
       // synchronous HTTP round-trip) so we measure wall-clock from the fetch
@@ -394,6 +398,9 @@ function wireChatForm(el, folder) {
       }
       return;
     }
+
+    // Agent mode — start a new turn group in the trace pane.
+    startNewTurn(el.querySelector('#trace-log'));
 
     // Read pending files to base64. Done at send time, not at attach time,
     // to avoid double-buffering for files the user might immediately remove.
@@ -468,7 +475,123 @@ function wireTraceClear(el) {
   el.querySelector('#trace-clear-btn').addEventListener('click', () => {
     const trace = el.querySelector('#trace-log');
     trace.innerHTML = '<li class="trace-empty">Trace cleared.</li>';
+    trace._currentTurnUl = null;
   });
+}
+
+/**
+ * Finalize the previous turn: sum data-* attrs from child <li>s and fill in
+ * the footer. Called by startNewTurn when a new user message is submitted.
+ */
+function finalizeTurn(turnEl) {
+  if (!turnEl) return;
+  const foot = turnEl.querySelector('.trace-turn-foot');
+  if (!foot) return;
+  // Codex's `tokenUsage.total` (which we surface as agent_call) is the
+  // THREAD CUMULATIVE total — every call codex has ever made on this
+  // thread since it started, not the current turn's cost. Per-turn cost
+  // is the sum of model_call deltas within this turn.
+  //
+  // For claude (single API call per user turn), no per-call model_call
+  // events fire — the agent_call IS the turn. Detect that case and fall
+  // back to agent_call's tokens.
+  const modelCalls = turnEl.querySelectorAll('.trace-model-call');
+  const agentCall = turnEl.querySelector('.trace-agent-call');
+  let tokensIn = 0, tokensOut = 0, tokensCached = 0, tokensReasoning = 0, cost = 0;
+  let threadCumulative = null;
+  if (modelCalls.length > 0) {
+    // Codex-style turn — sum the per-call deltas.
+    for (const li of modelCalls) {
+      tokensIn       += parseFloat(li.dataset.tokensIn       || '0') || 0;
+      tokensOut      += parseFloat(li.dataset.tokensOut      || '0') || 0;
+      tokensCached   += parseFloat(li.dataset.tokensCached   || '0') || 0;
+      tokensReasoning += parseFloat(li.dataset.tokensReasoning || '0') || 0;
+      cost           += parseFloat(li.dataset.cost           || '0') || 0;
+    }
+    // Surface the thread-cumulative number too, so heavy threads have
+    // visible context for instructors planning class budgets.
+    if (agentCall) {
+      const tIn  = parseFloat(agentCall.dataset.tokensIn  || '0') || 0;
+      const tOut = parseFloat(agentCall.dataset.tokensOut || '0') || 0;
+      const tCost = parseFloat(agentCall.dataset.cost     || '0') || 0;
+      if (tIn > 0 || tOut > 0 || tCost > 0) {
+        threadCumulative = { tIn, tOut, tCost };
+      }
+    }
+  } else if (agentCall) {
+    // Claude-style turn — agent_call IS the turn (single API call).
+    tokensIn  = parseFloat(agentCall.dataset.tokensIn  || '0') || 0;
+    tokensOut = parseFloat(agentCall.dataset.tokensOut || '0') || 0;
+    cost      = parseFloat(agentCall.dataset.cost      || '0') || 0;
+  } else {
+    // Neither — non-LLM events only (tool calls without a model summary).
+    for (const li of turnEl.querySelectorAll('[data-cost]')) {
+      cost += parseFloat(li.dataset.cost || '0') || 0;
+    }
+  }
+  if (tokensIn === 0 && tokensOut === 0 && cost === 0) {
+    foot.textContent = '(no usage)';
+    return;
+  }
+  const parts = [];
+  if (tokensIn > 0) parts.push(`${tokensIn} in`);
+  if (tokensCached > 0) parts.push(`${tokensCached} cached`);
+  if (tokensReasoning > 0) parts.push(`${tokensReasoning} reasoning`);
+  if (tokensOut > 0) parts.push(`${tokensOut} out`);
+  if (cost > 0) parts.push(cost < 0.001 ? `$${cost.toFixed(5)}` : `$${cost.toFixed(4)}`);
+  let footText = `turn total: ${parts.join(' · ')}`;
+  if (threadCumulative) {
+    const tcParts = [];
+    if (threadCumulative.tIn > 0) tcParts.push(`${threadCumulative.tIn} in`);
+    if (threadCumulative.tOut > 0) tcParts.push(`${threadCumulative.tOut} out`);
+    if (threadCumulative.tCost > 0) {
+      tcParts.push(
+        threadCumulative.tCost < 0.001
+          ? `$${threadCumulative.tCost.toFixed(5)}`
+          : `$${threadCumulative.tCost.toFixed(4)}`,
+      );
+    }
+    if (tcParts.length > 0) footText += `\nthread cumulative: ${tcParts.join(' · ')}`;
+  }
+  foot.textContent = footText;
+}
+
+/**
+ * Start a new turn group in the trace pane. Finalizes the previous turn if
+ * one exists, then appends a new .trace-turn container. Returns the inner
+ * <ul> that events should be appended to.
+ */
+function startNewTurn(trace) {
+  if (!trace) return null;
+  // Remove the empty-state placeholder if present.
+  const placeholder = trace.querySelector('.trace-empty');
+  if (placeholder) placeholder.remove();
+
+  // Finalize the previous turn.
+  if (trace._currentTurnUl) {
+    finalizeTurn(trace._currentTurnUl.closest('.trace-turn'));
+  }
+
+  const turnLi = document.createElement('li');
+  turnLi.className = 'trace-turn';
+
+  const head = document.createElement('div');
+  head.className = 'trace-turn-head';
+  head.textContent = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  turnLi.appendChild(head);
+
+  const ul = document.createElement('ul');
+  ul.className = 'trace-turn-events';
+  turnLi.appendChild(ul);
+
+  const foot = document.createElement('div');
+  foot.className = 'trace-turn-foot';
+  turnLi.appendChild(foot);
+
+  trace.appendChild(turnLi);
+  trace._currentTurnUl = ul;
+  trace.scrollTop = trace.scrollHeight;
+  return ul;
 }
 
 function appendUserBubble(log, text) {
@@ -563,7 +686,10 @@ function appendTraceEvent(trace, data) {
     li.appendChild(kindEl);
   }
 
-  trace.appendChild(li);
+  const target = trace._currentTurnUl || trace;
+  target.appendChild(li);
+  // Eager-finalize so the turn-total footer updates live as events arrive.
+  if (trace._currentTurnUl) finalizeTurn(trace._currentTurnUl.closest('.trace-turn'));
   trace.scrollTop = trace.scrollHeight;
 }
 
@@ -710,7 +836,15 @@ function appendModelCallTrace(trace, data) {
     </div>
     <div class="trace-event-body">${escapeHtml(summary)}</div>
   `;
-  trace.appendChild(li);
+  li.dataset.tokensIn = tokensIn;
+  li.dataset.tokensOut = tokensOut;
+  li.dataset.tokensCached = cached;
+  li.dataset.tokensReasoning = reasoning;
+  if (cost != null) li.dataset.cost = cost;
+  const target = trace._currentTurnUl || trace;
+  target.appendChild(li);
+  // Eager-finalize so the turn-total footer updates live as events arrive.
+  if (trace._currentTurnUl) finalizeTurn(trace._currentTurnUl.closest('.trace-turn'));
   trace.scrollTop = trace.scrollHeight;
 }
 
@@ -721,11 +855,19 @@ function appendAgentTraceCall(trace, data) {
   const parts = [];
   const tokensIn = data.tokens && typeof data.tokens.input === 'number' ? data.tokens.input : null;
   const tokensOut = data.tokens && typeof data.tokens.output === 'number' ? data.tokens.output : null;
+  const cacheCreation =
+    data.tokens && typeof data.tokens.cacheCreation === 'number' ? data.tokens.cacheCreation : 0;
+  const cacheRead =
+    data.tokens && typeof data.tokens.cacheRead === 'number' ? data.tokens.cacheRead : 0;
   if (tokensIn != null && tokensOut != null) {
-    parts.push(`${tokensIn} in · ${tokensOut} out`);
+    const cacheNote = [];
+    if (cacheCreation > 0) cacheNote.push(`${cacheCreation} cache+`);
+    if (cacheRead > 0) cacheNote.push(`${cacheRead} cache-`);
+    const inLabel = cacheNote.length > 0 ? `${tokensIn} in (${cacheNote.join(', ')})` : `${tokensIn} in`;
+    parts.push(`${inLabel} · ${tokensOut} out`);
   }
   if (typeof data.latencyMs === 'number') parts.push(`${(data.latencyMs / 1000).toFixed(1)}s`);
-  const cost = computeAgentCallCost(data.provider, data.model, tokensIn, tokensOut);
+  const cost = computeAgentCallCost(data.provider, data.model, tokensIn, tokensOut, cacheRead, cacheCreation);
   if (cost != null) parts.push(cost < 0.001 ? `$${cost.toFixed(5)}` : `$${cost.toFixed(4)}`);
   const body = parts.length > 0 ? parts.join(' · ') : '(no usage reported)';
   li.innerHTML = `
@@ -735,7 +877,15 @@ function appendAgentTraceCall(trace, data) {
     </div>
     <div class="trace-event-body">${escapeHtml(body)}</div>
   `;
-  trace.appendChild(li);
+  if (tokensIn != null) li.dataset.tokensIn = tokensIn;
+  if (tokensOut != null) li.dataset.tokensOut = tokensOut;
+  if (cacheCreation > 0) li.dataset.tokensCacheCreation = cacheCreation;
+  if (cacheRead > 0) li.dataset.tokensCacheRead = cacheRead;
+  if (cost != null) li.dataset.cost = cost;
+  const target = trace._currentTurnUl || trace;
+  target.appendChild(li);
+  // Eager-finalize so the turn-total footer updates live as events arrive.
+  if (trace._currentTurnUl) finalizeTurn(trace._currentTurnUl.closest('.trace-turn'));
   trace.scrollTop = trace.scrollHeight;
 }
 
@@ -747,20 +897,44 @@ function appendAgentTraceCall(trace, data) {
  * cost field entirely rather than showing "$0" (which is misleading for
  * cloud models we just don't have prices for).
  */
-function computeAgentCallCost(provider, model, tokensIn, tokensOut, tokensCached = 0) {
+function computeAgentCallCost(
+  provider,
+  model,
+  tokensIn,
+  tokensOut,
+  cacheRead = 0,
+  cacheCreation = 0,
+) {
   if (tokensIn == null || tokensOut == null) return null;
   const catalog = (window.__pg && window.__pg.catalog) || [];
   const entry = catalog.find((e) => e.provider === provider && e.id === model);
   if (!entry) return null;
   if (entry.costPer1kInUsd != null || entry.costPer1kOutUsd != null) {
-    // Cached input bills at a discounted rate (when the catalog exposes it).
-    // Falls back to the regular input rate if costPer1kCachedInUsd is unset.
-    const billedIn = Math.max(0, tokensIn - tokensCached);
-    return (
-      (billedIn / 1000) * (entry.costPer1kInUsd || 0) +
-      (tokensCached / 1000) * (entry.costPer1kCachedInUsd ?? entry.costPer1kInUsd ?? 0) +
-      (tokensOut / 1000) * (entry.costPer1kOutUsd || 0)
-    );
+    // Three cache treatments depending on provider:
+    //   - Anthropic returns input_tokens (uncached) + cache_creation_input_tokens
+    //     (billed at 1.25× input) + cache_read_input_tokens (billed at 0.10× input).
+    //     The three fields are DISJOINT; sum = wire bytes.
+    //   - OpenAI/codex returns total inputTokens (which already INCLUDES cached)
+    //     plus cachedInputTokens (the cached subset, ~0.50× input rate).
+    //     `cacheCreation` is unset; we use the legacy "subtract cached from
+    //     total" math via the tokensIn-cacheRead-cacheCreation calc.
+    const baseInRate = entry.costPer1kInUsd || 0;
+    const cachedRateAnthropic = entry.costPer1kCachedInUsd ?? baseInRate * 0.1;
+    const cacheCreationRate = entry.costPer1kCacheCreationUsd ?? baseInRate * 1.25;
+    const cachedRateOpenAI = entry.costPer1kCachedInUsd ?? baseInRate * 0.5;
+    let inCost;
+    if (cacheCreation > 0) {
+      // Anthropic-style: input + creation + read are disjoint.
+      inCost =
+        (tokensIn / 1000) * baseInRate +
+        (cacheCreation / 1000) * cacheCreationRate +
+        (cacheRead / 1000) * cachedRateAnthropic;
+    } else {
+      // OpenAI-style: cacheRead is a subset of tokensIn (or no caching at all).
+      const billedIn = Math.max(0, tokensIn - cacheRead);
+      inCost = (billedIn / 1000) * baseInRate + (cacheRead / 1000) * cachedRateOpenAI;
+    }
+    return inCost + (tokensOut / 1000) * (entry.costPer1kOutUsd || 0);
   }
   if (entry.costPer1kTokensUsd != null) {
     return ((tokensIn + tokensOut) / 1000) * entry.costPer1kTokensUsd;
@@ -770,8 +944,6 @@ function computeAgentCallCost(provider, model, tokensIn, tokensOut, tokensCached
 
 function appendDirectTraceCall(trace, provider, model, turnNumber) {
   if (!trace) return null;
-  const placeholder = trace.querySelector('.trace-empty');
-  if (placeholder) placeholder.remove();
   const li = document.createElement('li');
   li.className = 'trace-event trace-direct-call';
   li.innerHTML = `
@@ -781,7 +953,10 @@ function appendDirectTraceCall(trace, provider, model, turnNumber) {
     </div>
     <div class="trace-event-body trace-pending">turn ${turnNumber} · pending…</div>
   `;
-  trace.appendChild(li);
+  const target = trace._currentTurnUl || trace;
+  target.appendChild(li);
+  // Eager-finalize so the turn-total footer updates live as events arrive.
+  if (trace._currentTurnUl) finalizeTurn(trace._currentTurnUl.closest('.trace-turn'));
   trace.scrollTop = trace.scrollHeight;
   return li;
 }
@@ -802,4 +977,14 @@ function finalizeDirectTraceCall(li, data) {
   const outBreakdown = reasoning > 0 ? `${data.tokensOut} out (${reasoning} reasoning)` : `${data.tokensOut} out`;
   const latency = typeof data.latencyMs === 'number' ? ` · ${(data.latencyMs / 1000).toFixed(1)}s` : '';
   body.textContent = `${data.tokensIn} in${cachedNote} · ${outBreakdown}${latency} · ${cost}`;
+  // Stash numeric data for finalizeTurn to sum.
+  li.dataset.tokensIn = data.tokensIn || 0;
+  li.dataset.tokensOut = data.tokensOut || 0;
+  li.dataset.tokensCached = data.tokensCached || 0;
+  li.dataset.tokensReasoning = reasoning;
+  li.dataset.cost = data.costUsd || 0;
+  // Eager-finalize the enclosing turn so the totals footer updates immediately
+  // on call completion (rather than waiting for the next user submit).
+  const turnEl = li.closest('.trace-turn');
+  if (turnEl) finalizeTurn(turnEl);
 }

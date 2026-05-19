@@ -345,6 +345,12 @@ function makeContainerConfig(opts: {
     // at creation time. TAs / instructors / non-classroom groups use the
     // generic empty default (manual curation via Skills tab afterwards).
     skills: opts.isStudent ? inheritedSkills() : [],
+    // All class-skeleton-provisioned groups (students AND TAs) run codex.
+    // Class-pool architecture is Codex/OpenAI funded via CLASS_OPENAI_API_KEY;
+    // running the Claude SDK for TAs would route their messages through
+    // Anthropic. Hard-code 'codex' unconditionally.
+    // TODO: make configurable when classes diverge (CLI flag or class-config).
+    provider: 'codex',
     groupName: opts.folder,
     assistantName: opts.folder,
   };
@@ -369,10 +375,18 @@ function provisionGroup(args: CliArgs, classConfig: Record<string, unknown>, tar
   } else {
     group = {
       id: shortId('ag'),
-      name: target.folder,
+      // Use the student's real name (from class-config.json's `students[].name`)
+      // not the folder slug. The folder is the role/identifier; the name is what
+      // shows up in the instructor Roster card.
+      name: target.name,
       folder: target.folder,
-      agent_provider: null,
-      model: null,
+      // Default students to the codex agent provider (matches this fork's
+      // class-pool architecture — CLASS_OPENAI_API_KEY funds inference).
+      // Leaving agent_provider:null silently falls back to the Claude SDK
+      // which calls Anthropic — wrong direction for a Codex class.
+      // TODO: make configurable when classes diverge (CLI flag or class-config).
+      agent_provider: 'codex',
+      model: 'gpt-5.4-mini',
       created_at: nowIso(),
     } as AgentGroup;
     createAgentGroup(group);

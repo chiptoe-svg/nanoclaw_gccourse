@@ -42,6 +42,20 @@ import { handleIssue as handleLoginPinIssue, handleVerify as handleLoginPinVerif
 import { handleGoogleAuthCallback, handleGoogleAuthStart } from './api/google-auth.js';
 import { handleOAuthCallback, handleOAuthStart } from './google-oauth.js';
 import { parseCookie, readJsonBody, send } from './http-helpers.js';
+// ── class-enrollment-passcode:imports START ────────────────────────────────
+import { handleGetClassPasscode, handleRotateClassPasscode, handleEnroll } from './api/enrollment.js';
+// ── class-enrollment-passcode:imports END ──────────────────────────────────
+
+// ── classroom-provider-auth:imports START ──────────────────────────────────
+import {
+  handleProviderAuthStart,
+  handleProviderAuthExchange,
+  handleGetProviderStatus,
+  handlePostApiKey,
+  handleSetActive,
+  handleDisconnect,
+} from './api/provider-auth.js';
+// ── classroom-provider-auth:imports END ────────────────────────────────────
 
 let server: http.Server | null = null;
 
@@ -313,6 +327,9 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
   if (method === 'GET' && url.pathname === '/agent-playground-icon.png') {
     return serveStatic(res, 'agent-playground-icon.png', 'image/png');
   }
+  if (method === 'GET' && url.pathname === '/classroom-nano.png') {
+    return serveStatic(res, 'classroom-nano.png', 'image/png');
+  }
   if (method === 'POST' && url.pathname === '/login/recover') {
     void handleLostLinkRecover(req, res).catch((err) => {
       log.error('Lost-link recover error', { err });
@@ -379,6 +396,25 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
   }
   // <<< classroom-pin:routes END
 
+  // ── class-enrollment-passcode:routes START ────────────────────────────────
+  if (method === 'POST' && url.pathname === '/login/enroll') {
+    void (async () => {
+      try {
+        const body = (await readJsonBody(req)) as { email?: unknown; passcode?: unknown };
+        const result = handleEnroll(body);
+        const headers: Record<string, string> = { 'content-type': 'application/json' };
+        if (result.setCookie) headers['set-cookie'] = result.setCookie;
+        res.writeHead(result.status, headers);
+        res.end(JSON.stringify(result.body));
+      } catch (err) {
+        log.error('enrollment handler error', { err });
+        if (!res.headersSent) send(res, 500, { error: 'enrollment failed' });
+      }
+    })();
+    return;
+  }
+  // ── class-enrollment-passcode:routes END ──────────────────────────────────
+
   const session = authenticate(req);
   if (!session) {
     if (method === 'GET' && isHtmlPagePath(url.pathname)) {
@@ -414,6 +450,101 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
     if (!ct) return send(res, 404, { error: `Not served: ${rel}` });
     return serveStatic(res, rel, ct);
   }
+
+  // ── class-enrollment-passcode:routes START ────────────────────────────────
+  if (method === 'GET' && url.pathname === '/api/admin/class-passcode') {
+    const result = handleGetClassPasscode(session);
+    send(res, result.status, result.body);
+    return;
+  }
+  if (method === 'POST' && url.pathname === '/api/admin/class-passcode/rotate') {
+    const result = handleRotateClassPasscode(session);
+    send(res, result.status, result.body);
+    return;
+  }
+  // ── class-enrollment-passcode:routes END ──────────────────────────────────
+
+  // ── classroom-provider-auth:routes START ───────────────────────────────────
+  if (url.pathname.startsWith('/provider-auth/')) {
+    const m = url.pathname.match(/^\/provider-auth\/([^/]+)\/(start|exchange)$/);
+    if (m) {
+      const [, providerId, kind] = m;
+      const userId = session.userId;
+      if (!userId) {
+        send(res, 401, { error: 'not signed in' });
+        return;
+      }
+      if (kind === 'start' && method === 'GET') {
+        const result = handleProviderAuthStart(providerId!, { userId });
+        send(res, result.status, result.body);
+        return;
+      }
+      if (kind === 'exchange' && method === 'POST') {
+        void (async () => {
+          try {
+            const body = await readJsonBody(req);
+            const result = await handleProviderAuthExchange(providerId!, body as { code?: string; state?: string }, {
+              userId,
+            });
+            send(res, result.status, result.body);
+          } catch (err) {
+            log.error('provider-auth exchange error', { err });
+            if (!res.headersSent) send(res, 500, { error: String(err) });
+          }
+        })();
+        return;
+      }
+    }
+  }
+  if (url.pathname.startsWith('/api/me/providers/')) {
+    const m = url.pathname.match(/^\/api\/me\/providers\/([^/]+)(?:\/(api-key|active))?$/);
+    if (m) {
+      const [, providerId, action] = m;
+      const userId = session.userId;
+      if (!userId) {
+        send(res, 401, { error: 'not signed in' });
+        return;
+      }
+      if (method === 'GET' && !action) {
+        const result = handleGetProviderStatus(providerId!, { userId });
+        send(res, result.status, result.body);
+        return;
+      }
+      if (method === 'POST' && action === 'api-key') {
+        void (async () => {
+          try {
+            const body = await readJsonBody(req);
+            const result = handlePostApiKey(providerId!, body as { apiKey?: string }, { userId });
+            send(res, result.status, result.body);
+          } catch (err) {
+            log.error('provider api-key post error', { err });
+            if (!res.headersSent) send(res, 500, { error: String(err) });
+          }
+        })();
+        return;
+      }
+      if (method === 'POST' && action === 'active') {
+        void (async () => {
+          try {
+            const body = await readJsonBody(req);
+            const result = handleSetActive(providerId!, body as { active?: 'apiKey' | 'oauth' }, { userId });
+            send(res, result.status, result.body);
+          } catch (err) {
+            log.error('provider set-active post error', { err });
+            if (!res.headersSent) send(res, 500, { error: String(err) });
+          }
+        })();
+        return;
+      }
+      if (method === 'DELETE' && !action) {
+        const which = url.searchParams.get('which') as 'apiKey' | 'oauth';
+        const result = handleDisconnect(providerId!, { which }, { userId });
+        send(res, result.status, result.body);
+        return;
+      }
+    }
+  }
+  // ── classroom-provider-auth:routes END ─────────────────────────────────────
 
   // API
   void route(req, res, url, method, session).catch((err) => {

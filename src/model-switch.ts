@@ -11,6 +11,7 @@
  */
 import { getAgentGroupByFolder, updateAgentGroup } from './db/agent-groups.js';
 import { getActiveSessions } from './db/sessions.js';
+import { isContainerRunning, killContainer } from './container-runner.js';
 
 export { expandAlias, hintsForProvider } from './model-discovery.js';
 export type { ModelHint } from './model-discovery.js';
@@ -51,11 +52,6 @@ export function setModel(folder: string, model: string | null): boolean {
   // containers anyway.
   for (const session of getActiveSessions().filter((s) => s.agent_group_id === group.id)) {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { isContainerRunning, killContainer } = require('./container-runner.js') as {
-        isContainerRunning: (id: string) => boolean;
-        killContainer: (id: string, reason: string) => void;
-      };
       if (isContainerRunning(session.id)) killContainer(session.id, 'model change');
     } catch {
       /* best-effort */
