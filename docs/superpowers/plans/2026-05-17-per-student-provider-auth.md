@@ -30,6 +30,16 @@
 
 **Status:** All 17 tasks complete. Phase X.7 ready for live smoke test (Task 14 step 6 — owner signs in, configures Class Controls, clicks Connect on the Providers card and verifies the authorize URL).
 
+**Update 2026-05-19 — folded into trunk.** The classroom-branch layer
+(per-student storage, resolver, OAuth routes, Class Controls v2 schema,
+Home Providers card, Models status pills) was merged into trunk on
+`main` (commit `e0ef45a`). X.7 no longer ships as a skill install —
+`/add-classroom-provider-auth` and the `classroom-x7-provider-auth`
+branch are superseded. The two-layer trunk/classroom-branch split
+described under **Architecture** above is the original plan, not the
+shipped reality. Rationale + cross-links: `plans/master.md` Phase 1.7
+follow-ups and Phase 2 #2.
+
 ---
 
 ## File Inventory

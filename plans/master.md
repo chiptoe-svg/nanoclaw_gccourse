@@ -151,8 +151,9 @@ Decision deferred. For now: trunk-with-classroom-stuff is the deployed
 reality; living with it. Revisit when one of:
 - Upstream `qwibitai/nanoclaw` wants to merge something from this fork
 - A second classroom install diverges enough to need real separation
-- The "X.7 install skill but X.7 also in trunk" duplication causes a real
-  sync bug
+- A classroom-specific subsystem starts drifting between a trunk copy
+  and a skill-installed copy (the X.7 fold-in removed the one instance
+  of this that existed)
 
 **Open follow-ups (not blocking the phase).**
 - *Trace disclosure for model_call / agent_call.* Today's trace UI
@@ -171,11 +172,13 @@ reality; living with it. Revisit when one of:
   gws-mcp 210 commits behind main). Sync action runs nightly; first
   fire will file 3 conflict issues. Apply path-(a) treatment when
   each one next needs an update.
-- *Trunk vs. X.7-install state asymmetry.* During today's churn, main's
-  `home.js` accumulated the X.7 install state (the "Providers card"
-  section, `renderProvidersCard` impl, etc.). Strictly violates the
-  "X.7 stays skill-installable" rule but in practice trunk-with-X.7
-  is the deployed reality. Document or revert in a follow-up commit.
+- ~~*Trunk vs. X.7-install state asymmetry.*~~ ✅ **Resolved
+  2026-05-19** — the full X.7 subsystem was folded into trunk
+  (commit `e0ef45a`): per-student storage, resolver, OAuth routes,
+  Class Controls v2 schema, Providers card, Models status pills.
+  The "X.7 stays skill-installable" rule is formally retired for
+  this fork; `/add-classroom-provider-auth` and the
+  `classroom-x7-provider-auth` branch are now redundant.
 
 ## Phase 1.8 — agent-harness benchmark suite (planned)
 
@@ -369,13 +372,17 @@ dependency tracking.
    Partly blocked on GCP redirect URI registration — see
    `project_gcp_oauth_pending` memory. Details:
    [gws-mcp.md §Phase 14](gws-mcp.md).
-2. **credential-proxy Phase X.7 — per-student provider OAuth +
+2. ✅ **credential-proxy Phase X.7 — per-student provider OAuth +
    temp-password fallback.** Students authorize their own provider
    account via magic-link; resolver falls back to instructor pool if
    no per-student token. Instructor can issue a time-bounded temp
    code (`ncl temp-creds grant --user X --hours 24`) that grants
    instructor-pool access during student onboarding. Details:
    [credential-proxy-per-call-attribution.md §X.7](credential-proxy-per-call-attribution.md).
+   **Shipped + folded into trunk** 2026-05-19 (commit `e0ef45a`) —
+   the subsystem was merged into trunk rather than kept as a skill
+   install. Full task breakdown:
+   [`docs/superpowers/plans/2026-05-17-per-student-provider-auth.md`](../docs/superpowers/plans/2026-05-17-per-student-provider-auth.md).
 3. **gws-mcp Phase 13.5b — Calendar list/create.** Earns its keep
    once each user has their own calendar (per-person mode). In shared-classroom mode it
    collapses to a single shared workspace calendar and doesn't need
