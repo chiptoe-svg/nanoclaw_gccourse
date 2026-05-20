@@ -302,11 +302,13 @@ export class ClaudeProvider implements AgentProvider {
   private mcpServers: Record<string, McpServerConfig>;
   private env: Record<string, string | undefined>;
   private additionalDirectories?: string[];
+  private model?: string;
 
   constructor(options: ProviderOptions = {}) {
     this.assistantName = options.assistantName;
     this.mcpServers = options.mcpServers ?? {};
     this.additionalDirectories = options.additionalDirectories;
+    this.model = options.model;
     this.env = {
       ...(options.env ?? {}),
       CLAUDE_CODE_AUTO_COMPACT_WINDOW,
@@ -342,6 +344,7 @@ export class ClaudeProvider implements AgentProvider {
         ],
         disallowedTools: SDK_DISALLOWED_TOOLS,
         env: this.env,
+        ...(this.model ? { model: this.model } : {}),
         permissionMode: 'bypassPermissions',
         allowDangerouslySkipPermissions: true,
         settingSources: ['project', 'user'],
@@ -400,9 +403,23 @@ export class ClaudeProvider implements AgentProvider {
                     : {}),
                 }
               : undefined;
-          // Derive model from modelUsage keys (first key is the primary model).
+          // Derive model from modelUsage: pick the entry with the most output
+          // tokens. Claude Code's initialization call uses a cheap model (haiku)
+          // before the main conversation starts; it dominates by key order but
+          // produces minimal output. The main conversation model has by far the
+          // most outputTokens, so sorting by that field reliably identifies it.
           const modelUsage = (message as { modelUsage?: Record<string, unknown> }).modelUsage;
-          const model = modelUsage ? Object.keys(modelUsage)[0] : undefined;
+          let model: string | undefined;
+          if (modelUsage) {
+            let maxOut = -1;
+            for (const [id, u] of Object.entries(modelUsage)) {
+              const out = typeof (u as { outputTokens?: number })?.outputTokens === 'number'
+                ? (u as { outputTokens: number }).outputTokens
+                : 0;
+              if (out > maxOut) { maxOut = out; model = id; }
+            }
+            model ??= Object.keys(modelUsage)[0];
+          }
           yield {
             type: 'result',
             text,

@@ -151,8 +151,9 @@ Decision deferred. For now: trunk-with-classroom-stuff is the deployed
 reality; living with it. Revisit when one of:
 - Upstream `qwibitai/nanoclaw` wants to merge something from this fork
 - A second classroom install diverges enough to need real separation
-- The "X.7 install skill but X.7 also in trunk" duplication causes a real
-  sync bug
+- A classroom-specific subsystem starts drifting between a trunk copy
+  and a skill-installed copy (the X.7 fold-in removed the one instance
+  of this that existed)
 
 **Open follow-ups (not blocking the phase).**
 - *Trace disclosure for model_call / agent_call.* Today's trace UI
@@ -167,15 +168,17 @@ reality; living with it. Revisit when one of:
 - *Deprecate `/add-classroom-auth`.* Old Codex-only magic-link
   auth.json upload, superseded by `/add-classroom-provider-auth`. Mark
   its `SKILL.md` description with a deprecation pointer (5 min).
-- *Three long-lived branches still drift* (providers 737, admin 273,
-  gws-mcp 210 commits behind main). Sync action runs nightly; first
-  fire will file 3 conflict issues. Apply path-(a) treatment when
-  each one next needs an update.
-- *Trunk vs. X.7-install state asymmetry.* During today's churn, main's
-  `home.js` accumulated the X.7 install state (the "Providers card"
-  section, `renderProvidersCard` impl, etc.). Strictly violates the
-  "X.7 stays skill-installable" rule but in practice trunk-with-X.7
-  is the deployed reality. Document or revert in a follow-up commit.
+- *Two long-lived branches still drift* (providers 737, admin 273
+  commits behind main). Sync action runs nightly; conflicts file
+  issues. Apply path-(a) treatment when each one next needs an
+  update. (`gws-mcp` was retired 2026-05-19 — see Cross-cutting.)
+- ~~*Trunk vs. X.7-install state asymmetry.*~~ ✅ **Resolved
+  2026-05-19** — the full X.7 subsystem was folded into trunk
+  (commit `e0ef45a`): per-student storage, resolver, OAuth routes,
+  Class Controls v2 schema, Providers card, Models status pills.
+  The "X.7 stays skill-installable" rule is formally retired for
+  this fork; `/add-classroom-provider-auth` and the
+  `classroom-x7-provider-auth` branch are now redundant.
 
 ## Phase 1.8 — agent-harness benchmark suite (planned)
 
@@ -369,13 +372,17 @@ dependency tracking.
    Partly blocked on GCP redirect URI registration — see
    `project_gcp_oauth_pending` memory. Details:
    [gws-mcp.md §Phase 14](gws-mcp.md).
-2. **credential-proxy Phase X.7 — per-student provider OAuth +
+2. ✅ **credential-proxy Phase X.7 — per-student provider OAuth +
    temp-password fallback.** Students authorize their own provider
    account via magic-link; resolver falls back to instructor pool if
    no per-student token. Instructor can issue a time-bounded temp
    code (`ncl temp-creds grant --user X --hours 24`) that grants
    instructor-pool access during student onboarding. Details:
    [credential-proxy-per-call-attribution.md §X.7](credential-proxy-per-call-attribution.md).
+   **Shipped + folded into trunk** 2026-05-19 (commit `e0ef45a`) —
+   the subsystem was merged into trunk rather than kept as a skill
+   install. Full task breakdown:
+   [`docs/superpowers/plans/2026-05-17-per-student-provider-auth.md`](../docs/superpowers/plans/2026-05-17-per-student-provider-auth.md).
 3. **gws-mcp Phase 13.5b — Calendar list/create.** Earns its keep
    once each user has their own calendar (per-person mode). In shared-classroom mode it
    collapses to a single shared workspace calendar and doesn't need
@@ -551,17 +558,20 @@ Slot into Phase 2 or a small interleave when convenient.
   210. Nobody was running the periodic sync the rule-5 pattern
   assumes. Fix: `.github/workflows/sync-long-lived-branches.yml`
   runs daily at 12:17 UTC, attempts `git merge origin/main` on each
-  of `classroom`, `providers`, `admin`, `gws-mcp`. Conflict-free →
+  of `classroom`, `providers`, `admin`. Conflict-free →
   push. Conflicts → open a GitHub issue with the resolve recipe
   (auto-deduplicated by title, auto-closed on next clean run).
-  - **Path-(a) treatment still needed for 3 branches before
+  - **Path-(a) treatment still needed for 2 branches before
     automation can take over them cleanly:**
     - `providers` (737 behind) — sync when next updating
       `/add-opencode` or any future provider install skill.
     - `admin` (273 behind) — sync when next updating
       `/add-admintools`.
-    - `gws-mcp` (210 behind) — sync when next updating
-      `/add-gws-tool`.
+  - **`gws-mcp` retired 2026-05-19.** The GWS MCP code (relay +
+    Docs/Sheets/Slides/Calendar/Gmail tools) had fully landed in
+    trunk, 252 commits ahead of where the branch sat — the branch
+    and `/add-gws-tool` were redundant. Branch deleted, skill
+    removed, `gws-mcp` dropped from the sync-workflow matrix.
     Until each path-(a) sync lands, the nightly job will keep
     filing fresh conflict issues for that branch — that's working
     as intended; the issue is the prompt to do the path-(a) work.

@@ -35,10 +35,12 @@ describe('class-enrollment-passcode', () => {
   it('rotatePasscode persists hash+salt to DB', async () => {
     const { rotatePasscode } = await import('./class-enrollment-passcode.js');
     rotatePasscode('owner:1');
-    const row = db.prepare('SELECT passcode_hash, passcode_salt FROM class_enrollment_passcodes').get() as {
-      passcode_hash: string;
-      passcode_salt: string;
-    } | undefined;
+    const row = db.prepare('SELECT passcode_hash, passcode_salt FROM class_enrollment_passcodes').get() as
+      | {
+          passcode_hash: string;
+          passcode_salt: string;
+        }
+      | undefined;
     expect(row).toBeDefined();
     expect(row!.passcode_hash).toMatch(/^[a-f0-9]+$/);
     expect(row!.passcode_salt).toMatch(/^[a-f0-9]+$/);

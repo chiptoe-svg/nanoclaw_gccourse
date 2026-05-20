@@ -423,11 +423,10 @@ that one file; every student's next session picks it up.
 This skill installs the classroom **base**. For a complete
 shared-classroom deploy, also run:
 
-1. `/add-gws-tool` — Google Workspace MCP infrastructure (Docs,
-   Sheets, Slides, Drive). Install before `/add-classroom-gws`.
-2. `/add-classroom-gws` — per-student Drive folders + shared-classroom
+1. `/add-classroom-gws` — per-student Drive folders + shared-classroom
    ownership friction (`nanoclaw_owners` tag, hard-block on
-   cross-student writes).
+   cross-student writes). The base GWS MCP infrastructure ships in
+   trunk — no separate install step.
 
 End-to-end guide: [`docs/shared-classroom.md`](../../../docs/shared-classroom.md).
 

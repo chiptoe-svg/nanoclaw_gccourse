@@ -109,17 +109,12 @@ playground gate has nothing to gate against without it.
 **Verify:** the playground server starts on port 3002 after the
 host restart (`grep playground logs/nanoclaw.log | tail -5`).
 
-### 3. Install the GWS MCP infrastructure
+### 3. Authorize Google Workspace access
 
-```
-/add-gws-tool
-```
-
-Copies the Google Workspace MCP relay + server + container-side
-tools (Docs, Sheets, Slides read/write) from `origin/gws-mcp`.
-Lightweight per-API installs — no monolithic `googleapis` package.
-
-**Authorize Google access** if not already done:
+The GWS MCP infrastructure — relay, server, and container-side
+Docs/Sheets/Slides/Calendar/Gmail tools — ships in trunk; there is no
+install step. Authorize the instructor's Google account if not
+already done:
 
 ```bash
 pnpm exec tsx scripts/gws-authorize.ts
