@@ -103,8 +103,13 @@ function loadModelDropdowns(el, folder) {
       const providerAllowed = isOwner || !ac
         ? null
         : (p) => !!(ac.providers && ac.providers[p] && ac.providers[p].allow);
+      // Hide providers the host can't authenticate (no API key / OAuth, or
+      // the local server is offline) — selecting one would only produce a
+      // failed call. Applies to everyone, owner included. A provider absent
+      // from the map stays visible (defensive: don't hide on partial data).
+      const providerAuth = data.providerAuth || {};
       const providers = [...new Set(visible.map((m) => m.provider))].filter(
-        (p) => !providerAllowed || providerAllowed(p),
+        (p) => (!providerAllowed || providerAllowed(p)) && providerAuth[p] !== false,
       );
       provSel.innerHTML = '';
       for (const p of providers) provSel.add(new Option(p, p));

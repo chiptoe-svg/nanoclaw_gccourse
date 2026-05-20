@@ -6,6 +6,7 @@ import { readContainerConfig, writeContainerConfig } from '../../../container-co
 import { readEnvFile } from '../../../env.js';
 import { type ModelEntry, getModelCatalog } from '../../../model-catalog.js';
 import { listAllForProvider } from '../../../model-discovery.js';
+import { getModelProvider } from '../../../model-providers/index.js';
 import { setModel } from '../../../model-switch.js';
 import { setProvider } from '../../../provider-switch.js';
 
@@ -31,6 +32,13 @@ export interface ModelsResponse {
    * probe itself failed for a reason unrelated to reachability (timeout etc.).
    */
   localServerOnline: boolean | null;
+  /**
+   * Per-provider usability. `true` when a chat/agent call can actually be
+   * made: cloud providers (claude, codex) need a host API key / OAuth token;
+   * the local provider needs its server reachable. The Chat-tab dropdowns
+   * use this to hide providers that would only produce a failed call.
+   */
+  providerAuth: Record<string, boolean>;
 }
 
 async function probeLocalServer(): Promise<boolean> {
@@ -74,6 +82,16 @@ export async function handleGetModels(draftFolder: string): Promise<ApiResult<Mo
 
     const activeModel = cfg.provider && cfg.model ? { provider: cfg.provider, model: cfg.model } : null;
 
+    // Per-provider auth status. The local provider has no real auth — its
+    // omlx adapter always returns a token — so reachability stands in for
+    // usability there. Cloud providers resolve to false when the host has
+    // no key/OAuth (getAuth() returns null).
+    const providerAuth: Record<string, boolean> = {};
+    const providersSeen = new Set<string>([...catalog.map((m) => m.provider), ...discovered.map((d) => d.provider)]);
+    for (const p of providersSeen) {
+      providerAuth[p] = p === 'local' ? localServerOnline !== false : getModelProvider(p)?.getAuth() != null;
+    }
+
     return {
       status: 200,
       body: {
@@ -82,6 +100,7 @@ export async function handleGetModels(draftFolder: string): Promise<ApiResult<Mo
         discovered,
         activeModel,
         localServerOnline,
+        providerAuth,
       },
     };
   } catch (err) {
