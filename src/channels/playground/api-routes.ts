@@ -37,6 +37,7 @@ import { checkDraftMutation } from '../playground-gate-registry.js';
 import { getPlatformPrefix, getSetupConfig } from './adapter.js';
 import type { PlaygroundSession } from './auth-store.js';
 import { readJsonBody, send } from './http-helpers.js';
+import { deleteCustomSkill, listCustomSkills, readCustomSkill, writeCustomSkill } from './custom-skills.js';
 import { getLibraryCacheStat, listLibrary, listSkillFiles, readSkillFile } from './library.js';
 import { handlePersonaLayers } from './api/persona-layers.js';
 import {
@@ -464,6 +465,43 @@ export async function route(
       return send(res, 200, { ok: true, skills });
     } catch (err) {
       return send(res, 500, { error: (err as Error).message });
+    }
+  }
+
+  // GET /api/drafts/:folder/custom-skills — this agent's custom skills
+  const customSkillsListMatch = url.pathname.match(/^\/api\/drafts\/([A-Za-z0-9_-]+)\/custom-skills$/);
+  if (method === 'GET' && customSkillsListMatch) {
+    return send(res, 200, { entries: listCustomSkills(customSkillsListMatch[1]!) });
+  }
+
+  // GET/PUT/DELETE /api/drafts/:folder/custom-skills/:name — one custom skill's SKILL.md
+  const customSkillMatch = url.pathname.match(
+    /^\/api\/drafts\/([A-Za-z0-9_-]+)\/custom-skills\/([A-Za-z0-9][A-Za-z0-9_.-]*)$/,
+  );
+  if (customSkillMatch) {
+    const draftFolder = customSkillMatch[1]!;
+    const name = customSkillMatch[2]!;
+    if (method === 'GET') {
+      const text = readCustomSkill(draftFolder, name);
+      if (text === undefined) return send(res, 404, { error: 'not found' });
+      return send(res, 200, { text });
+    }
+    if (method === 'PUT' || method === 'DELETE') {
+      const decision = checkDraftMutation(draftFolder, 'skills_put', session.userId);
+      if (!decision.allow) return send(res, 403, { error: decision.reason || 'Forbidden' });
+      if (method === 'DELETE') {
+        return send(res, 200, { ok: deleteCustomSkill(draftFolder, name) });
+      }
+      const body = await readJsonBody(req);
+      if (typeof body.content !== 'string') {
+        return send(res, 400, { error: 'content (string) required' });
+      }
+      try {
+        writeCustomSkill(draftFolder, name, body.content);
+        return send(res, 200, { ok: true });
+      } catch (err) {
+        return send(res, 400, { error: (err as Error).message });
+      }
     }
   }
 
