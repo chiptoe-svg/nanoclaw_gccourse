@@ -11,6 +11,8 @@ import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 // helper must be mocked rather than chdir'd around.
 let tmpDir = '';
 
+// Inline regex: can't import the real sanitizeUserIdForPath here (would defeat the mock).
+// Mirror: student-provider-auth.test.ts uses the same factory body.
 vi.mock('../../../student-creds-paths.js', () => ({
   sanitizeUserIdForPath: (userId: string) => userId.replace(/[^A-Za-z0-9_-]/g, '_'),
   studentProviderCredsPath: (userId: string, providerId: string) => {
