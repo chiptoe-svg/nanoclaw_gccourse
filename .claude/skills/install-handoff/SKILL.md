@@ -241,7 +241,7 @@ Immediately invalidates the URL and deletes the bundle from disk.
 | Item | Source path(s) | Notes |
 |------|---------------|-------|
 | `.env` | `.env` | Always included (core secrets). |
-| `gws-creds` | `data/gws-credentials.json`, `data/gws-tokens/` | Skipped silently if `/add-gws-tool` is not installed. |
+| `gws-creds` | `data/gws-credentials.json`, `data/gws-tokens/` | Skipped silently if no GWS credentials are present. |
 | `codex-creds` | `data/codex/auth.json` | Skipped silently if `/add-codex` is not installed. |
 
 ### Opt-in items (`--include`)

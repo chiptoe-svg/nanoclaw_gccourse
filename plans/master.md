@@ -168,10 +168,10 @@ reality; living with it. Revisit when one of:
 - *Deprecate `/add-classroom-auth`.* Old Codex-only magic-link
   auth.json upload, superseded by `/add-classroom-provider-auth`. Mark
   its `SKILL.md` description with a deprecation pointer (5 min).
-- *Three long-lived branches still drift* (providers 737, admin 273,
-  gws-mcp 210 commits behind main). Sync action runs nightly; first
-  fire will file 3 conflict issues. Apply path-(a) treatment when
-  each one next needs an update.
+- *Two long-lived branches still drift* (providers 737, admin 273
+  commits behind main). Sync action runs nightly; conflicts file
+  issues. Apply path-(a) treatment when each one next needs an
+  update. (`gws-mcp` was retired 2026-05-19 — see Cross-cutting.)
 - ~~*Trunk vs. X.7-install state asymmetry.*~~ ✅ **Resolved
   2026-05-19** — the full X.7 subsystem was folded into trunk
   (commit `e0ef45a`): per-student storage, resolver, OAuth routes,
@@ -558,17 +558,20 @@ Slot into Phase 2 or a small interleave when convenient.
   210. Nobody was running the periodic sync the rule-5 pattern
   assumes. Fix: `.github/workflows/sync-long-lived-branches.yml`
   runs daily at 12:17 UTC, attempts `git merge origin/main` on each
-  of `classroom`, `providers`, `admin`, `gws-mcp`. Conflict-free →
+  of `classroom`, `providers`, `admin`. Conflict-free →
   push. Conflicts → open a GitHub issue with the resolve recipe
   (auto-deduplicated by title, auto-closed on next clean run).
-  - **Path-(a) treatment still needed for 3 branches before
+  - **Path-(a) treatment still needed for 2 branches before
     automation can take over them cleanly:**
     - `providers` (737 behind) — sync when next updating
       `/add-opencode` or any future provider install skill.
     - `admin` (273 behind) — sync when next updating
       `/add-admintools`.
-    - `gws-mcp` (210 behind) — sync when next updating
-      `/add-gws-tool`.
+  - **`gws-mcp` retired 2026-05-19.** The GWS MCP code (relay +
+    Docs/Sheets/Slides/Calendar/Gmail tools) had fully landed in
+    trunk, 252 commits ahead of where the branch sat — the branch
+    and `/add-gws-tool` were redundant. Branch deleted, skill
+    removed, `gws-mcp` dropped from the sync-workflow matrix.
     Until each path-(a) sync lands, the nightly job will keep
     filing fresh conflict issues for that branch — that's working
     as intended; the issue is the prompt to do the path-(a) work.

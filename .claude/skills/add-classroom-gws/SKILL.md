@@ -21,13 +21,12 @@ Layered on top of `/add-classroom`. Adds:
 ## Prerequisites
 
 - `/add-classroom` must be installed first. The skill aborts otherwise.
-- `/add-gws-tool` must be installed first — Mode A ownership ext
-  (installed below in step 7+) needs the base GWS MCP infrastructure
-  it provides.
+- The base GWS MCP infrastructure (`src/gws-mcp-tools.ts`, the relay,
+  and the Docs/Sheets/Slides/Calendar/Gmail tools) ships in trunk.
+  Mode A ownership ext (installed below in step 7+) layers on top of it.
 - Google OAuth credentials with `drive` scope at
-  `~/.config/gws/credentials.json` (already present on most installs
-  that ran the taylorwilsdon-MCP or `/add-gws-tool`). The skill
-  validates this file exists during VERIFY.
+  `~/.config/gws/credentials.json`. The skill validates this file
+  exists during VERIFY.
 - `rclone` installed on the host. The skill does NOT install or
   configure rclone — see `docs/class-setup.md` for the configuration
   steps. (Without rclone running, the bind mounts work but reference
@@ -55,7 +54,7 @@ Skip to **Configure** if all of these are in place:
 
 ```bash
 [ -f src/class-pair-greeting.ts ] || { echo "Run /add-classroom first."; exit 1; }
-[ -f src/gws-mcp-tools.ts ]       || { echo "Run /add-gws-tool first."; exit 1; }
+[ -f src/gws-mcp-tools.ts ]       || { echo "src/gws-mcp-tools.ts missing — GWS MCP ships in trunk; update your tree."; exit 1; }
 ```
 
 ### 2. Fetch the classroom branch
@@ -75,7 +74,7 @@ git show origin/classroom:src/class-skeleton-drive-mount.ts > src/class-skeleton
 ### 3b. Copy the Mode A ownership ext files
 
 These wire the `nanoclaw_owners` Drive customProperties primitive on
-top of `/add-gws-tool`'s base tools — students collaborate freely in
+top of trunk's base GWS tools — students collaborate freely in
 the shared workspace, but writes/deletes on docs the caller doesn't
 own are hard-blocked at the tool layer with the creator's display
 name surfaced in the error.
@@ -182,9 +181,9 @@ container at `/workspace/drive/`.
 
 ## Where this fits in the deploy story
 
-This skill completes the **shared-classroom** GWS setup. Prereqs
-`/add-classroom` (base) and `/add-gws-tool` (GWS MCP infra) must
-be installed first; the skill aborts otherwise.
+This skill completes the **shared-classroom** GWS setup. Prereq
+`/add-classroom` (base) must be installed first (the skill aborts
+otherwise); the base GWS MCP infra ships in trunk.
 
 End-to-end guide: [`docs/shared-classroom.md`](../../../docs/shared-classroom.md).
 
