@@ -268,7 +268,10 @@ export class CodexProvider implements AgentProvider {
         await initializeCodexAppServer(server);
 
         const threadParams = {
-          model: self.model,
+          // effectiveModel (not self.model) so a model switch made via the
+          // Models tab / chat dropdown — written to container.json — takes
+          // effect on the next query without respawning the container.
+          model: effectiveModel,
           cwd: input.cwd,
           sandbox: 'danger-full-access',
           approvalPolicy: 'never',
@@ -309,7 +312,7 @@ export class CodexProvider implements AgentProvider {
             server,
             threadId!,
             text,
-            self.model,
+            effectiveModel,
             input.cwd,
             turnImagePaths,
             containerJson.codexEffort ?? 'low',

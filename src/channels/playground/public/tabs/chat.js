@@ -182,15 +182,19 @@ function loadModelDropdowns(el, folder) {
         const newModel = modelSel.value;
         if (newModel === lastModel) return;
 
-        // In agent mode the model is wired into container.json + agent_groups.model
-        // and read at spawn time, so switching means restarting the session
-        // container — which drops the running conversation. Warn first.
+        // In agent mode the model is persisted to container.json +
+        // agent_groups.model. The codex/local provider re-reads container.json
+        // each turn, so a same-provider switch applies on the next message —
+        // no respawn, conversation intact. The claude provider freezes its
+        // model at container spawn, so switching it needs a respawn: warn
+        // first and clear the dropped conversation.
         // In direct mode the dropdown directly controls the request body, no
         // persisted state changes and no container involved.
         const isAgentMode = el.querySelector('#mode-agent')?.classList.contains('active');
         if (isAgentMode) {
-          // Only warn when there's a live conversation to lose.
-          if (log.querySelector('.msg.user, .msg.agent')) {
+          const needsRespawn = provSel.value === 'claude';
+          // Only warn (respawn case) when there's a live conversation to lose.
+          if (needsRespawn && log.querySelector('.msg.user, .msg.agent')) {
             const ok = await showModelSwitchModal(lastModel, newModel);
             if (!ok) {
               modelSel.value = lastModel;
@@ -206,8 +210,12 @@ function loadModelDropdowns(el, folder) {
             });
             if (!r.ok) throw new Error(`status ${r.status}`);
             lastModel = newModel;
-            log.innerHTML = '';
-            appendSystemNote(log, `— model switched to ${newModel}; container respawning —`);
+            if (needsRespawn) {
+              log.replaceChildren();
+              appendSystemNote(log, `— model switched to ${newModel}; container respawning —`);
+            } else {
+              appendChatNote(log, `— model switched to ${newModel}; next reply will use it —`);
+            }
           } catch (err) {
             appendChatNote(log, `Model switch failed: ${String(err)}`);
             modelSel.value = lastModel;
