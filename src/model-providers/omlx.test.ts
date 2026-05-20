@@ -27,9 +27,7 @@ describe('omlx adapter parseId', () => {
 describe('omlx adapter pickTop', () => {
   it('sorts alphabetically and slices to maxCount', () => {
     const ids = ['zeta', 'alpha', 'mu', 'beta'];
-    const parsed = ids
-      .map((id) => omlxAdapter.parseId(id))
-      .filter((p): p is NonNullable<typeof p> => p !== null);
+    const parsed = ids.map((id) => omlxAdapter.parseId(id)).filter((p): p is NonNullable<typeof p> => p !== null);
     const top = omlxAdapter.pickTop(parsed, 3);
     expect(top.map((m) => m.alias)).toEqual(['alpha', 'beta', 'mu']);
   });

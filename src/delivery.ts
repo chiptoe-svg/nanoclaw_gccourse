@@ -407,8 +407,7 @@ async function deliverMessage(
   // own DB columns (keeps session-DB schema stable across upgrades).
   // The container's poll-loop.ts writes them in alongside { text }; we
   // extract here and hoist into the meta block for the channel adapter.
-  const contentCacheCreation =
-    typeof content.cacheCreation === 'number' ? content.cacheCreation : null;
+  const contentCacheCreation = typeof content.cacheCreation === 'number' ? content.cacheCreation : null;
   const contentCacheRead = typeof content.cacheRead === 'number' ? content.cacheRead : null;
   const meta: ChannelDeliveryMeta | undefined =
     msg.tokens_in != null ||
