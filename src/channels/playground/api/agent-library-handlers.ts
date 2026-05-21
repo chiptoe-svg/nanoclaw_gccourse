@@ -204,6 +204,9 @@ export function handleFromTemplate(
   if (count >= 20) return { status: 409, body: { error: 'Library full — delete an agent to continue (max 20)' } };
 
   const templateDir = path.join(DEFAULT_AGENTS_DIR, templateSlug);
+  if (!templateDir.startsWith(DEFAULT_AGENTS_DIR + path.sep)) {
+    return { status: 400, body: { error: 'Invalid templateSlug' } };
+  }
   if (!fs.existsSync(templateDir)) {
     return { status: 404, body: { error: `Template "${templateSlug}" not found` } };
   }

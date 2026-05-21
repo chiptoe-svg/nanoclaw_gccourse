@@ -612,4 +612,68 @@ describe('handleFromTemplate', () => {
     fs.rmSync(groupDir, { recursive: true, force: true });
     fs.rmSync(libraryRoot(folder), { recursive: true, force: true });
   });
+
+  it('returns 400 for a path-traversal templateSlug', async () => {
+    vi.doMock('../draft-read-gate.js', () => ({ canReadDraft: () => true }));
+    vi.doMock('../../../db/sessions.js', () => ({ getActiveSessions: () => [] }));
+    vi.doMock('../../../db/agent-groups.js', () => ({ getAgentGroupByFolder: () => null }));
+    vi.doMock('../../../container-runner.js', () => ({ isContainerRunning: () => false, killContainer: () => {} }));
+
+    const { handleFromTemplate } = await import('./agent-library-handlers.js');
+
+    const folder = 'tpl-traversal-test';
+    const groupDir = libraryRoot(folder).replace('/library', '');
+    fs.mkdirSync(groupDir, { recursive: true });
+    write(path.join(groupDir, 'CLAUDE.md'), '# Agent');
+    write(path.join(groupDir, 'container.json'), '{}');
+
+    const result = handleFromTemplate(folder, 'user-1', {
+      templateSlug: '../../../etc/passwd',
+      name: 'Evil',
+    });
+
+    expect(result.status).toBe(400);
+    expect((result.body as { error: string }).error).toBe('Invalid templateSlug');
+
+    fs.rmSync(groupDir, { recursive: true, force: true });
+    fs.rmSync(libraryRoot(folder), { recursive: true, force: true });
+  });
+
+  it('returns 200 and creates a library entry when template exists', async () => {
+    vi.doMock('../draft-read-gate.js', () => ({ canReadDraft: () => true }));
+    vi.doMock('../../../db/sessions.js', () => ({ getActiveSessions: () => [] }));
+    vi.doMock('../../../db/agent-groups.js', () => ({ getAgentGroupByFolder: () => null }));
+    vi.doMock('../../../container-runner.js', () => ({ isContainerRunning: () => false, killContainer: () => {} }));
+
+    const { handleFromTemplate } = await import('./agent-library-handlers.js');
+
+    // Use the real research-assistant template that ships with the project.
+    // If the directory is absent in this environment, skip gracefully.
+    if (!fs.existsSync(DEFAULT_AGENTS_DIR)) return;
+    const templatePath = path.join(DEFAULT_AGENTS_DIR, 'research-assistant');
+    if (!fs.existsSync(templatePath)) return;
+
+    const folder = 'tpl-200-test';
+    const groupDir = libraryRoot(folder).replace('/library', '');
+    fs.mkdirSync(groupDir, { recursive: true });
+    write(path.join(groupDir, 'CLAUDE.md'), '# Agent');
+    write(path.join(groupDir, 'container.json'), '{}');
+
+    const result = handleFromTemplate(folder, 'user-1', {
+      templateSlug: 'research-assistant',
+      name: 'My Research Agent',
+    });
+
+    expect(result.status).toBe(200);
+    const slug = (result.body as { slug: string }).slug;
+    expect(typeof slug).toBe('string');
+    expect(slug.length).toBeGreaterThan(0);
+
+    // Entry should appear in the library.
+    const entries = listLibrary(folder);
+    expect(entries.some((e) => e.slug === slug)).toBe(true);
+
+    fs.rmSync(groupDir, { recursive: true, force: true });
+    fs.rmSync(libraryRoot(folder), { recursive: true, force: true });
+  });
 });

@@ -401,7 +401,7 @@ export async function route(
     return send(res, r.status, r.body);
   }
 
-  // GET /api/library/defaults — read-only default agent template catalog
+  // GET /api/library/defaults — session required (playground auth gate in server.ts)
   if (method === 'GET' && url.pathname === '/api/library/defaults') {
     return send(res, 200, { templates: listDefaultAgents() });
   }
