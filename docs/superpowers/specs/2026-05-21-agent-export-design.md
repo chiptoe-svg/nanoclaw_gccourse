@@ -39,51 +39,66 @@ Everything comes from two places on the host:
 | Persona + instructions | `groups/<folder>/CLAUDE.md` |
 | Per-agent memory | `groups/<folder>/CLAUDE.local.md` (may not exist) |
 | Provider + model + skills list | `groups/<folder>/container.json` |
-| Skill content | `container/skills/<name>/SKILL.md` for each name in `skills[]` |
+| Built-in skill content | `container/skills/<name>/SKILL.md` for each name in `container.json.skills[]` |
+| Custom skill content | `groups/<folder>/custom-skills/<name>/` — full directory tree per skill |
 | Usage stats | `/api/usage/:folder` (thisMonth + total buckets) |
-| Sample exchanges | `data/v2-sessions/<ag_id>/*/outbound.db` → last N `messages_out` rows |
 
-Skills are **system-global** (mounted into every container from
-`container/skills/`) and referenced by name from `container.json`.
-There are no per-group skill files to copy today; the export reads the
-canonical SKILL.md from the container skills tree.
+**Two kinds of skills:**
+- **Built-in skills** are system-global (`container/skills/`), always a single `SKILL.md`.
+  Referenced by name in `container.json.skills[]`. All students can use them; the
+  group just activates or deactivates them.
+- **Custom skills** are per-group (`groups/<folder>/custom-skills/<name>/`), can contain
+  multiple files (up to 50), and belong exclusively to that student. Created and edited
+  through the playground Skills tab. These are the student's original work and the
+  most important export artifact after `CLAUDE.md`.
+
+Both are included in the bundle. The runtime symlink mechanism (`syncSkillSymlinks` in
+`container-runner.ts`) already gives custom skills priority over built-ins of the same
+name — the export mirrors that: custom skills appear under `custom-skills/`, built-in
+activations appear under `skills/`, and the target-system READMEs explain precedence.
 
 ## Bundle structure
 
 ```
 <folder>-export.zip
-├── README.md              ← top-level: which format to choose
-├── WHAT-I-BUILT.md        ← auto-generated summary of the agent
+├── README.md                    ← top-level: which format to choose
+├── WHAT-I-BUILT.md              ← auto-generated summary of the agent
 ├── claude/
 │   ├── README.md
 │   ├── CLAUDE.md
-│   ├── CLAUDE.local.md    (omitted if empty)
-│   └── skills/
-│       └── <name>/
-│           └── SKILL.md   (one folder per active skill)
-├── openai/
-│   ├── README.md
-│   ├── CLAUDE.md          (same content — Codex reads it natively)
-│   ├── CLAUDE.local.md    (same)
-│   ├── skills/
+│   ├── CLAUDE.local.md          (omitted if empty)
+│   ├── skills/                  ← built-in activations (single SKILL.md each)
 │   │   └── <name>/
 │   │       └── SKILL.md
-│   └── config-snippet.toml  (MCP servers from container.json, if any)
+│   └── custom-skills/           ← student-created skills (full file tree)
+│       └── <name>/
+│           ├── SKILL.md
+│           └── <any other files the student added>
+├── openai/
+│   ├── README.md
+│   ├── CLAUDE.md
+│   ├── CLAUDE.local.md
+│   ├── skills/
+│   │   └── <name>/SKILL.md
+│   ├── custom-skills/
+│   │   └── <name>/<all files>
+│   └── config-snippet.toml      (MCP servers, if any)
 ├── gemini/
 │   ├── README.md
-│   ├── GEMINI.md          (CLAUDE.md content + skills tool-listing section)
-│   └── GEMINI.local.md    (CLAUDE.local.md renamed)
+│   ├── GEMINI.md                (CLAUDE.md + ## Available tools section)
+│   └── GEMINI.local.md
 ├── openclaw/
 │   ├── README.md
 │   ├── CLAUDE.md
 │   ├── CLAUDE.local.md
-│   ├── container.json     (cleaned: no agentGroupId)
-│   └── skills/
-│       └── <name>/
-│           └── SKILL.md
+│   ├── container.json           (cleaned: no agentGroupId)
+│   ├── skills/
+│   │   └── <name>/SKILL.md
+│   └── custom-skills/           ← full tree; NanoClaw uses it directly
+│       └── <name>/<all files>
 └── universal/
     ├── README.md
-    └── agent.md           (single file: persona + memory + skills inventory)
+    └── agent.md                 (persona + memory + full skills inventory)
 ```
 
 ## Format details
@@ -94,17 +109,21 @@ canonical SKILL.md from the container skills tree.
 - Drop `CLAUDE.md` in any project root (or `~/.claude/CLAUDE.md` for
   global agent identity).
 - Copy `skills/<name>/` folders to `~/.claude/skills/`.
+- Copy `custom-skills/<name>/` folders to `~/.claude/skills/` as well
+  (same destination — custom skills override built-ins of the same name,
+  mirroring the classroom runtime behavior).
 - If `CLAUDE.local.md` exists: drop alongside `CLAUDE.md` in the
   project root (Claude Code loads it as per-project memory).
 
 **Generated README content:**
 1. Install Claude Code: `npm install -g @anthropic-ai/claude-code`
 2. Authenticate: `claude /login`
-3. Place files as above
+3. Place files as above (custom-skills/ goes into `~/.claude/skills/` too)
 4. Run: `claude` in any project directory
 
 **Notes:** Claude Code's `Skill` tool resolves `~/.claude/skills/`
-natively; no config needed beyond the file placement.
+natively; no config needed beyond the file placement. Student-authored
+custom skills get priority over any identically-named built-in.
 
 ---
 
@@ -113,9 +132,10 @@ natively; no config needed beyond the file placement.
 **What goes where:**
 - Drop `CLAUDE.md` in project root — Codex reads it and resolves
   `@-import` directives the same way Claude Code does.
-- Copy `skills/<name>/` to `~/.claude/skills/` (Codex reads the same
-  path; the `claude` name in the path is intentional — it's the
-  shared skill discovery convention).
+- Copy `skills/<name>/` to `~/.claude/skills/` (Codex resolves the
+  same path; the `claude` name is intentional — shared convention).
+- Copy `custom-skills/<name>/` to `~/.claude/skills/` too (same
+  destination, same priority logic as Claude Code).
 - If `CLAUDE.local.md` exists: drop alongside `CLAUDE.md`.
 - Apply `config-snippet.toml` (if non-empty) into `~/.codex/config.toml`
   to wire any MCP servers.
@@ -140,11 +160,14 @@ will have an empty toml snippet and the README says to skip it.
 
 **GEMINI.md construction:**
 - Base: `CLAUDE.md` content verbatim.
-- Appended section `## Available tools` — one bullet per active skill,
-  using the skill's `name` frontmatter field and first sentence of its
-  `description`. This surfaces skill capabilities as plain-text context
-  (Gemini CLI has no native skill-discovery mechanism comparable to
-  Claude Code's `Skill` tool).
+- Appended section `## Available tools` — one bullet per skill:
+  built-in activations first, then custom skills (marked `[custom]`).
+  Uses each skill's `name` + first sentence of `description`.
+  This surfaces skill capabilities as plain-text context (Gemini CLI
+  has no native skill-discovery mechanism comparable to Claude Code's
+  `Skill` tool). Full custom-skill SKILL.md content is NOT inlined —
+  Gemini has no equivalent invocation path; the bullet is enough to
+  tell the model the capability exists.
 
 **Generated README content:**
 1. Install Gemini CLI: `npm install -g @google/generative-ai-cli` (or
@@ -214,14 +237,16 @@ Generated from live data; never requires editing. Intended as a
 
 **Class:** <from class-config.json if available, else "(standalone)">
 **Model used:** <provider>/<model> from container.json
-**Active skills:** <comma-list of skill names>
+**Built-in skills:** <comma-list of activated built-in skill names>
+**Custom skills:** <comma-list of student-created skill names, or "(none)">
 **Total tokens:** <total.tokensIn + total.tokensOut> in + out
 **Total cost:** $<total.costUsd> since first session
 **This month:** $<thisMonth.costUsd>
 
 ## What my agent can do
 
-<one bullet per skill: **<name>** — <description first sentence>>
+<one bullet per skill (built-ins then custom): **<name>** — <description first sentence>>
+<custom skills flagged with `[custom — you built this]`>
 
 ## About the agent
 

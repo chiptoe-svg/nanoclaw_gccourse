@@ -32,34 +32,47 @@ without touching the API layer.
   - Reads `groups/<folder>/CLAUDE.local.md` (optional; null if absent)
   - Reads + parses `groups/<folder>/container.json` (required for
     skills list + provider/model; graceful defaults on parse failure)
-  - For each name in `container.json.skills[]`: reads
-    `container/skills/<name>/SKILL.md`; skips silently if not found
-  - Reads SKILL.md frontmatter (`name`, `description`) and body for
-    each resolved skill
+  - **Built-in skills:** for each name in `container.json.skills[]`:
+    reads `container/skills/<name>/SKILL.md`; skips silently if not found.
+    Reads frontmatter (`name`, `description`) + body.
+  - **Custom skills:** calls `listCustomSkills(folder)` from
+    `src/channels/playground/custom-skills.ts`, then for each:
+    calls `listCustomSkillFiles(folder, name)` and
+    `readCustomSkillFile(folder, name, relPath)` for every file.
+    Stores as a map of `relPath → content` per skill so bundle
+    generators can write the full directory tree.
   - Returns `AgentSources` struct (see below)
 - [ ] Define `AgentSources` type:
   ```typescript
   interface SkillEntry {
-    name: string;         // frontmatter name
+    name: string;         // frontmatter name (or dir name if no frontmatter)
     description: string;  // frontmatter description (full)
-    body: string;         // full SKILL.md content
+    body: string;         // full SKILL.md content (built-in) or '' (custom)
+  }
+  interface CustomSkillEntry {
+    name: string;
+    description: string;  // from SKILL.md frontmatter
+    files: Record<string, string>;  // relPath → file content (all files)
   }
   interface AgentSources {
     folder: string;
     assistantName: string;    // container.json.assistantName ?? folder
-    provider: string;         // container.json.provider ?? 'claude'
-    model: string;            // container.json.model ?? ''
-    claudeMd: string;         // CLAUDE.md content
+    provider: string;
+    model: string;
+    claudeMd: string;
     claudeLocalMd: string | null;
-    skills: SkillEntry[];
-    mcpServers: Record<string, unknown>;  // container.json.mcpServers
+    builtinSkills: SkillEntry[];    // from container.json.skills[]
+    customSkills: CustomSkillEntry[];  // from groups/<folder>/custom-skills/
+    mcpServers: Record<string, unknown>;
   }
   ```
 - [ ] Unit test: `readAgentSources` returns expected struct for a known
       folder; returns null for nonexistent folder
 - [ ] Unit test: missing `CLAUDE.local.md` → null in struct (not error)
-- [ ] Unit test: skill name not found in `container/skills/` → skipped
-      without throwing
+- [ ] Unit test: built-in skill name not found → skipped without throwing
+- [ ] Unit test: `customSkills` array populated when
+      `groups/<folder>/custom-skills/` exists with at least one skill;
+      empty array when directory absent
 
 ---
 
@@ -70,7 +83,10 @@ and cost totals. Assemble `WHAT-I-BUILT.md` as a string.
 
 - [ ] Add `generateWhatIBuilt(sources: AgentSources, usage: UsageResponse | null): string`
   - Header: assistantName, provider/model
-  - Skills bullet list (name + first sentence of description)
+  - Built-in skills: comma-list (or "(none activated)")
+  - Custom skills: comma-list with `[custom]` marker (or "(none)")
+  - Skills "what I can do" bullets: builtins then custom (custom flagged
+    with `[custom — you built this]`)
   - Cost + token totals from usage (graceful "usage data unavailable"
     if null)
   - First paragraph of `CLAUDE.md` (strip YAML frontmatter if present)
@@ -90,30 +106,41 @@ string transforms.
 - [ ] `buildClaudeBundle(s: AgentSources): Record<string, string>`
   - `claude/CLAUDE.md` → `s.claudeMd`
   - `claude/CLAUDE.local.md` → `s.claudeLocalMd` (omit if null)
-  - `claude/skills/<name>/SKILL.md` → skill body for each skill
-  - `claude/README.md` → generated (see spec §claude format)
+  - `claude/skills/<name>/SKILL.md` → skill body for each builtin skill
+  - `claude/custom-skills/<name>/<relPath>` → all files for each custom
+    skill (preserves full directory tree from `customSkill.files`)
+  - `claude/README.md` → generated
 - [ ] `buildOpenAIBundle(s: AgentSources): Record<string, string>`
-  - Same files as claude bundle (Codex reads CLAUDE.md natively)
+  - Same structure as claude bundle (skills/ + custom-skills/)
   - `openai/config-snippet.toml` → MCP servers block (omit if empty)
-  - `openai/README.md` → generated (see spec §openai format)
+  - `openai/README.md` → generated
 - [ ] `buildGeminiBundle(s: AgentSources): Record<string, string>`
   - `gemini/GEMINI.md` → `s.claudeMd` + appended `## Available tools`
-    section (one bullet per skill: `**name** — description first sentence`)
+    section: built-ins first, then custom skills marked `[custom]`
   - `gemini/GEMINI.local.md` → `s.claudeLocalMd` (omit if null)
   - `gemini/README.md` → generated
+  - NOTE: custom-skills/ NOT included in gemini bundle — Gemini has
+    no skill-invocation path; listing in GEMINI.md is sufficient
 - [ ] `buildOpenClawBundle(s: AgentSources): Record<string, string>`
-  - `openclaw/CLAUDE.md`, `CLAUDE.local.md`, skills/ (same as claude)
-  - `openclaw/container.json` → cleaned container.json (strip
-    `agentGroupId`; keep provider, model, skills, mcpServers, packages)
-  - `openclaw/README.md` → generated (points to qwibitai/nanoclaw)
+  - `openclaw/CLAUDE.md`, `CLAUDE.local.md`
+  - `openclaw/skills/<name>/SKILL.md` for each builtin skill
+  - `openclaw/custom-skills/<name>/<relPath>` for ALL custom skill files
+    (NanoClaw uses this directory directly — highest-fidelity export)
+  - `openclaw/container.json` → cleaned (strip `agentGroupId`; keep
+    provider, model, skills, mcpServers, packages)
+  - `openclaw/README.md` → generated
 - [ ] `buildUniversalBundle(s: AgentSources): Record<string, string>`
-  - `universal/agent.md` → three-section doc (Instructions / Memory /
-    Skills) per spec
+  - `universal/agent.md` → three sections (Instructions / Memory /
+    Skills). Skills section lists builtins then custom skills;
+    custom ones flagged with `[custom — you built this]`
   - `universal/README.md` → generated
 - [ ] Unit tests for each bundle generator:
   - All expected paths present for a fully-populated AgentSources
-  - Empty skills array → no `skills/` entries, no "Available tools" section
+  - Empty builtinSkills + customSkills → no skills/ or custom-skills/
+    entries, no "Available tools" section in Gemini
   - Null claudeLocalMd → local.md path absent
+  - Custom skill with multiple files → all file paths present in
+    claude/openai/openclaw bundles; NOT in gemini bundle
   - OpenClaw container.json: `agentGroupId` stripped, rest preserved
 
 ---
