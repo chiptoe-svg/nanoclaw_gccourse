@@ -427,18 +427,19 @@ dependency tracking.
    Spec: [`docs/superpowers/specs/2026-05-21-agent-export-design.md`](../docs/superpowers/specs/2026-05-21-agent-export-design.md).
    Plan: [`docs/superpowers/plans/2026-05-21-agent-export.md`](../docs/superpowers/plans/2026-05-21-agent-export.md).
    ~3.5 hr to implement.
-7b. **NEW: classroom Phase 5b — Agent library + save/swap UX
-   (UNPLANNED).** Distinct from §5 (which is one-direction export
-   for take-home). 5b is the in-playground File-menu-for-agents:
-   Save current agent state as a named library entry, Save As to
-   create a new entry, Open to swap the active agent, optional
-   versioning / branching. `library/default-agents/*.json` is the
-   seed storage but the wrapping UX is undesigned. Needs a spec +
-   plan pair under `docs/superpowers/` before execution. Probably
-   slots before Phase 5 (export) since export depends on the
-   "what's the current agent" notion being clearly addressable
-   — though both could land independently and reuse the same
-   underlying `groups/<folder>/` source of truth.
+7b. **classroom Phase 5b — Agent library + save/swap UX.**
+   Personal agent portfolio per user: Save / Save As / Load / New /
+   Delete named agents. One active at a time; loading kills the
+   running container and respawns on next message. New "Agents" tab
+   in the playground. Snapshots stored under
+   `groups/<folder>/library/<slug>/` (same files as the active agent:
+   CLAUDE.md, container.json, custom-skills/). Each user seeded with
+   one "Initial agent" entry at provisioning. Default agent templates
+   from `library/default-agents/`. Phase G wires Phase 5 export to
+   individual library entries.
+   Spec: [`docs/superpowers/specs/2026-05-21-agent-library-design.md`](../docs/superpowers/specs/2026-05-21-agent-library-design.md).
+   Plan: [`docs/superpowers/plans/2026-05-21-agent-library.md`](../docs/superpowers/plans/2026-05-21-agent-library.md).
+   ~5 hr. Build Phase 5 (export) first — Phase G here reuses its bundle generators.
 8. **classroom Phase 7 — expert system builder + RAG strategies.**
    Pipeline framework + named strategies + UI. Cost-economical only
    after Phase 1 #8 (local-LLM runbook) lands. Spec in
