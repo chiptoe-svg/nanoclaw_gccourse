@@ -1,15 +1,29 @@
-# Knowledge tab — ingestion + storage spec
+# Sources + Retrieval tabs — ingestion + storage spec
 
-Design spec for the ingestion side of the Knowledge tab (Phase 4 in the
-vision, Phase 7 in master.md). The strategy/query side (pipeline builder,
-chunk→embed→retrieve→rerank→prompt) is already sketched in the vision;
-this doc covers what comes before: how a corpus gets built and how it gets
-stored.
+Design spec for the two RAG lab-bench tabs that replace the single
+"Knowledge" tab from the original vision. Referenced as Phase 4 in the
+vision doc and Phase 7 in master.md.
+
+## Core framing: both tabs are lab benches
+
+A lab bench is not a configuration panel. Students don't set things up
+and walk away — they make a change and immediately see the result. Every
+control has visible feedback. Every decision produces observable output.
+This framing governs both tabs:
+
+- **Sources** — a bench for building named corpora. Change the extraction
+  strategy, see the raw chunks update. Change the storage strategy, see
+  the cost estimate update. Commit when satisfied.
+- **Retrieval** — a bench for designing retrieval pipelines. Type a test
+  query, see the retrieved chunks in real time. Swap a corpus or change
+  a reranker, see the results change. The query input is always visible;
+  nothing requires leaving the tab to see the effect of a change.
+
+Neither tab is a slideshow about RAG. The learning happens at the bench.
 
 ## Teaching intent
 
-Every decision in this flow is a teachable tradeoff. The ingestion tab is
-not a utility — it IS the curriculum. Students should:
+Every decision in this flow is a teachable tradeoff:
 
 1. Choose a source, see what the raw extraction actually looks like, and
    encounter its failure modes before the extracted text reaches a chunker.
@@ -22,15 +36,18 @@ not a utility — it IS the curriculum. Students should:
 ## Two-tab structure
 
 ```
-Knowledge tab
-├── Ingest sub-tab  — build a named corpus from one or more sources
-└── Strategy sub-tab — author a retrieval pipeline that queries a corpus
+Sources tab    — lab bench for building named corpora
+                 (source → extract → chunk → store)
+
+Retrieval tab  — lab bench for designing retrieval pipelines
+                 (corpus → retrieve → rerank → prompt → response)
 ```
 
-A named corpus is the shared artifact: Ingest produces it, Strategy
-consumes it. Students can build one corpus and compare multiple strategies
-against it, or compare corpora built from the same source with different
-extraction/chunking settings.
+A named corpus is the shared artifact: Sources produces it, Retrieval
+consumes it. Students can build one corpus and compare multiple retrieval
+strategies against it, or compare corpora built from the same source with
+different extraction/storage settings — the bench makes both comparisons
+immediate and visual.
 
 ---
 
