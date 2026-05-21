@@ -90,25 +90,105 @@ Public docs, standards pages, product documentation, APIs.
 ### Category 6 — YouTube
 Video with transcripts (auto-generated or manual captions).
 
-- **Extraction:** yt-dlp for transcript + metadata; timestamps preserved
-  as chunk metadata so retrieved chunks cite a timecode.
+- **Input:** YouTube URL or playlist.
+- **Extraction:** see Video extraction strategies below.
 - **Teaching angle:** transcript quality variance (coding tutorial
   auto-captions vs. a captioned lecture), chapter markers as natural
   chunk boundaries, copyright / ToS as a real constraint.
-- **Input:** YouTube URL or playlist.
 
 ### Category 7 — POV / screen-recording video
 Instructor recordings, lab walkthroughs, coding sessions.
 
-- **Extraction (audio):** Whisper for transcription; timestamps preserved.
-- **Extraction (visual):** frame sampling at configurable interval +
-  vision-model description of frame content (code on screen, terminal
-  output, diagrams). Multimodal: audio transcript + visual frame
-  descriptions are both indexed.
-- **Teaching angle:** frontier territory — students won't find a clean
-  tutorial. Audio track vs. visual track carry different information in a
-  coding session. This is the hardest category and deliberately so.
 - **Input:** file upload (mp4/mov) or local path.
+- **Extraction:** see Video extraction strategies below.
+- **Teaching angle:** audio track vs. visual track carry fundamentally
+  different information in a coding session. The five extraction strategies
+  below make that tradeoff concrete and measurable.
+
+### Video extraction strategies
+
+Applies to both YouTube (cat. 6) and uploaded video (cat. 7). Students
+pick a strategy per corpus; the same test query can be run across all
+five to show the cost/quality curve directly.
+
+| # | Strategy | Cost | Complexity |
+|---|---|---|---|
+| V1 | Transcript only | free / negligible | trivial |
+| V2 | Voice-to-text (Whisper) | compute only | low |
+| V3 | Whisper + periodic frame grabs | compute + vision tokens | medium |
+| V4 | Whisper + transcript-guided frame selection | compute + LLM + vision | high |
+| V5 | Whisper + transcript-guided video snippet analysis | compute + LLM + frontier vision | frontier |
+
+**V1 — Transcript only**
+Use the pre-existing transcript: YouTube auto-captions (via yt-dlp),
+a provided SRT/VTT file, or a companion `.txt` transcript. Timestamps
+preserved as chunk metadata.
+
+- *Good for:* well-captioned lectures, talks with clean audio.
+- *Fails on:* auto-captions for technical content (code identifiers,
+  library names, jargon); videos where the information is visual (a
+  coding session showing what's on screen).
+- *Teaching angle:* fastest path; establishes the quality floor.
+  Auto-caption accuracy on "NumPy broadcasting" vs. "And then we
+  add the arrays" shows the gap immediately.
+
+**V2 — Voice-to-text (Whisper)**
+Transcribe the audio track with Whisper (local, runs on MLX).
+No existing caption file required. Timestamps at word or segment
+level.
+
+- *Good for:* any video with intelligible speech; instructor recordings
+  with no published transcript.
+- *Fails on:* same visual-content gap as V1 — the transcript only
+  knows what was said, not what was shown.
+- *Teaching angle:* model size tradeoff (whisper-tiny vs. whisper-large
+  — speed vs. accuracy on technical vocabulary). Local = free but
+  takes real time on a 60-min lecture.
+
+**V3 — Whisper + periodic frame grabs**
+V2 transcript plus a screenshot every N seconds (configurable: 5s /
+15s / 30s). Each frame is described by a vision model and the
+description is appended to the nearest transcript chunk.
+
+- *Good for:* getting visual context into the index without expensive
+  per-frame targeting.
+- *Fails on:* N=5s → mostly redundant frames (same slide for 2 min);
+  N=30s → misses fast-moving content. Most frames are irrelevant noise.
+- *Teaching angle:* brute-force multimodal. The N parameter is itself
+  a lesson — there is no good fixed value. Motivates V4.
+
+**V4 — Whisper + transcript-guided frame selection**
+Use the transcript to identify "high-signal moments" — phrases like
+"as you can see here", "look at this output", "here's the error",
+transitions between topics — then grab frames only at those
+timestamps. LLM call over transcript segments to score frame-worthiness
+before any vision model is invoked.
+
+- *Good for:* coding walkthroughs, lab demos, any video where the
+  speaker explicitly points to visual content.
+- *Fails on:* videos where important visual events happen silently (a
+  graph appearing, a terminal filling with output while the speaker
+  is quiet).
+- *Teaching angle:* the transcript IS a table of contents for the
+  visual track. Using one modality to guide extraction of the other
+  is the key insight. Significantly better signal-to-noise than V3 at
+  comparable or lower cost.
+
+**V5 — Whisper + transcript-guided video snippet analysis**
+V4's targeted frame selection, but instead of (or in addition to)
+still frames, extract short video clips (2–10 sec) at high-signal
+moments and send to a video-capable vision model for analysis.
+
+- *Models:* GPT-4o (video input via API), Gemini 1.5/2.0 Flash
+  (long video context), or **Gemma 4 local** (multimodal, runs on
+  MLX — free but GPU-heavy; viable on Mac Studio, marginal on Pi).
+- *Good for:* fast UI interactions, terminal output scrolling, animated
+  diagrams, anything where a single frame loses temporal context.
+- *Fails on:* cost — video tokens are expensive at API rates. Gemma 4
+  local avoids the cost but requires significant VRAM.
+- *Teaching angle:* frontier territory. Students can measure whether
+  the quality gain over V4 justifies the cost. The local-vs-API
+  tradeoff (Gemma 4 vs. GPT-4o) is a concrete, measurable decision.
 
 ### Category 8 — Reference books
 Textbooks, technical books, long structured PDFs.
