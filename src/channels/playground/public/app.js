@@ -5,10 +5,11 @@ import { mountSkills } from './tabs/skills.js';
 import { mountModels } from './tabs/models.js';
 import { mountAgents } from './tabs/agents.js';
 import { mountSources } from './tabs/sources.js';
+import { mountRetrieval } from './tabs/retrieval.js';
 import { initDraftBanner } from './draft-banner.js';
 
-const TABS = ['home', 'chat', 'persona', 'skills', 'models', 'agents', 'sources'];
-const mounters = { home: mountHome, chat: mountChat, persona: mountPersona, skills: mountSkills, models: mountModels, agents: mountAgents, sources: mountSources };
+const TABS = ['home', 'chat', 'persona', 'skills', 'models', 'agents', 'sources', 'retrieval'];
+const mounters = { home: mountHome, chat: mountChat, persona: mountPersona, skills: mountSkills, models: mountModels, agents: mountAgents, sources: mountSources, retrieval: mountRetrieval };
 const mounted = {};
 let allowedTabs = TABS.slice();
 
