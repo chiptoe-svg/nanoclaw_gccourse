@@ -848,14 +848,16 @@ export async function route(
   const knowledgeCorporaMatch = url.pathname.match(/^\/api\/drafts\/([A-Za-z0-9_-]+)\/knowledge\/corpora$/);
   if (knowledgeCorporaMatch) {
     const folder = knowledgeCorporaMatch[1]!;
-    const headers = req.headers as Record<string, string>;
     if (method === 'GET') {
-      const r = await handleListCorpora(folder, { headers });
+      if (!canReadDraft(folder, session.userId)) return send(res, 403, { error: 'Forbidden' });
+      const r = await handleListCorpora(folder);
       return send(res, r.status, r.body);
     }
     if (method === 'POST') {
+      const decision = checkDraftMutation(folder, 'file_put', session.userId);
+      if (!decision.allow) return send(res, 403, { error: decision.reason || 'Forbidden' });
       const body = await readJsonBody(req);
-      const r = await handleCreateCorpus(folder, body, { headers });
+      const r = await handleCreateCorpus(folder, body);
       return send(res, r.status, r.body);
     }
   }
@@ -866,13 +868,15 @@ export async function route(
   if (knowledgeCorpusMatch) {
     const folder = knowledgeCorpusMatch[1]!;
     const id = knowledgeCorpusMatch[2]!;
-    const headers = req.headers as Record<string, string>;
     if (method === 'GET') {
-      const r = await handleGetCorpus(folder, id, { headers });
+      if (!canReadDraft(folder, session.userId)) return send(res, 403, { error: 'Forbidden' });
+      const r = await handleGetCorpus(folder, id);
       return send(res, r.status, r.body);
     }
     if (method === 'DELETE') {
-      const r = await handleDeleteCorpus(folder, id, { headers });
+      const decision = checkDraftMutation(folder, 'file_put', session.userId);
+      if (!decision.allow) return send(res, 403, { error: decision.reason || 'Forbidden' });
+      const r = await handleDeleteCorpus(folder, id);
       if (r.status === 204) {
         res.writeHead(204);
         res.end();
@@ -889,10 +893,16 @@ export async function route(
   if (method === 'PUT' && knowledgeUploadMatch) {
     const folder = knowledgeUploadMatch[1]!;
     const id = knowledgeUploadMatch[2]!;
+    const decision = checkDraftMutation(folder, 'file_put', session.userId);
+    if (!decision.allow) return send(res, 403, { error: decision.reason || 'Forbidden' });
     const filename = url.searchParams.get('filename') ?? 'upload';
-    const headers = req.headers as Record<string, string>;
-    const data = await readRawBody(req);
-    const r = await handleUploadSource(folder, id, filename, data, { headers });
+    let data: Buffer;
+    try {
+      data = await readRawBody(req);
+    } catch (err) {
+      return send(res, 413, { error: (err as Error).message });
+    }
+    const r = await handleUploadSource(folder, id, filename, data);
     if (r.status === 204) {
       res.writeHead(204);
       res.end();
@@ -908,8 +918,9 @@ export async function route(
   if (method === 'POST' && knowledgeIngestMatch) {
     const folder = knowledgeIngestMatch[1]!;
     const id = knowledgeIngestMatch[2]!;
-    const headers = req.headers as Record<string, string>;
-    const r = await handleIngest(folder, id, { headers });
+    const decision = checkDraftMutation(folder, 'file_put', session.userId);
+    if (!decision.allow) return send(res, 403, { error: decision.reason || 'Forbidden' });
+    const r = await handleIngest(folder, id);
     return send(res, r.status, r.body);
   }
 
@@ -920,8 +931,8 @@ export async function route(
   if (method === 'GET' && knowledgeInspectMatch) {
     const folder = knowledgeInspectMatch[1]!;
     const id = knowledgeInspectMatch[2]!;
-    const headers = req.headers as Record<string, string>;
-    const r = await handleInspect(folder, id, { headers });
+    if (!canReadDraft(folder, session.userId)) return send(res, 403, { error: 'Forbidden' });
+    const r = await handleInspect(folder, id);
     return send(res, r.status, r.body);
   }
 
@@ -932,10 +943,10 @@ export async function route(
   if (method === 'POST' && knowledgeQueryMatch) {
     const folder = knowledgeQueryMatch[1]!;
     const id = knowledgeQueryMatch[2]!;
-    const headers = req.headers as Record<string, string>;
+    if (!canReadDraft(folder, session.userId)) return send(res, 403, { error: 'Forbidden' });
     const body = await readJsonBody(req);
     const { query = '', k = 5 } = body as { query?: string; k?: number };
-    const r = await handleQuery(folder, id, query, k, { headers });
+    const r = await handleQuery(folder, id, query, k);
     return send(res, r.status, r.body);
   }
 

@@ -5,7 +5,7 @@
  */
 
 export function mountRetrieval(el) {
-  const { folder, token } = window.__pg.agent;
+  const { folder } = window.__pg.agent;
 
   el.innerHTML = `
     <div class="tab-section" style="padding:16px;max-width:860px">
@@ -41,7 +41,7 @@ export function mountRetrieval(el) {
   document.title = `Retrieval — ${window.__pg.agent.name} · Agent Playground`;
 
   const apiBase = `/api/drafts/${folder}/knowledge/corpora`;
-  const headers = { 'x-playground-token': token, 'Content-Type': 'application/json' };
+  const headers = { 'Content-Type': 'application/json' };
 
   const corpusSelect = el.querySelector('#ret-corpus-select');
   const kSelect = el.querySelector('#ret-k-select');
@@ -101,14 +101,14 @@ export function mountRetrieval(el) {
         return;
       }
       resultsEl.innerHTML = results.map((r) => {
-        const text = String(r.text ?? '');
+        const text = String(r.chunk?.text ?? '');
         const truncated = text.length > 400 ? text.slice(0, 400) + '…' : text;
         const score = typeof r.score === 'number' ? r.score.toFixed(3) : String(r.score ?? '');
         return `
           <div class="result-card">
             <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.4rem">
               <span class="result-score">score: ${esc(score)}</span>
-              <span class="result-source">${esc(r.source ?? '')} · chunk ${esc(String(r.index ?? r.chunkIndex ?? ''))}</span>
+              <span class="result-source">${esc(r.chunk?.source ?? '')} · chunk ${esc(String(r.chunk?.index ?? ''))}</span>
             </div>
             <div style="font-size:14px;line-height:1.5;white-space:pre-wrap">${esc(truncated)}</div>
           </div>

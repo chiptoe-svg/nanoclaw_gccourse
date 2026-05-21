@@ -1,6 +1,5 @@
 import fs from 'fs';
 import path from 'path';
-import { canReadDraft, checkDraftMutation } from '../channels/playground/draft-read-gate.js';
 import {
   createCorpus,
   corpusDir,
@@ -14,40 +13,16 @@ import type { SourceType } from './types.js';
 
 type HandlerResult = { status: number; body: unknown };
 
-interface RequestLike {
-  headers: Record<string, string>;
-}
-
-async function guardRead(folder: string, req: RequestLike): Promise<HandlerResult | null> {
-  const token = req.headers['x-playground-token'] ?? '';
-  const allowed = await Promise.resolve(canReadDraft(folder, token));
-  if (!allowed) return { status: 403, body: { error: 'Forbidden' } };
-  return null;
-}
-
-async function guardMutate(folder: string, req: RequestLike): Promise<HandlerResult | null> {
-  const token = req.headers['x-playground-token'] ?? '';
-  const err = await Promise.resolve(checkDraftMutation(folder, token));
-  if (err) return { status: 403, body: { error: err } };
-  return null;
-}
-
 export async function handleListCorpora(
   folder: string,
-  req: RequestLike
 ): Promise<HandlerResult> {
-  const deny = await guardRead(folder, req);
-  if (deny) return deny;
   return { status: 200, body: { corpora: listCorpora(folder) } };
 }
 
 export async function handleCreateCorpus(
   folder: string,
   body: { name?: string; sourceType?: SourceType },
-  req: RequestLike
 ): Promise<HandlerResult> {
-  const deny = await guardMutate(folder, req);
-  if (deny) return deny;
   if (!body.name) return { status: 400, body: { error: 'name is required' } };
   const meta = createCorpus(folder, {
     name: body.name,
@@ -59,10 +34,7 @@ export async function handleCreateCorpus(
 export async function handleDeleteCorpus(
   folder: string,
   id: string,
-  req: RequestLike
 ): Promise<HandlerResult> {
-  const deny = await guardMutate(folder, req);
-  if (deny) return deny;
   const dir = corpusDir(folder, id);
   if (!fs.existsSync(dir)) return { status: 404, body: { error: 'Corpus not found' } };
   deleteCorpus(folder, id);
@@ -72,10 +44,7 @@ export async function handleDeleteCorpus(
 export async function handleGetCorpus(
   folder: string,
   id: string,
-  req: RequestLike
 ): Promise<HandlerResult> {
-  const deny = await guardRead(folder, req);
-  if (deny) return deny;
   const dir = corpusDir(folder, id);
   if (!fs.existsSync(dir)) return { status: 404, body: { error: 'Corpus not found' } };
   return { status: 200, body: readMeta(folder, id) };
@@ -86,10 +55,7 @@ export async function handleUploadSource(
   id: string,
   filename: string,
   data: Buffer,
-  req: RequestLike
 ): Promise<HandlerResult> {
-  const deny = await guardMutate(folder, req);
-  if (deny) return deny;
   const dir = corpusDir(folder, id);
   if (!fs.existsSync(dir)) return { status: 404, body: { error: 'Corpus not found' } };
   const safe = path.basename(filename);
@@ -100,10 +66,7 @@ export async function handleUploadSource(
 export async function handleIngest(
   folder: string,
   id: string,
-  req: RequestLike
 ): Promise<HandlerResult> {
-  const deny = await guardMutate(folder, req);
-  if (deny) return deny;
   const dir = corpusDir(folder, id);
   if (!fs.existsSync(dir)) return { status: 404, body: { error: 'Corpus not found' } };
   void runTextPipeline(folder, id);
@@ -113,10 +76,7 @@ export async function handleIngest(
 export async function handleInspect(
   folder: string,
   id: string,
-  req: RequestLike
 ): Promise<HandlerResult> {
-  const deny = await guardRead(folder, req);
-  if (deny) return deny;
   const dir = corpusDir(folder, id);
   if (!fs.existsSync(dir)) return { status: 404, body: { error: 'Corpus not found' } };
   const chunks = readChunks(folder, id);
@@ -129,10 +89,7 @@ export async function handleQuery(
   id: string,
   query: string,
   k: number,
-  req: RequestLike
 ): Promise<HandlerResult> {
-  const deny = await guardRead(folder, req);
-  if (deny) return deny;
   const dir = corpusDir(folder, id);
   if (!fs.existsSync(dir)) return { status: 404, body: { error: 'Corpus not found' } };
   const results = queryBm25(dir, query, k);
