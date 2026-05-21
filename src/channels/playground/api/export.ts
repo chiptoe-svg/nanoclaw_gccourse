@@ -19,6 +19,7 @@ import { getAgentGroupByFolder } from '../../../db/agent-groups.js';
 import { canReadDraft } from '../draft-read-gate.js';
 import { listCustomSkills, listCustomSkillFiles, readCustomSkillFile } from '../custom-skills.js';
 import { aggregateAgentUsage } from './usage.js';
+import { entryDir } from './agent-library.js';
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -626,7 +627,6 @@ export async function handleLibraryEntryExport(
   if (!canReadDraft(folder, userId)) return { status: 403, error: 'Forbidden' };
   const group = getAgentGroupByFolder(folder);
   if (!group) return { status: 404, error: `no agent group for folder ${folder}` };
-  const { entryDir } = await import('./agent-library.js');
   const libraryEntryDir = entryDir(folder, slug);
   if (!fs.existsSync(libraryEntryDir)) return { status: 404, error: `Library entry "${slug}" not found` };
 
