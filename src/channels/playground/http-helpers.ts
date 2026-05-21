@@ -70,10 +70,7 @@ export function parseCookie(header: string | undefined, name: string): string | 
  * Optional `maxBytes` caps the accumulated size (default 25 MB); the
  * connection is destroyed and the promise rejects when the cap is exceeded.
  */
-export function readRawBody(
-  req: import('http').IncomingMessage,
-  options: { maxBytes?: number } = {},
-): Promise<Buffer> {
+export function readRawBody(req: import('http').IncomingMessage, options: { maxBytes?: number } = {}): Promise<Buffer> {
   const maxBytes = options.maxBytes ?? 25 * 1024 * 1024;
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];

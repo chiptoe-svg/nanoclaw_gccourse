@@ -26,9 +26,7 @@ afterEach(() => {
 describe('corporaDir / corpusDir', () => {
   it('returns stable paths under the folder', () => {
     expect(corporaDir(tmpFolder)).toBe(path.join(tmpFolder, 'knowledge', 'corpora'));
-    expect(corpusDir(tmpFolder, 'abc')).toBe(
-      path.join(tmpFolder, 'knowledge', 'corpora', 'abc')
-    );
+    expect(corpusDir(tmpFolder, 'abc')).toBe(path.join(tmpFolder, 'knowledge', 'corpora', 'abc'));
   });
 });
 

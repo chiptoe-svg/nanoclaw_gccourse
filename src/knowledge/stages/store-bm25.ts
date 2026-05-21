@@ -21,9 +21,7 @@ export function buildBm25Index(corpusDir: string, chunks: Chunk[]): void {
     text,
     tokenize = 'porter unicode61'
   )`);
-  const insert = db.prepare(
-    'INSERT INTO chunks (id, corpus_id, source, chunk_index, text) VALUES (?, ?, ?, ?, ?)'
-  );
+  const insert = db.prepare('INSERT INTO chunks (id, corpus_id, source, chunk_index, text) VALUES (?, ?, ?, ?, ?)');
   const insertAll = db.transaction((rows: Chunk[]) => {
     for (const c of rows) insert.run(c.id, c.corpusId, c.source, c.index, c.text);
   });
@@ -43,7 +41,7 @@ export function queryBm25(corpusDir: string, query: string, k = 5): QueryResult[
          FROM chunks
          WHERE chunks MATCH ?
          ORDER BY score
-         LIMIT ?`
+         LIMIT ?`,
       )
       .all(query, k) as Array<{
       id: string;

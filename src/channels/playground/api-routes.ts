@@ -864,7 +864,9 @@ export async function route(
 
   // GET    /api/drafts/:folder/knowledge/corpora/:id
   // DELETE /api/drafts/:folder/knowledge/corpora/:id
-  const knowledgeCorpusMatch = url.pathname.match(/^\/api\/drafts\/([A-Za-z0-9_-]+)\/knowledge\/corpora\/([A-Za-z0-9_-]+)$/);
+  const knowledgeCorpusMatch = url.pathname.match(
+    /^\/api\/drafts\/([A-Za-z0-9_-]+)\/knowledge\/corpora\/([A-Za-z0-9_-]+)$/,
+  );
   if (knowledgeCorpusMatch) {
     const folder = knowledgeCorpusMatch[1]!;
     const id = knowledgeCorpusMatch[2]!;

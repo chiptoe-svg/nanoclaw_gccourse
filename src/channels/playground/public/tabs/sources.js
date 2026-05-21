@@ -33,7 +33,7 @@ export function mountSources(el) {
         <h3 id="src-detail-name" style="margin:0 0 0.75rem"></h3>
         <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1rem;flex-wrap:wrap">
           <label style="cursor:pointer">
-            <input id="src-file-input" type="file" style="display:none" multiple accept=".txt,.md,.html,.htm">
+            <input id="src-file-input" type="file" style="display:none" multiple accept=".txt,.md,.html,.htm,.pdf">
             <span class="btn">Upload files</span>
           </label>
           <button id="src-ingest-btn" class="btn btn-primary">Build corpus</button>

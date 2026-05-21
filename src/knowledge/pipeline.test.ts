@@ -22,7 +22,7 @@ describe('runTextPipeline', () => {
     // Write a source file
     fs.writeFileSync(
       path.join(corpusDir(tmpFolder, meta.id), 'raw', 'hello.txt'),
-      'The quick brown fox. A lazy dog sleeps. The fox and the dog are friends.'
+      'The quick brown fox. A lazy dog sleeps. The fox and the dog are friends.',
     );
 
     await runTextPipeline(tmpFolder, meta.id);
@@ -30,12 +30,8 @@ describe('runTextPipeline', () => {
     const updated = readMeta(tmpFolder, meta.id);
     expect(updated.status).toBe('ready');
     expect(updated.chunkCount).toBeGreaterThan(0);
-    expect(
-      fs.existsSync(path.join(corpusDir(tmpFolder, meta.id), 'chunks.jsonl'))
-    ).toBe(true);
-    expect(
-      fs.existsSync(path.join(corpusDir(tmpFolder, meta.id), 'bm25.db'))
-    ).toBe(true);
+    expect(fs.existsSync(path.join(corpusDir(tmpFolder, meta.id), 'chunks.jsonl'))).toBe(true);
+    expect(fs.existsSync(path.join(corpusDir(tmpFolder, meta.id), 'bm25.db'))).toBe(true);
   });
 
   it('sets status to error if raw dir is empty', async () => {
@@ -51,7 +47,7 @@ describe('readChunks', () => {
     const meta = createCorpus(tmpFolder, { name: 'r', sourceType: 'text' });
     fs.writeFileSync(
       path.join(corpusDir(tmpFolder, meta.id), 'raw', 'r.txt'),
-      'Sentence one. Sentence two. Sentence three.'
+      'Sentence one. Sentence two. Sentence three.',
     );
     await runTextPipeline(tmpFolder, meta.id);
     const chunks = readChunks(tmpFolder, meta.id);

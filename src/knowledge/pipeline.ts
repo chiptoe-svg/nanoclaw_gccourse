@@ -2,7 +2,7 @@
 import fs from 'fs';
 import path from 'path';
 import { corpusDir, readMeta, updateStatus, writeMeta } from './corpus.js';
-import { extractText } from './stages/extract-text.js';
+import { extractText, extractPdf } from './stages/extract-text.js';
 import { chunkSentence, chunkFixed } from './stages/chunk.js';
 import { buildBm25Index } from './stages/store-bm25.js';
 import type { Chunk } from './types.js';
@@ -22,12 +22,16 @@ export async function runTextPipeline(folder: string, id: string): Promise<void>
     const allChunks: Chunk[] = [];
 
     for (const file of files) {
-      const content = fs.readFileSync(path.join(rawDir, file), 'utf8');
-      const text = extractText(content, file);
-      const chunks =
-        meta.chunkStrategy === 'fixed'
-          ? chunkFixed(text, id, file)
-          : chunkSentence(text, id, file);
+      const ext = file.split('.').pop()?.toLowerCase() ?? '';
+      let text: string;
+      if (ext === 'pdf') {
+        const buffer = fs.readFileSync(path.join(rawDir, file));
+        text = await extractPdf(buffer);
+      } else {
+        const content = fs.readFileSync(path.join(rawDir, file), 'utf8');
+        text = extractText(content, file);
+      }
+      const chunks = meta.chunkStrategy === 'fixed' ? chunkFixed(text, id, file) : chunkSentence(text, id, file);
       allChunks.push(...chunks);
     }
 

@@ -18,16 +18,10 @@ export function readMeta(folder: string, id: string): CorpusMeta {
 
 export function writeMeta(folder: string, id: string, meta: CorpusMeta): void {
   meta.updatedAt = new Date().toISOString();
-  fs.writeFileSync(
-    path.join(corpusDir(folder, id), 'meta.json'),
-    JSON.stringify(meta, null, 2)
-  );
+  fs.writeFileSync(path.join(corpusDir(folder, id), 'meta.json'), JSON.stringify(meta, null, 2));
 }
 
-export function createCorpus(
-  folder: string,
-  opts: { name: string; sourceType: SourceType }
-): CorpusMeta {
+export function createCorpus(folder: string, opts: { name: string; sourceType: SourceType }): CorpusMeta {
   const id = randomBytes(8).toString('hex');
   const dir = corpusDir(folder, id);
   fs.mkdirSync(path.join(dir, 'raw'), { recursive: true });
@@ -46,12 +40,7 @@ export function createCorpus(
   return meta;
 }
 
-export function updateStatus(
-  folder: string,
-  id: string,
-  status: CorpusStatus,
-  errorMessage?: string
-): void {
+export function updateStatus(folder: string, id: string, status: CorpusStatus, errorMessage?: string): void {
   const meta = readMeta(folder, id);
   meta.status = status;
   if (errorMessage !== undefined) meta.errorMessage = errorMessage;

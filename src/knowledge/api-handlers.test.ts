@@ -94,10 +94,7 @@ describe('handleIngest', () => {
   it('returns 202 and starts pipeline', async () => {
     const createRes = await handleCreateCorpus(tmpFolder, { name: 'ing', sourceType: 'text' });
     const { id } = createRes.body as { id: string };
-    fs.writeFileSync(
-      path.join(tmpFolder, 'knowledge', 'corpora', id, 'raw', 'test.txt'),
-      'The quick brown fox.'
-    );
+    fs.writeFileSync(path.join(tmpFolder, 'knowledge', 'corpora', id, 'raw', 'test.txt'), 'The quick brown fox.');
     const r = await handleIngest(tmpFolder, id);
     expect(r.status).toBe(202);
   });
@@ -114,7 +111,7 @@ describe('handleInspect', () => {
     const { id } = createRes.body as { id: string };
     fs.writeFileSync(
       path.join(tmpFolder, 'knowledge', 'corpora', id, 'raw', 'ins.txt'),
-      'One sentence. Two sentences. Three sentences.'
+      'One sentence. Two sentences. Three sentences.',
     );
     const { runTextPipeline } = await import('./pipeline.js');
     await runTextPipeline(tmpFolder, id);
@@ -133,7 +130,7 @@ describe('handleQuery', () => {
     const { id } = createRes.body as { id: string };
     fs.writeFileSync(
       path.join(tmpFolder, 'knowledge', 'corpora', id, 'raw', 'q.txt'),
-      'The quick brown fox. A lazy dog. The fox jumps over the dog.'
+      'The quick brown fox. A lazy dog. The fox jumps over the dog.',
     );
     const { runTextPipeline } = await import('./pipeline.js');
     await runTextPipeline(tmpFolder, id);

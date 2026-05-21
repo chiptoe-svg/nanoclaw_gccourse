@@ -1,5 +1,13 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { stripHtml, extractText } from './extract-text.js';
+
+vi.mock('pdf-parse', () => ({
+  PDFParse: class {
+    async getText() {
+      return { text: '  Hello   PDF world  ' };
+    }
+  },
+}));
 
 describe('stripHtml', () => {
   it('removes script blocks', () => {
@@ -31,5 +39,19 @@ describe('extractText', () => {
   it('normalizes plain text whitespace', () => {
     const out = extractText('  hello   world  \n\n  ', 'note.txt');
     expect(out).toBe('hello world');
+  });
+});
+
+describe('extractPdf', () => {
+  it('returns trimmed text from pdf-parse getText result', async () => {
+    const { extractPdf } = await import('./extract-text.js');
+    const result = await extractPdf(Buffer.from('fake-pdf-bytes'));
+    expect(result).toBe('Hello PDF world');
+  });
+
+  it('collapses whitespace in extracted PDF text', async () => {
+    const { extractPdf } = await import('./extract-text.js');
+    const result = await extractPdf(Buffer.from('other'));
+    expect(result).not.toMatch(/\s{2,}/);
   });
 });

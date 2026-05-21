@@ -8,7 +8,7 @@ export function chunkFixed(
   corpusId: string,
   source: string,
   targetTokens = 512,
-  overlapTokens = 64
+  overlapTokens = 64,
 ): Chunk[] {
   const chunkSize = targetTokens * CHARS_PER_TOKEN;
   const overlapSize = overlapTokens * CHARS_PER_TOKEN;
@@ -38,17 +38,15 @@ export function chunkFixed(
 const SENTENCE_RE = /[^.!?]+[.!?]+/g;
 
 /** Sentence-boundary chunker: groups sentences into chunks of at most maxSentencesPerChunk. */
-export function chunkSentence(
-  text: string,
-  corpusId: string,
-  source: string,
-  maxSentencesPerChunk = 8
-): Chunk[] {
+export function chunkSentence(text: string, corpusId: string, source: string, maxSentencesPerChunk = 8): Chunk[] {
   const sentences = text.match(SENTENCE_RE) ?? [text];
   const chunks: Chunk[] = [];
   let index = 0;
   for (let i = 0; i < sentences.length; i += maxSentencesPerChunk) {
-    const group = sentences.slice(i, i + maxSentencesPerChunk).join('').trim();
+    const group = sentences
+      .slice(i, i + maxSentencesPerChunk)
+      .join('')
+      .trim();
     if (!group) continue;
     chunks.push({ id: `${corpusId}:${index}`, corpusId, source, text: group, index });
     index++;
