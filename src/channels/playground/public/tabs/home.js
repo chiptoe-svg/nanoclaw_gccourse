@@ -553,6 +553,16 @@ function renderClassControlsForm(body, cfg) {
 }
 
 async function renderTelegramCard(body) {
+  // In bypass+seats mode, non-owner seats have user.id = null and share the
+  // owner's session. The API would return the owner's Telegram pairing which
+  // is wrong to show to TAs/students. Skip the lookup entirely.
+  if (!window.__pg?.user?.id) {
+    const p = document.createElement('p');
+    p.className = 'muted';
+    p.textContent = 'Telegram pairing is linked to your personal account.';
+    body.replaceChildren(p);
+    return;
+  }
   try {
     const res = await fetch('/api/me/telegram', { credentials: 'same-origin' });
     if (!res.ok) {
