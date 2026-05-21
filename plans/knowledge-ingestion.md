@@ -110,82 +110,52 @@ $0.00 with BGE-small is a concrete data point, not a footnote.
 
 ---
 
-## Source taxonomy
+## Source taxonomy — five sub-tabs
 
-### Category 1 — Clean text
-Markdown, HTML, README files, policy docs, syllabus pages.
+The Sources tab is organized into five sub-tabs. Each sub-tab is a named entry
+point; the pipeline steps (extract → clean → chunk → store) are the same across
+all of them but with modality-specific defaults pre-filled.
 
-- **Extraction:** strip tags / front-matter, minimal cleaning.
-- **Teaching angle:** baseline. Everything works. Used to establish a
-  quality floor before introducing harder sources.
-- **Input:** file upload or paste.
+A sixth category (Live/Dynamic data) is deferred — see Open questions below.
 
-### Category 2 — Messy documents
-PDFs (native and scanned), slide decks (.pptx), Word docs (.docx).
+### Sub-tab: PDF
+
+Native PDFs, scanned PDFs, slide decks (.pptx), Word docs (.docx), textbooks,
+and other long structured PDFs.
 
 - **Extraction:** PyMuPDF / pdfminer for native PDF; Tesseract for scanned;
-  python-pptx or LibreOffice headless for slides/Word.
-- **Teaching angle:** extraction quality IS the lesson. Two-column layouts,
-  footnotes, figure captions, headers/footers, and tables all break naive
-  extractors in instructive ways. Scanned PDFs introduce OCR confidence
-  scores.
-- **Input:** file upload.
+  python-pptx or LibreOffice headless for slides/Word; ToC parsing for
+  textbooks.
+- **Teaching angles:**
+  - *Messy documents:* Two-column layouts, footnotes, figure captions,
+    headers/footers, and tables all break naive extractors in instructive
+    ways. Scanned PDFs introduce OCR confidence scores.
+  - *Long books:* Long-document chunking strategy — page boundary → loses
+    chapter context; section boundary → better but requires ToC parsing;
+    parent-child chunking is the production answer. Equations and figures
+    break naive extractors.
+- **Input:** file upload. (Copyright note surfaced for textbooks — students
+  supply their own licensed copy.)
 
-### Category 3 — Structured / semi-structured
-CSV, spreadsheets, JSON, catalogs, schedules.
+### Sub-tab: Video
 
-- **Extraction:** pandas read → row/record serialization to text; or direct
-  schema-aware serialization.
-- **Teaching angle:** "should you even RAG this?" Tabular data with exact
-  values (dates, prices, IDs) is almost always better served by a SQL/tool
-  query than by embedding similarity. The ingestion tab can surface a
-  recommendation: prose → RAG, tabular → tool/direct-query.
-- **Input:** file upload or GWS Sheets (already wired via GWS MCP).
+YouTube videos (with auto-generated or manual captions) and uploaded video
+files (instructor recordings, lab walkthroughs, coding sessions, screen
+recordings).
 
-### Category 4 — Dynamic / personal
-Email, calendar, task lists, GitHub issues, LMS content.
+- **Input:** YouTube URL or playlist; file upload (mp4/mov) or local path.
+- **Teaching angles:**
+  - *YouTube:* Transcript quality variance (coding tutorial auto-captions
+    vs. a captioned lecture), chapter markers as natural chunk boundaries,
+    copyright / ToS as a real constraint.
+  - *POV/screen recording:* Audio track vs. visual track carry fundamentally
+    different information in a coding session. The five extraction strategies
+    below make that tradeoff concrete and measurable.
 
-- **Extraction:** pull via existing tools (GWS MCP for Drive/Docs/Gmail/
-  Calendar; GitHub API; LMS export).
-- **Teaching angle:** permissions, freshness, and re-ingestion scheduling.
-  Who can see what? When does the corpus go stale? What triggers a
-  re-index? This category naturally leads to "agentic retrieval" — maybe
-  you shouldn't pre-index at all, just let the agent fetch on demand.
-- **Input:** GWS OAuth (already wired), GitHub token, LMS export upload.
+#### Video extraction strategies
 
-### Category 5 — Web sources
-Public docs, standards pages, product documentation, APIs.
-
-- **Extraction:** Playwright crawl + Readability/trafilatura for main
-  content extraction; robots.txt / ToS check.
-- **Teaching angle:** crawling depth, stale content, citation hygiene,
-  rate limiting, and the difference between "crawlable" and "you should
-  crawl this."
-- **Input:** URL or sitemap.
-
-### Category 6 — YouTube
-Video with transcripts (auto-generated or manual captions).
-
-- **Input:** YouTube URL or playlist.
-- **Extraction:** see Video extraction strategies below.
-- **Teaching angle:** transcript quality variance (coding tutorial
-  auto-captions vs. a captioned lecture), chapter markers as natural
-  chunk boundaries, copyright / ToS as a real constraint.
-
-### Category 7 — POV / screen-recording video
-Instructor recordings, lab walkthroughs, coding sessions.
-
-- **Input:** file upload (mp4/mov) or local path.
-- **Extraction:** see Video extraction strategies below.
-- **Teaching angle:** audio track vs. visual track carry fundamentally
-  different information in a coding session. The five extraction strategies
-  below make that tradeoff concrete and measurable.
-
-### Video extraction strategies
-
-Applies to both YouTube (cat. 6) and uploaded video (cat. 7). Students
-pick a strategy per corpus; the same test query can be run across all
-five to show the cost/quality curve directly.
+Students pick one strategy per corpus; the same test query can be run across
+all five to show the cost/quality curve directly.
 
 | # | Strategy | Cost | Complexity |
 |---|---|---|---|
@@ -266,18 +236,71 @@ moments and send to a video-capable vision model for analysis.
   the quality gain over V4 justifies the cost. The local-vs-API
   tradeoff (Gemma 4 vs. GPT-4o) is a concrete, measurable decision.
 
-### Category 8 — Reference books
-Textbooks, technical books, long structured PDFs.
+### Sub-tab: Text
 
-- **Extraction:** PyMuPDF; ToC parsing for section structure; equations
-  flagged (MathJax / LaTeX passthrough or description).
-- **Teaching angle:** long-document chunking strategy. Page boundary →
-  loses chapter context. Section boundary → better but requires ToC
-  parsing. Parent-child chunking (small retrieval chunk + larger context
-  window expansion) is the production answer. Figures, tables, and
-  equations all break naive extractors.
-- **Input:** file upload. (Copyright note surfaced in UI — students supply
-  their own licensed copy.)
+Clean text sources (Markdown, HTML, README files, policy docs, syllabus pages),
+web pages and documentation sites, and long prose documents (contracts, reports,
+articles).
+
+- **Extraction:** strip tags / front-matter, minimal cleaning for clean text;
+  Playwright crawl + Readability/trafilatura for web sources; robots.txt / ToS
+  check for crawled sites.
+- **Teaching angles:**
+  - *Clean text:* baseline. Everything works. Used to establish a quality floor
+    before introducing harder sources.
+  - *Web sources:* crawling depth, stale content, citation hygiene, rate
+    limiting, and the difference between "crawlable" and "you should crawl
+    this."
+- **Input:** file upload, paste, URL, or sitemap.
+
+### Sub-tab: Complex
+
+CAD drawings, diagrams, charts, photographs, figures from papers, 3D files,
+infographics, and other non-text-primary visual documents.
+
+- **Extraction:** vision model description per figure/page (GPT-4o vision,
+  Gemini Flash vision, or Gemma 4 local for offline/free); layout analysis
+  to detect figure vs. text regions; optional LaTeX/MathJax passthrough for
+  equations.
+- **Teaching angles:**
+  - Vision models turn visual information into retrievable text — but the
+    description quality is model-dependent and lossy.
+  - CAD/3D files have no text track at all; the extraction step IS a
+    description step. Students see directly that the index quality depends
+    entirely on the description quality.
+  - Motivates the question: for highly visual content, is RAG even the right
+    pattern, or should the agent see the image directly at query time?
+- **Input:** file upload (PNG, JPG, PDF with figures, DXF, STL, etc.).
+
+### Sub-tab: Data
+
+CSV files, spreadsheets, JSON, catalogs, schedules, and other structured or
+semi-structured tabular data.
+
+- **Extraction:** pandas read → row/record serialization to text; or direct
+  schema-aware serialization. Column headers + row values → natural-language
+  sentences or JSON records.
+- **Teaching angle:** "should you even RAG this?" Tabular data with exact
+  values (dates, prices, IDs) is almost always better served by a SQL/tool
+  query than by embedding similarity. The Sources tab surfaces a
+  recommendation: prose → RAG, tabular → tool/direct-query. Knowing when
+  NOT to use RAG is part of knowing RAG.
+- **Input:** file upload or GWS Sheets (already wired via GWS MCP).
+
+### Open question: Live / Dynamic data (deferred)
+
+Email, calendar, task lists, GitHub issues, LMS content, and other
+continuously-updated personal or organizational data.
+
+- **Why deferred:** permissions, freshness, and re-ingestion scheduling add
+  significant complexity beyond one-time ingest. First version of the Sources
+  tab is one-time ingest only.
+- **Teaching angle when implemented:** Who can see what? When does the corpus
+  go stale? What triggers a re-index? This category naturally leads to
+  "agentic retrieval" — maybe you shouldn't pre-index at all, just let the
+  agent fetch on demand.
+- **Input (when implemented):** GWS OAuth (already wired), GitHub token, LMS
+  export upload.
 
 ---
 
@@ -386,7 +409,7 @@ the corpus.
 
 ## Open questions / out of scope for this spec
 
-- **Re-ingestion scheduling** (category 4/5): how frequently does a
+- **Re-ingestion scheduling** (Live/Dynamic sub-tab): how frequently does a
   dynamic corpus re-pull? Trigger-based (webhook) vs. cron. Deferred —
   first version is one-time ingest only.
 - **Multi-source corpora**: can a corpus mix a PDF + a YouTube transcript
@@ -397,8 +420,8 @@ the corpus.
   Useful but not required for Phase 7.
 - **Cost guardrails**: embedding 10,000 chunks with ada-002 costs real
   money. The ingestion tab should show a cost estimate before committing.
-- **Copyright surface**: UI should surface a note for categories 6/8
-  where ToS / copyright is a real constraint. Not a blocker but
+- **Copyright surface**: UI should surface a note for the Video and PDF
+  sub-tabs where ToS / copyright is a real constraint. Not a blocker but
   pedagogically important.
 - **Graph implementation detail**: SQLite triples vs. a lightweight graph
   lib (networkx in-memory). Decision deferred to implementation.
