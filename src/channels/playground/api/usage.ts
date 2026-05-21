@@ -3,15 +3,13 @@
  * agent, sums tokens by model, multiplies by the catalog's per-model
  * pricing, and returns { thisMonth, total } buckets.
  *
- * Cost calculation: prefers split rates (costPer1kInUsd / Out / CachedIn)
- * when the catalog entry provides them; falls back to the legacy single
- * costPer1kTokensUsd × (in + out) for entries without splits.
- *
- * Cached input tokens aren't currently persisted by the agent-runner —
- * messages_out has no column for them. The aggregator reads them as 0
- * for now; once the providers start surfacing prompt-cache stats on the
- * `result` event the DB schema and this calc can grow together without
- * touching the wire API.
+ * Cost calculation: prefers split rates (costPer1kInUsd / Out / CachedIn).
+ * Cache-read token counts are stored in the content JSON blob (key "cacheRead")
+ * because messages_out has no dedicated column for them. Provider semantics differ:
+ * - Anthropic: tokens_in = non-cached only; cacheRead is additive.
+ * - OpenAI/Codex: tokens_in = total including cached; cacheRead must be subtracted
+ *   from tokens_in before applying the full input rate, then charged separately at
+ *   the cached rate (typically 0.5× for OpenAI prefix-cache).
  */
 import fs from 'fs';
 import path from 'path';

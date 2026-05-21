@@ -51,6 +51,15 @@ import {
 } from './custom-skills.js';
 import { getLibraryCacheStat, listLibrary, listSkillFiles, readSkillFile } from './library.js';
 import { handlePersonaLayers } from './api/persona-layers.js';
+import { handleExport } from './api/export.js';
+import {
+  handleDeleteEntry,
+  handleListAgentLibrary,
+  handleLoadEntry,
+  handleRenameEntry,
+  handleSaveExisting,
+  handleSaveNew,
+} from './api/agent-library-handlers.js';
 import {
   handleAutoFillCatalog,
   handleGetModels,
@@ -60,6 +69,7 @@ import {
   handleToggleDefaultModel,
 } from './api/models.js';
 import { handleGetClassControls, handlePutClassControls } from './api/class-controls.js';
+import { handleGetClassBase, handlePutClassBase } from './api/class-base.js';
 import { handleAddStudent, handleGetTunnel, handleStopTunnel } from './api/students-admin.js';
 import { handleDirectChat } from './api/direct-chat.js';
 import { handleGetStudentDetail, handleGetStudentsUsage, handleGetUsage } from './api/usage.js';
@@ -72,7 +82,7 @@ import {
   handleLogout,
   handleLogoutAll,
 } from './api/me.js';
-import { registerSseClient } from './sse.js';
+import { pushToAll, registerSseClient } from './sse.js';
 
 export async function route(
   req: http.IncomingMessage,
@@ -348,7 +358,7 @@ export async function route(
 
   // GET /api/me/agent — agent group assigned to this user (with fallback)
   if (method === 'GET' && url.pathname === '/api/me/agent') {
-    const r = handleGetMyAgent(session);
+    const r = handleGetMyAgent(session, url.searchParams.get('seat'));
     return send(res, r.status, r.body);
   }
 
@@ -616,6 +626,21 @@ export async function route(
     const r = handleGetClassControls();
     return send(res, r.status, r.body);
   }
+  // GET /api/class-base — read the shared class base persona (all can read).
+  if (method === 'GET' && url.pathname === '/api/class-base') {
+    const r = handleGetClassBase();
+    return send(res, r.status, r.body);
+  }
+  // PUT /api/class-base — owner-only, writes data/class-shared-students.md.
+  if (method === 'PUT' && url.pathname === '/api/class-base') {
+    if (!session.userId || !isOwner(session.userId)) {
+      return send(res, 403, { error: 'owner role required' });
+    }
+    const body = await readJsonBody(req);
+    const r = handlePutClassBase(body);
+    return send(res, r.status, r.body);
+  }
+
   // PUT /api/class-controls — owner-only, mutates config/class-controls.json.
   if (method === 'PUT' && url.pathname === '/api/class-controls') {
     if (!session.userId || !isOwner(session.userId)) {
@@ -623,6 +648,7 @@ export async function route(
     }
     const body = await readJsonBody(req);
     const r = handlePutClassControls(body);
+    if (r.status === 200) pushToAll('class-controls-changed', r.body);
     return send(res, r.status, r.body);
   }
 
@@ -681,6 +707,72 @@ export async function route(
   if (method === 'POST' && url.pathname === '/api/admin/tunnel/stop') {
     const r = handleStopTunnel(session);
     return send(res, r.status, r.body);
+  }
+
+  // Agent library routes — /api/drafts/:folder/library[/:slug[/save|load]]
+  // These must be checked before the generic export route to avoid slug
+  // collisions with path suffixes.
+  const libBase = url.pathname.match(/^\/api\/drafts\/([A-Za-z0-9_-]+)\/library$/);
+  if (libBase) {
+    const draftFolder = libBase[1]!;
+    if (method === 'GET') {
+      const r = handleListAgentLibrary(draftFolder, session.userId);
+      return send(res, r.status, r.body);
+    }
+    if (method === 'POST') {
+      const body = await readJsonBody(req);
+      const r = handleSaveNew(draftFolder, session.userId, body as never);
+      return send(res, r.status, r.body);
+    }
+  }
+
+  const libSlugSave = url.pathname.match(
+    /^\/api\/drafts\/([A-Za-z0-9_-]+)\/library\/([A-Za-z0-9][A-Za-z0-9_-]*)\/save$/,
+  );
+  if (method === 'POST' && libSlugSave) {
+    const body = await readJsonBody(req);
+    const r = handleSaveExisting(libSlugSave[1]!, session.userId, libSlugSave[2]!, body as never);
+    return send(res, r.status, r.body);
+  }
+
+  const libSlugLoad = url.pathname.match(
+    /^\/api\/drafts\/([A-Za-z0-9_-]+)\/library\/([A-Za-z0-9][A-Za-z0-9_-]*)\/load$/,
+  );
+  if (method === 'POST' && libSlugLoad) {
+    const r = handleLoadEntry(libSlugLoad[1]!, session.userId, libSlugLoad[2]!);
+    return send(res, r.status, r.body);
+  }
+
+  const libSlug = url.pathname.match(/^\/api\/drafts\/([A-Za-z0-9_-]+)\/library\/([A-Za-z0-9][A-Za-z0-9_-]*)$/);
+  if (libSlug) {
+    if (method === 'PUT') {
+      const body = await readJsonBody(req);
+      const r = handleRenameEntry(libSlug[1]!, session.userId, libSlug[2]!, body as never);
+      return send(res, r.status, r.body);
+    }
+    if (method === 'DELETE') {
+      const r = handleDeleteEntry(libSlug[1]!, session.userId, libSlug[2]!);
+      return send(res, r.status, r.body);
+    }
+  }
+
+  // GET /api/drafts/:folder/export — download agent as zip bundle
+  const exportMatch = url.pathname.match(/^\/api\/drafts\/([A-Za-z0-9_-]+)\/export$/);
+  if (method === 'GET' && exportMatch) {
+    const draftFolder = exportMatch[1]!;
+    const format = url.searchParams.get('format') ?? 'all';
+    const result = await handleExport(draftFolder, session.userId, format);
+    if ('buffer' in result) {
+      res.writeHead(200, {
+        'content-type': 'application/zip',
+        'content-disposition': `attachment; filename="${result.filename}"`,
+        'content-length': result.buffer.length,
+        'cache-control': 'no-store',
+      });
+      res.end(result.buffer);
+      return;
+    }
+    return send(res, result.status, { error: result.error });
   }
 
   // GET /api/drafts/:folder/stream — Server-Sent Events for outbound messages.

@@ -1,6 +1,6 @@
 export function mountHome(el) {
   const { agent, user } = window.__pg || { agent: { name: '?', folder: '?' }, user: { id: '?' } };
-  const isOwner = user && user.role === 'owner';
+  const isOwner = user && (user.role === 'owner' || user.role === 'ta');
 
   const params = new URLSearchParams(location.search);
   const googleConnected = params.get('google_connected') === '1';

@@ -238,6 +238,50 @@ pnpm exec tsx scripts/bench-report.ts
 
 Detailed plan: [`agent-benchmark-suite.md`](./agent-benchmark-suite.md).
 
+## Phase 1.10 — TA role, class base persona, playground UX fixes (2026-05-21)
+
+Live-class polish session. All items shipped unless marked **⏳ pending**.
+
+### TA role (per-role access model)
+
+- `config/playground-seats.json`: `ta_01` gets `"role": "ta"`; instructor seat gets `"slug": "instructor"` (URL is now `?seat=instructor` not `?seat=dm-with-chiptonkin`).
+- `seats-config.ts`: added `slug?` field; `role` type extended to include `'ta'`.
+- `api/me.ts`: seat matching uses `s.slug ?? s.folder`; `MyAgentResponse.user.role` includes `'ta'`.
+- `app.js`: TA sees all tabs (same as owner); `pg-ta-view` CSS class added to body instead of the old `pg-readonly`; `window.__pg.readOnly` removed entirely.
+- `style.css`: replaced `.pg-readonly` block (locked ALL editing) with `.pg-ta-view` (locks only class-admin controls: `#cc-save`, `#as-submit`, `#rotate-passcode-btn`, CC checkboxes). TAs can now edit their own persona/skills/models.
+- `tabs/skills.js`, `tabs/models.js`, `tabs/agents.js`, `tabs/persona.js`: removed all `window.__pg?.readOnly` JS guards — own-agent editing is now unconditional.
+
+### Shared class base persona
+
+- `data/class-shared-students.md` is the canonical class base file (already existed for students).
+- Symlinks added: `groups/dm-with-chiptonkin/.class-shared.md` and `groups/ta_01/.class-shared.md` → `data/class-shared-students.md`.
+- `src/persona-layers.ts`: reads `.class-shared.md` directly as `groupBase` when it exists (instead of resolving the full CLAUDE.md import chain). CLAUDE.md files for instructor/TA are NOT modified — the symlink approach is transparent.
+- `src/channels/playground/api/class-base.ts` (new): `handleGetClassBase()` / `handlePutClassBase()` read/write `data/class-shared-students.md`.
+- `api-routes.ts`: `GET /api/class-base` (all roles) and `PUT /api/class-base` (owner only).
+- Persona tab sub-tabs renamed: "Group base" → "Class base", "Container base" → "Platform base". Global sub-tab hidden when empty. Save button is DOM-present only for owner, shown only when dirty, inline in the sub-tabs nav bar (hidden after 1.5 s on save).
+
+### Bug fixes
+
+- **Switch seat always landed on instructor.** `seat-picker.js` was using `s.folder` (undefined after the API change to return `{ label, slug }`) — all options silently fell through to the default. Fixed to use `s.slug`.
+- **Stale "50%" cached-rate comments.** `container/agent-runner/src/providers/types.ts` and `src/model-catalog.ts` both had stale notes claiming OpenAI prefix-cache is billed at 0.50×. Both updated to 0.10× (matches the actual `costPer1kCachedInUsd` values already in the catalog).
+
+### ⏳ Usage aggregator cache fix (in progress, not yet committed)
+
+The `aggregateAgentUsage()` function in `src/channels/playground/api/usage.ts` passes hardcoded `0` for `tokensCached`, so cached tokens are billed at full input rate. The fix (started this session, incomplete):
+
+- Read `content` column from `messages_out` SQL query.
+- Parse `cacheRead` from the content JSON blob (stored there by the agent-runner since there's no dedicated DB column).
+- Provider-specific adjustment:
+  - **codex**: `tokens_in` in DB = total including cached → pass `tokensIn - cacheRead` as non-cached, `cacheRead` as cached.
+  - **claude**: `tokens_in` in DB = non-cached only → pass `tokensIn` as-is, `cacheRead` as cached.
+- Call `priceFor(entry, tokensInNonCached, tokensOut, tokensCacheRead)` instead of the current hardcoded `0`.
+
+File to edit: `src/channels/playground/api/usage.ts` lines 80–143 (the aggregation map and `build()` helper). The `priceFor` function at lines 45–56 is already correct and needs no changes.
+
+### ⏳ Model pricing verification
+
+User to verify absolute in/out rates against https://developers.openai.com/api/docs/pricing. The catalog at `src/model-catalog.ts` lines 95–165 has the current values (gpt-5.5: $0.005/$0.030; gpt-5.4: $0.0025/$0.015; gpt-5.4-mini: $0.00075/$0.0045; gpt-5.3-codex: $0.00175/$0.014). Cached rates are already correct at 10%. If absolute rates differ, update `src/model-catalog.ts` and optionally override per-install via `config/model-catalog-local.json`.
+
 ## Phase 1 — shared-classroom MVP
 
 **Goal.** A class can deploy with: one Google Workspace OAuth
