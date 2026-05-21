@@ -1363,3 +1363,51 @@ select.model-changed {
   opacity: 0.5;
 }
 /* ── TA view END ──────────────────────────────────────────────────────── */
+
+/* ── Knowledge / Sources tab ──────────────────────────────────────────── */
+.corpus-list { margin: 1rem 0; display: flex; flex-direction: column; gap: 0.5rem; }
+.corpus-card {
+  border: 1px solid var(--border, #ddd);
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.corpus-card .corpus-name { flex: 1; font-weight: 500; }
+.corpus-card .corpus-meta { font-size: 0.8em; color: var(--muted, #888); }
+.status-badge {
+  font-size: 0.75em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.status-empty    { background: #f0f0f0; color: #666; }
+.status-ingesting { background: #fff3cd; color: #856404; }
+.status-ready    { background: #d1fae5; color: #065f46; }
+.status-error    { background: #fee2e2; color: #991b1b; }
+
+.chunk-inspector { margin-top: 1rem; }
+.chunk-card {
+  border: 1px solid var(--border, #ddd);
+  border-radius: 4px;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.85em;
+}
+.chunk-card .chunk-source { color: var(--muted, #888); font-size: 0.75em; margin-bottom: 0.25rem; }
+
+/* ── Retrieval tab ────────────────────────────────────────────────────── */
+.result-card {
+  border: 1px solid var(--border, #ddd);
+  border-radius: 4px;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.5rem;
+}
+.result-card .result-score {
+  font-size: 0.75em;
+  color: var(--muted, #888);
+  float: right;
+}
+.result-card .result-source { font-size: 0.75em; color: var(--muted, #888); margin-bottom: 0.25rem; }
