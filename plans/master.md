@@ -181,7 +181,7 @@ reality; living with it. Revisit when one of:
   this fork; `/add-classroom-provider-auth` and the
   `classroom-x7-provider-auth` branch are now redundant.
 
-## Phase 1.8 — agent-harness benchmark suite (B1+B2 implemented, B3+ planned)
+## Phase 1.8 — agent-harness benchmark suite (B1–B3 implemented, B4 pending run)
 
 Triggered by the 2026-05-18 cost spike: a single "yolo" message on
 codex/gpt-5.4 billed at $1.10 because codex makes 6–10 internal API
@@ -224,9 +224,17 @@ pnpm exec tsx scripts/bench-report.ts
 ```
 
 **Phasing.** B1 ✅ baseline runner → B2 ✅ LLM-judge quality rubric →
-B3 multi-system matrix + report (add haiku + codex systems to `SYSTEMS`
-map in `bench.ts`, ~1 hr) → B4 full matrix run, first diagnostic dataset
-(~1 hr). ~2 hr remaining to land B3–B4.
+B3 ✅ multi-system matrix (claude-sonnet, claude-haiku, codex-5.4,
+codex-5.4-mini, local-qwen3) → B4 full matrix run, first diagnostic
+dataset. B4 is a single command — requires host running with BENCH_MODE=1
+and (optionally) mlx-omni-server for local-qwen3:
+```
+BENCH_MODE=1 pnpm run dev   # terminal 1
+pnpm exec tsx scripts/bench.ts --source <folder> \
+  --systems claude-sonnet,claude-haiku,codex-5.4,codex-5.4-mini \
+  --reps 3
+pnpm exec tsx scripts/bench-report.ts
+```
 
 Detailed plan: [`agent-benchmark-suite.md`](./agent-benchmark-suite.md).
 
