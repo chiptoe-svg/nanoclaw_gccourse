@@ -41,7 +41,17 @@ import { checkDraftMutation } from '../playground-gate-registry.js';
 import { canReadDraft } from './draft-read-gate.js';
 import { getPlatformPrefix, getSetupConfig } from './adapter.js';
 import type { PlaygroundSession } from './auth-store.js';
-import { readJsonBody, send } from './http-helpers.js';
+import { readJsonBody, readRawBody, send } from './http-helpers.js';
+import {
+  handleListCorpora,
+  handleCreateCorpus,
+  handleDeleteCorpus,
+  handleGetCorpus,
+  handleUploadSource,
+  handleIngest,
+  handleInspect,
+  handleQuery,
+} from '../../knowledge/api-handlers.js';
 import {
   deleteCustomSkill,
   listCustomSkillFiles,
@@ -831,6 +841,102 @@ export async function route(
     const cleanup = registerSseClient({ draftFolder, cookieValue: session.cookieValue, res });
     req.on('close', cleanup);
     return;
+  }
+
+  // GET  /api/drafts/:folder/knowledge/corpora
+  // POST /api/drafts/:folder/knowledge/corpora
+  const knowledgeCorporaMatch = url.pathname.match(/^\/api\/drafts\/([A-Za-z0-9_-]+)\/knowledge\/corpora$/);
+  if (knowledgeCorporaMatch) {
+    const folder = knowledgeCorporaMatch[1]!;
+    const headers = req.headers as Record<string, string>;
+    if (method === 'GET') {
+      const r = await handleListCorpora(folder, { headers });
+      return send(res, r.status, r.body);
+    }
+    if (method === 'POST') {
+      const body = await readJsonBody(req);
+      const r = await handleCreateCorpus(folder, body, { headers });
+      return send(res, r.status, r.body);
+    }
+  }
+
+  // GET    /api/drafts/:folder/knowledge/corpora/:id
+  // DELETE /api/drafts/:folder/knowledge/corpora/:id
+  const knowledgeCorpusMatch = url.pathname.match(/^\/api\/drafts\/([A-Za-z0-9_-]+)\/knowledge\/corpora\/([A-Za-z0-9_-]+)$/);
+  if (knowledgeCorpusMatch) {
+    const folder = knowledgeCorpusMatch[1]!;
+    const id = knowledgeCorpusMatch[2]!;
+    const headers = req.headers as Record<string, string>;
+    if (method === 'GET') {
+      const r = await handleGetCorpus(folder, id, { headers });
+      return send(res, r.status, r.body);
+    }
+    if (method === 'DELETE') {
+      const r = await handleDeleteCorpus(folder, id, { headers });
+      if (r.status === 204) {
+        res.writeHead(204);
+        res.end();
+        return;
+      }
+      return send(res, r.status, r.body);
+    }
+  }
+
+  // PUT  /api/drafts/:folder/knowledge/corpora/:id/upload?filename=
+  const knowledgeUploadMatch = url.pathname.match(
+    /^\/api\/drafts\/([A-Za-z0-9_-]+)\/knowledge\/corpora\/([A-Za-z0-9_-]+)\/upload$/,
+  );
+  if (method === 'PUT' && knowledgeUploadMatch) {
+    const folder = knowledgeUploadMatch[1]!;
+    const id = knowledgeUploadMatch[2]!;
+    const filename = url.searchParams.get('filename') ?? 'upload';
+    const headers = req.headers as Record<string, string>;
+    const data = await readRawBody(req);
+    const r = await handleUploadSource(folder, id, filename, data, { headers });
+    if (r.status === 204) {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+    return send(res, r.status, r.body);
+  }
+
+  // POST /api/drafts/:folder/knowledge/corpora/:id/ingest
+  const knowledgeIngestMatch = url.pathname.match(
+    /^\/api\/drafts\/([A-Za-z0-9_-]+)\/knowledge\/corpora\/([A-Za-z0-9_-]+)\/ingest$/,
+  );
+  if (method === 'POST' && knowledgeIngestMatch) {
+    const folder = knowledgeIngestMatch[1]!;
+    const id = knowledgeIngestMatch[2]!;
+    const headers = req.headers as Record<string, string>;
+    const r = await handleIngest(folder, id, { headers });
+    return send(res, r.status, r.body);
+  }
+
+  // GET  /api/drafts/:folder/knowledge/corpora/:id/inspect
+  const knowledgeInspectMatch = url.pathname.match(
+    /^\/api\/drafts\/([A-Za-z0-9_-]+)\/knowledge\/corpora\/([A-Za-z0-9_-]+)\/inspect$/,
+  );
+  if (method === 'GET' && knowledgeInspectMatch) {
+    const folder = knowledgeInspectMatch[1]!;
+    const id = knowledgeInspectMatch[2]!;
+    const headers = req.headers as Record<string, string>;
+    const r = await handleInspect(folder, id, { headers });
+    return send(res, r.status, r.body);
+  }
+
+  // POST /api/drafts/:folder/knowledge/corpora/:id/query
+  const knowledgeQueryMatch = url.pathname.match(
+    /^\/api\/drafts\/([A-Za-z0-9_-]+)\/knowledge\/corpora\/([A-Za-z0-9_-]+)\/query$/,
+  );
+  if (method === 'POST' && knowledgeQueryMatch) {
+    const folder = knowledgeQueryMatch[1]!;
+    const id = knowledgeQueryMatch[2]!;
+    const headers = req.headers as Record<string, string>;
+    const body = await readJsonBody(req);
+    const { query = '', k = 5 } = body as { query?: string; k?: number };
+    const r = await handleQuery(folder, id, query, k, { headers });
+    return send(res, r.status, r.body);
   }
 
   send(res, 404, { error: `No route: ${method} ${url.pathname}` });

@@ -65,6 +65,16 @@ export function parseCookie(header: string | undefined, name: string): string | 
   return null;
 }
 
+/** Read the raw request body as a Buffer. Used for binary file uploads. */
+export function readRawBody(req: import('http').IncomingMessage): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    req.on('data', (chunk: Buffer) => chunks.push(chunk));
+    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('error', reject);
+  });
+}
+
 /** Escape a string for safe insertion into HTML body text or attributes. */
 export function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => {
