@@ -53,6 +53,14 @@ import {
   handleQuery,
 } from '../../knowledge/api-handlers.js';
 import {
+  handleListBenchmarks,
+  handleCreateBenchmark,
+  handleGetBenchmark,
+  handleUpdateBenchmark,
+  handleDeleteBenchmark,
+  handleRunBenchmark,
+} from '../../knowledge/benchmarks/api-handlers.js';
+import {
   deleteCustomSkill,
   listCustomSkillFiles,
   listCustomSkills,
@@ -949,6 +957,68 @@ export async function route(
     const body = await readJsonBody(req);
     const { query = '', k = 5 } = body as { query?: string; k?: number };
     const r = await handleQuery(folder, id, query, k);
+    return send(res, r.status, r.body);
+  }
+
+  // GET  /api/drafts/:folder/knowledge/benchmarks
+  // POST /api/drafts/:folder/knowledge/benchmarks
+  const benchmarksMatch = url.pathname.match(/^\/api\/drafts\/([A-Za-z0-9_-]+)\/knowledge\/benchmarks$/);
+  if (benchmarksMatch) {
+    const folder = benchmarksMatch[1]!;
+    if (method === 'GET') {
+      if (!canReadDraft(folder, session.userId)) return send(res, 403, { error: 'Forbidden' });
+      const r = await handleListBenchmarks(folder);
+      return send(res, r.status, r.body);
+    }
+    if (method === 'POST') {
+      if (!canReadDraft(folder, session.userId)) return send(res, 403, { error: 'Forbidden' });
+      const body = await readJsonBody(req);
+      const r = await handleCreateBenchmark(folder, body);
+      return send(res, r.status, r.body);
+    }
+  }
+
+  // GET    /api/drafts/:folder/knowledge/benchmarks/:id
+  // PUT    /api/drafts/:folder/knowledge/benchmarks/:id
+  // DELETE /api/drafts/:folder/knowledge/benchmarks/:id
+  const benchmarkMatch = url.pathname.match(
+    /^\/api\/drafts\/([A-Za-z0-9_-]+)\/knowledge\/benchmarks\/([A-Za-z0-9_-]+)$/,
+  );
+  if (benchmarkMatch) {
+    const folder = benchmarkMatch[1]!;
+    const id = benchmarkMatch[2]!;
+    if (!canReadDraft(folder, session.userId)) return send(res, 403, { error: 'Forbidden' });
+    if (method === 'GET') {
+      const r = await handleGetBenchmark(folder, id);
+      return send(res, r.status, r.body);
+    }
+    if (method === 'PUT') {
+      const body = await readJsonBody(req);
+      const r = await handleUpdateBenchmark(folder, id, body);
+      return send(res, r.status, r.body);
+    }
+    if (method === 'DELETE') {
+      const r = await handleDeleteBenchmark(folder, id);
+      if (r.status === 204) {
+        res.writeHead(204);
+        res.end();
+        return;
+      }
+      return send(res, r.status, r.body);
+    }
+  }
+
+  // POST /api/drafts/:folder/knowledge/benchmarks/:id/run
+  const benchmarkRunMatch = url.pathname.match(
+    /^\/api\/drafts\/([A-Za-z0-9_-]+)\/knowledge\/benchmarks\/([A-Za-z0-9_-]+)\/run$/,
+  );
+  if (method === 'POST' && benchmarkRunMatch) {
+    const folder = benchmarkRunMatch[1]!;
+    const id = benchmarkRunMatch[2]!;
+    if (!canReadDraft(folder, session.userId)) return send(res, 403, { error: 'Forbidden' });
+    const body = await readJsonBody(req);
+    const k = typeof body.k === 'number' ? body.k : 5;
+    const r = await handleRunBenchmark(folder, id, k);
     return send(res, r.status, r.body);
   }
 
