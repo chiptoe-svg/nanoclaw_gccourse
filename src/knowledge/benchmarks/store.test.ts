@@ -36,10 +36,18 @@ describe('listBenchmarks', () => {
   });
 
   it('returns all created benchmarks sorted newest first', () => {
-    createBenchmark(tmpDir, { name: 'a', corpusId: 'c' });
-    createBenchmark(tmpDir, { name: 'b', corpusId: 'c' });
+    const a = createBenchmark(tmpDir, { name: 'a', corpusId: 'c' });
+    const b = createBenchmark(tmpDir, { name: 'b', corpusId: 'c' });
+    // Force distinct timestamps so sort order is deterministic
+    a.createdAt = '2024-01-01T00:00:00.000Z';
+    writeBenchmark(tmpDir, a);
+    b.createdAt = '2024-01-02T00:00:00.000Z';
+    writeBenchmark(tmpDir, b);
+    // Re-read from disk to pick up the forced timestamps
     const list = listBenchmarks(tmpDir);
     expect(list.length).toBe(2);
+    expect(list[0]!.name).toBe('b'); // newer createdAt sorts first
+    expect(list[1]!.name).toBe('a');
   });
 });
 

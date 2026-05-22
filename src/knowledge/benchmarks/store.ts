@@ -34,9 +34,9 @@ export function readBenchmark(folder: string, id: string): BenchmarkMeta {
 }
 
 export function writeBenchmark(folder: string, meta: BenchmarkMeta): void {
-  meta.updatedAt = new Date().toISOString();
+  const out = { ...meta, updatedAt: new Date().toISOString() };
   const p = path.join(benchmarkDir(folder, meta.id), 'meta.json');
-  fs.writeFileSync(p, JSON.stringify(meta, null, 2));
+  fs.writeFileSync(p, JSON.stringify(out, null, 2));
 }
 
 export function listBenchmarks(folder: string): BenchmarkMeta[] {
