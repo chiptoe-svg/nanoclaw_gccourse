@@ -170,9 +170,14 @@ export function mountBenchmarks(el) {
     listEl.querySelectorAll('[data-rm]').forEach((btn) => {
       btn.addEventListener('click', async () => {
         const idx = parseInt(btn.dataset.rm, 10);
-        selectedMeta.queries.splice(idx, 1);
-        await saveQueries();
-        renderQueryList();
+        const removed = selectedMeta.queries.splice(idx, 1)[0];
+        try {
+          await saveQueries();
+          renderQueryList();
+        } catch {
+          selectedMeta.queries.splice(idx, 0, removed);
+          el.querySelector('#bm-run-status').textContent = 'Failed to remove query. Try again.';
+        }
       });
     });
   }
