@@ -86,7 +86,10 @@ export function mountBenchmarks(el) {
       sel.innerHTML = ready.length
         ? ready.map((c) => `<option value="${esc(c.id)}">${esc(c.name)} [${esc(c.storeStrategy ?? 'bm25')}]</option>`).join('')
         : '<option value="">— no ready corpora —</option>';
-    } catch { /* ignore */ }
+    } catch {
+      const sel = el.querySelector('#bm-corpus-select');
+      if (sel) sel.innerHTML = '<option value="">— error loading corpora —</option>';
+    }
   }
 
   async function loadList() {
@@ -138,9 +141,9 @@ export function mountBenchmarks(el) {
   }
 
   async function selectBenchmark(id) {
-    selectedId = id;
     const res = await fetch(`${apiBase}/benchmarks/${encodeURIComponent(id)}`, { credentials: 'same-origin' });
     if (!res.ok) return;
+    selectedId = id;
     selectedMeta = await res.json();
     el.querySelector('#bm-detail').style.display = 'block';
     el.querySelector('#bm-detail-name').textContent = selectedMeta.name;
@@ -175,12 +178,13 @@ export function mountBenchmarks(el) {
   }
 
   async function saveQueries() {
-    await fetch(`${apiBase}/benchmarks/${encodeURIComponent(selectedId)}`, {
+    const res = await fetch(`${apiBase}/benchmarks/${encodeURIComponent(selectedId)}`, {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
       credentials: 'same-origin',
       body: JSON.stringify({ queries: selectedMeta.queries }),
     });
+    if (!res.ok) throw new Error(`Save failed: HTTP ${res.status}`);
   }
 
   el.querySelector('#bm-new-btn').addEventListener('click', async () => {
@@ -219,11 +223,15 @@ export function mountBenchmarks(el) {
       query: queryText,
       relevant,
     });
-    await saveQueries();
-    el.querySelector('#bm-q-text').value = '';
-    el.querySelector('#bm-q-gold').value = '';
-    renderQueryList();
-    await loadList();
+    try {
+      await saveQueries();
+      el.querySelector('#bm-q-text').value = '';
+      el.querySelector('#bm-q-gold').value = '';
+      renderQueryList();
+    } catch {
+      selectedMeta.queries.pop(); // undo push on failure
+      el.querySelector('#bm-run-status').textContent = 'Failed to save query. Try again.';
+    }
   });
 
   el.querySelector('#bm-run-btn').addEventListener('click', async () => {
