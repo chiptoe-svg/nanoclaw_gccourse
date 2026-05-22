@@ -435,7 +435,7 @@ async function renderUsageCard(body, folder) {
   }
 }
 
-const ALL_TABS = ['home', 'chat', 'persona', 'skills', 'models'];
+const ALL_TABS = ['home', 'chat', 'persona', 'skills', 'models', 'agents', 'sources', 'retrieval', 'benchmarks'];
 const ALL_AUTH = ['api-key', 'oauth', 'claude-code-oauth'];
 const AUTH_LABEL = { 'api-key': 'API key', oauth: 'OAuth (Anthropic Console / OpenAI)', 'claude-code-oauth': 'Claude Code OAuth' };
 
