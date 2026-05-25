@@ -163,7 +163,12 @@ export function makeContainerConfig(opts: {
     packages: { apt: [], npm: [] },
     additionalMounts,
     skills: opts.isStudent ? inheritedSkills() : [],
-    provider: 'codex',
+    // Default provider for new student/class containers. Operator-overridable
+    // via NANOCLAW_STUDENT_PROVIDER so a classroom can default to claude / pi
+    // / etc. without editing source. Bug fix: pre-fix this was hardcoded to
+    // 'codex', so any classroom that wanted a different default had to patch
+    // the file. Backward-compatible default preserved.
+    provider: process.env.NANOCLAW_STUDENT_PROVIDER || 'codex',
     groupName: opts.folder,
     assistantName: opts.folder,
   };
@@ -253,12 +258,16 @@ export function provisionStudent(opts: {
   const folder = nextStudentFolder();
   const userId = `class:${folder}`;
   const now = new Date().toISOString();
+  // Defaults are operator-overridable via env so a classroom can spin up
+  // claude/pi/etc. students without editing source. Pre-fix these were hardcoded
+  // to 'codex' / 'gpt-5.4-mini' — every provisioned student came up as codex
+  // regardless of intent. Backward-compatible defaults preserved.
   const group: AgentGroup = {
     id: `ag_${crypto.randomBytes(6).toString('hex')}`,
     name: opts.name,
     folder,
-    agent_provider: 'codex',
-    model: 'gpt-5.4-mini',
+    agent_provider: process.env.NANOCLAW_STUDENT_PROVIDER || 'codex',
+    model: process.env.NANOCLAW_STUDENT_MODEL || 'gpt-5.4-mini',
     created_at: now,
   };
 

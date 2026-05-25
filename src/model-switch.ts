@@ -12,6 +12,7 @@
 import { getAgentGroupByFolder, updateAgentGroup } from './db/agent-groups.js';
 import { getActiveSessions } from './db/sessions.js';
 import { isContainerRunning, killContainer } from './container-runner.js';
+import { getModelCatalog } from './model-catalog.js';
 
 export { expandAlias, hintsForProvider } from './model-discovery.js';
 export type { ModelHint } from './model-discovery.js';
@@ -25,7 +26,14 @@ export function getCurrentModel(folder: string): { provider: string | null; mode
 /**
  * Resolve the effective model the next container spawn will use, mirroring
  * the precedence in the in-container provider:
- *   group.model → env (CODEX_MODEL/ANTHROPIC_MODEL) → provider's hardcoded default
+ *   group.model → env (CODEX_MODEL/ANTHROPIC_MODEL) → catalog default for
+ *   provider → provider name as last-resort placeholder
+ *
+ * Pre-fix this returned '(unknown)' for any provider other than codex/claude,
+ * which silently propagated into container.json on provider-switch and broke
+ * the in-container provider's model selection. Now consults the model catalog
+ * as a generic fallback so adding a provider via the registry doesn't require
+ * touching this file.
  */
 export function resolveEffectiveModel(group: { agent_provider: string | null; model: string | null }): string {
   if (group.model) return group.model;
@@ -36,7 +44,14 @@ export function resolveEffectiveModel(group: { agent_provider: string | null; mo
   if (provider === 'claude') {
     return process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6';
   }
-  return '(unknown)';
+  // Generic fallback for any other registered provider: first catalog entry
+  // for that provider. Used by local/opencode/pi/etc. without per-provider
+  // branches here.
+  const fromCatalog = getModelCatalog().find((entry) => entry.provider === provider);
+  if (fromCatalog) return fromCatalog.id;
+  // Last resort: surface the provider name so the operator sees something
+  // meaningful in `ncl groups get` output rather than the cryptic '(unknown)'.
+  return `${provider}-default`;
 }
 
 export function setModel(folder: string, model: string | null): boolean {
