@@ -50,9 +50,9 @@ const { getPendingMessages } = await import('../container/agent-runner/src/db/me
 const { createProvider } = await import('../container/agent-runner/src/providers/factory.js');
 const { runPollLoop } = await import('../container/agent-runner/src/poll-loop.js');
 
-const provider = createProvider('claude');
+const provider = createProvider('pi');
 
-console.log('✓ Claude provider created');
+console.log('✓ Pi provider created');
 console.log('⏳ Starting poll loop (will timeout after 60s)...');
 
 // Run with timeout
