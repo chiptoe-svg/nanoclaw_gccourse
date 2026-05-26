@@ -1,3 +1,5 @@
+import { openCredDialog } from '../components/cred-dialog.js';
+
 export function mountHome(el) {
   const { agent, user } = window.__pg || { agent: { name: '?', folder: '?' }, user: { id: '?' } };
   const isOwner = user && (user.role === 'owner' || user.role === 'ta');
@@ -728,8 +730,8 @@ function escapeHtml(s) {
 // ── classroom-provider-auth:providers-card-impl START ─────────────────────
 
 const PROVIDERS = [
-  { id: 'codex',  displayName: 'OpenAI'    },
-  { id: 'claude', displayName: 'Anthropic' },
+  { id: 'codex',  displayName: 'OpenAI',     credentialFileShape: 'mixed' },
+  { id: 'claude', displayName: 'Anthropic',  credentialFileShape: 'mixed' },
 ];
 
 async function renderProvidersCard(body) {
@@ -740,18 +742,20 @@ async function renderProvidersCard(body) {
     const policies = cc.classes?.default?.providers || {};
 
     const rows = [];
+    const statuses = {};
     for (const p of PROVIDERS) {
       const policy = policies[p.id];
       if (!policy || policy.allow === false) continue;
       const statusRes = await fetch(`/api/me/providers/${p.id}`, { credentials: 'same-origin' });
       const status = await statusRes.json();
+      statuses[p.id] = status;
       rows.push(renderProviderRow(p, policy, status));
     }
     body.innerHTML = rows.length
       ? rows.join('')
       : `<p class="muted">No providers enabled by your instructor.</p>`;
 
-    PROVIDERS.forEach((p) => wireProviderRow(body, p));
+    PROVIDERS.forEach((p) => { if (statuses[p.id]) wireProviderRow(body, p, statuses[p.id]); });
   } catch (err) {
     body.innerHTML = `<p class="muted">Couldn't load providers: ${escapeHtml(String(err))}</p>`;
   }
@@ -815,10 +819,12 @@ function renderProviderRow(p, policy, status) {
   return ''; // hidden
 }
 
-function wireProviderRow(body, p) {
+function wireProviderRow(body, p, status) {
   const row = body.querySelector(`.provider-row[data-provider="${p.id}"]`);
   if (!row) return;
 
+  // Inline active-method radio: switches which credential is used without
+  // opening the dialog — visible only when both OAuth + API key are set.
   row.querySelectorAll(`input[name="active-${p.id}"]`).forEach((input) => {
     input.addEventListener('change', async () => {
       const res = await fetch(`/api/me/providers/${p.id}/active`, {
@@ -832,101 +838,25 @@ function wireProviderRow(body, p) {
     });
   });
 
+  // Connect / Add buttons — open the shared cred dialog
   row.querySelectorAll('[data-add]').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      const which = btn.dataset.add;
-      if (which === 'oauth') {
-        // Paste-back flow: fetch authorize URL + state, open vendor in new tab,
-        // render an inline paste form. State is the lookup key for the verifier
-        // server-side; we hold it in JS closure until the user pastes the code.
-        const res = await fetch(`/provider-auth/${p.id}/start`, { credentials: 'same-origin' });
-        if (!res.ok) { alert(`Couldn't start ${p.displayName} sign-in (${res.status}).`); return; }
-        const { authorizeUrl, state, instructions } = await res.json();
-        window.open(authorizeUrl, '_blank', 'noopener,noreferrer');
-        showPasteForm(row, state, instructions, authorizeUrl);
-      } else {
-        const apiKey = prompt(`Paste your ${p.displayName} API key:`);
-        if (!apiKey) return;
-        const res = await fetch(`/api/me/providers/${p.id}/api-key`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          credentials: 'same-origin',
-          body: JSON.stringify({ apiKey }),
-        });
-        if (!res.ok) alert(`Couldn't save API key for ${p.displayName} (${res.status}).`);
-        renderProvidersCard(body);
-      }
+    btn.addEventListener('click', () => {
+      const currentCredState = {
+        hasOAuth: status.hasOAuth,
+        hasApiKey: status.hasApiKey,
+        activeMethod: status.active,
+        accountEmail: status.oauth?.account || '',
+      };
+      openCredDialog({
+        providerId: p.id,
+        providerSpec: p,
+        currentCredState,
+        onSaved: () => renderProvidersCard(body),
+      });
     });
   });
 
-  function showPasteForm(rowEl, state, instructions, authorizeUrl) {
-    const form = document.createElement('div');
-    form.className = 'provider-paste-form';
-    const instructionsHtml = (instructions || `Sign in to ${escapeHtml(p.displayName)} in the new tab. Paste the authorization code here:`)
-      .split('\n')
-      .map((line) => `<div>${escapeHtml(line)}</div>`)
-      .join('');
-    const openLinkHtml = authorizeUrl
-      ? `<div class="paste-open-link"><a href="${escapeHtml(authorizeUrl)}" target="_blank" rel="noopener noreferrer" class="btn btn-primary">Open sign-in page →</a><span class="muted" style="margin-left: 10px;">(if a new tab didn't open automatically)</span></div>`
-      : '';
-    form.innerHTML = `
-      ${openLinkHtml}
-      <div class="paste-instructions">${instructionsHtml}</div>
-      <input type="text" class="paste-code" placeholder="Paste code or URL here" autocomplete="off">
-      <div class="home-actions">
-        <button class="btn btn-primary">Submit</button>
-        <button class="btn">Cancel</button>
-      </div>
-      <p class="paste-err muted" hidden></p>
-    `;
-    rowEl.appendChild(form);
-    const codeInput = form.querySelector('.paste-code');
-    const errLine = form.querySelector('.paste-err');
-    codeInput.focus();
-    // Use button.btn-primary so the selector excludes the "Open sign-in
-    // page" anchor (which also has class="btn btn-primary"). Without the
-    // tag-name qualifier, querySelector returns the anchor first and the
-    // Submit button's click handler never gets attached.
-    form.querySelector('button.btn-primary').addEventListener('click', async () => {
-      const code = parsePastedCode(codeInput.value.trim());
-      if (!code) { errLine.textContent = 'Code could not be parsed from the pasted value.'; errLine.hidden = false; return; }
-      const r = await fetch(`/provider-auth/${p.id}/exchange`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        credentials: 'same-origin',
-        body: JSON.stringify({ code, state }),
-      });
-      if (!r.ok) {
-        const err = await r.json().catch(() => ({}));
-        errLine.textContent = `Failed: ${err.error || r.status}`;
-        errLine.hidden = false;
-        return;
-      }
-      renderProvidersCard(body);
-    });
-    form.querySelector('.btn:not(.btn-primary)').addEventListener('click', () => form.remove());
-  }
-
-  /** Lenient paste parsing — accepts raw code, code#state, or full callback URL. */
-  function parsePastedCode(raw) {
-    if (!raw) return '';
-    // Full URL with ?code= (e.g. https://platform.claude.com/oauth/code/callback?code=…)
-    try {
-      const url = new URL(raw);
-      const c = url.searchParams.get('code');
-      if (c) return c;
-    } catch { /* not a URL */ }
-    // Regex fallback — catches OpenAI's localhost:1455/auth/callback?code=…
-    // (non-standard scheme that URL constructor parses inconsistently across
-    // browsers) AND bare query-string pastes like "code=ac_XXX&state=YYY".
-    const m = raw.match(/(?:^|[?&])code=([^&\s#]+)/);
-    if (m) return decodeURIComponent(m[1]);
-    // Anthropic's combined "code#state" form (when the vendor shows code
-    // and state concatenated on the success page).
-    if (raw.includes('#')) return raw.split('#')[0];
-    return raw;
-  }
-
+  // Inline disconnect buttons (shown in the row for quick access)
   row.querySelectorAll('[data-disconnect]').forEach((btn) => {
     btn.addEventListener('click', async () => {
       const which = btn.dataset.disconnect;
