@@ -352,6 +352,8 @@ export function startCredentialProxy(port: number, host = '127.0.0.1'): Promise<
     'OPENAI_PLATFORM_API_KEY',
     'OMLX_API_KEY',
     'OMLX_BASE_URL',
+    'CAMPUS_LLM_API_KEY',
+    'CAMPUS_LLM_BASE_URL',
   ]);
 
   const authMode: AuthMode = secrets.ANTHROPIC_API_KEY ? 'api-key' : 'oauth';
@@ -364,6 +366,11 @@ export function startCredentialProxy(port: number, host = '127.0.0.1'): Promise<
   // Routed via the /omlx/* prefix so agents on the `local` provider send
   // codex traffic here while `codex` agents still hit cloud OpenAI.
   const omlxUpstream = new URL(secrets.OMLX_BASE_URL || 'http://localhost:8000');
+  // Clemson RCD-hosted LLM endpoint (OpenAI-compatible). Routed via the
+  // /clemson/* prefix. Institution-paid, shared across the class pool —
+  // no per-student credentials. CAMPUS_LLM_API_KEY substituted on every
+  // request that lands on this route.
+  const clemsonUpstream = new URL(secrets.CAMPUS_LLM_BASE_URL || 'https://llm.rcd.clemson.edu');
 
   const requestFor = (isHttps: boolean) => (isHttps ? httpsRequest : httpRequest);
 
@@ -382,6 +389,7 @@ export function startCredentialProxy(port: number, host = '127.0.0.1'): Promise<
         const isOpenAIPlatform = rawUrl.startsWith('/openai-platform/') || rawUrl === '/openai-platform';
         const isOpenAI = !isOpenAIPlatform && (rawUrl.startsWith('/openai/') || rawUrl === '/openai');
         const isOmlx = rawUrl.startsWith('/omlx/') || rawUrl === '/omlx';
+        const isClemson = rawUrl.startsWith('/clemson/') || rawUrl === '/clemson';
         const isGoogle = rawUrl.startsWith('/googleapis/') || rawUrl === '/googleapis';
 
         // Per-call attribution: which agent group is calling? Used by the
@@ -398,7 +406,9 @@ export function startCredentialProxy(port: number, host = '127.0.0.1'): Promise<
             ? openaiUpstream
             : isOmlx
               ? omlxUpstream
-              : anthropicUpstream;
+              : isClemson
+                ? clemsonUpstream
+                : anthropicUpstream;
         const upstreamPath = isGoogle
           ? rawUrl.replace(/^\/googleapis/, '') || '/'
           : isOpenAIPlatform
@@ -407,7 +417,9 @@ export function startCredentialProxy(port: number, host = '127.0.0.1'): Promise<
               ? rawUrl.replace(/^\/openai/, '') || '/'
               : isOmlx
                 ? rawUrl.replace(/^\/omlx/, '') || '/'
-                : rawUrl;
+                : isClemson
+                  ? rawUrl.replace(/^\/clemson/, '') || '/'
+                  : rawUrl;
         const isHttps = upstreamUrl.protocol === 'https:';
         const makeRequest = requestFor(isHttps);
 
@@ -426,7 +438,7 @@ export function startCredentialProxy(port: number, host = '127.0.0.1'): Promise<
 
         // ── per-student-provider-auth:proxy-invocation START ──────────────────────
         let studentCredsApplied = false;
-        if (agentGroupId && (isOpenAI || isOpenAIPlatform || (!isGoogle && !isOmlx))) {
+        if (agentGroupId && (isOpenAI || isOpenAIPlatform || (!isGoogle && !isOmlx && !isClemson))) {
           // NOTE: 'codex'/'openai-platform'/'claude' here are AUTH provider IDs
           // (matching what codex-spec.ts / openai-platform-spec.ts / claude-spec.ts
           // register in auth-registry.ts), NOT the agent harness provider
@@ -523,6 +535,25 @@ export function startCredentialProxy(port: number, host = '127.0.0.1'): Promise<
           delete headers['authorization'];
           delete headers['x-api-key'];
           headers['authorization'] = `Bearer ${secrets.OMLX_API_KEY || resolveOmlxKey()}`;
+        } else if (isClemson) {
+          // Clemson RCD-hosted LLM endpoint (OpenAI-compatible). Institution-paid,
+          // class-pool only — no per-student creds. Returns 502 if CAMPUS_LLM_API_KEY
+          // is not set on the host, so misconfiguration is visible rather than silent.
+          if (!secrets.CAMPUS_LLM_API_KEY) {
+            res.writeHead(502, { 'content-type': 'application/json' });
+            res.end(
+              JSON.stringify({
+                error: {
+                  message: 'CAMPUS_LLM_API_KEY is not set on the host. Add it to .env and restart nanoclaw.',
+                  type: 'proxy_misconfiguration',
+                },
+              }),
+            );
+            return;
+          }
+          delete headers['authorization'];
+          delete headers['x-api-key'];
+          headers['authorization'] = `Bearer ${secrets.CAMPUS_LLM_API_KEY}`;
         } else if (authMode === 'api-key' && !studentCredsApplied) {
           // Anthropic API key mode: inject x-api-key on every request
           delete headers['x-api-key'];
@@ -594,7 +625,9 @@ export function startCredentialProxy(port: number, host = '127.0.0.1'): Promise<
                   ? 'openai'
                   : isOmlx
                     ? 'omlx'
-                    : 'anthropic',
+                    : isClemson
+                      ? 'clemson'
+                      : 'anthropic',
           });
           if (!res.headersSent) {
             res.writeHead(502);

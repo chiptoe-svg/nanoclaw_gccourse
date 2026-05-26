@@ -132,7 +132,11 @@ export async function handleGetModelsTabState(input: {
       const creds: CredState = credsRaw
         ? { hasOAuth: !!credsRaw.oauth, hasApiKey: !!credsRaw.apiKey }
         : { hasOAuth: false, hasApiKey: false };
-      const isLocalOnly = spec.credentialFileShape === 'none';
+      // 'none' shape covers two distinct cases:
+      //   - local server (OMLX) — has a reachability probe; AVAILABLE/local
+      //   - institutional pool (Clemson) — no probe; falls through to class-pool
+      //     via policy.provideDefault like any other pooled provider.
+      const isLocalOnly = spec.credentialFileShape === 'none' && !!spec.reachability;
       const reachable = spec.reachability ? await probeWithCache(spec.id, spec.reachability) : true;
       const facts: SpecFacts = {
         id: spec.id,

@@ -9,6 +9,7 @@ import './providers/claude-spec.js';
 import './providers/codex-spec.js';
 import './providers/openai-platform-spec.js';
 import './providers/omlx-spec.js';
+import './providers/clemson-spec.js';
 // Future provider modules add their own import line here.
 
 export interface ModelEntry {
