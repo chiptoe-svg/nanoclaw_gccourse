@@ -99,21 +99,22 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `main`
-- **Last tag:** `phase-d-complete-2026-05-26` (7 commits ahead)
+- **Last tag:** `phase-d-complete-2026-05-26` (8 commits ahead)
 
 ### Working tree
 
 ```
-## main...origin/main
+## main...origin/main [ahead 1]
  M .gitignore
  M config/playground-seats.json
-A  docs/superpowers/specs/2026-05-26-multi-provider-models-tab-design.md
+A  docs/superpowers/plans/2026-05-26-multi-provider-models-tab.md
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+c34711a docs(spec): multi-provider Models tab + per-student auth extension
 d611bc3 feat(compass): state.md project compass + SessionStart hook + auto-refresh
 456c389 chore(format): prettier-format Phase D and persistence-fix files
 ef309cc fix(host): writeOutboundDirect uses RW opener + recover stale outbound -journal at startup
@@ -128,9 +129,8 @@ c6c0284 refactor(container): delete claude.ts + codex.ts adapters (d-4)
 f233af3 feat(playground): model-provider dropdown replaces provider selector (d-2)
 b175e7e fix(d-1): match adjacent flag-parsing style + cover malformed-env migration path
 49da6fb feat(db): container_configs.model_provider column (d-1)
-7f23a64 feat(phase-d-prep): migration script + execution plan for pi as sole harness
 ```
 
 ### Last refresh
 
-2026-05-26T16:55:08Z
+2026-05-26T17:49:49Z
