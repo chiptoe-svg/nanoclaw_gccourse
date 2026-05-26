@@ -49,6 +49,22 @@ export interface ProviderOptions {
    * the upstream model consume it.
    */
   effort?: string;
+  /**
+   * Upstream model-provider routing id (`anthropic`, `openai`, `openai-codex`,
+   * `deepseek`, `groq`, ...). Used by providers that route to multiple upstream
+   * APIs (pi). Single-target providers (claude-sdk, codex) ignore this.
+   */
+  modelProvider?: string;
+  /**
+   * Auth-mode hint for providers that distinguish (`api_key` / `oauth` /
+   * `subscription` / `native` / `auto`). Pi consults this to pick which env
+   * var to read for Anthropic.
+   */
+  authMode?: 'auto' | 'api_key' | 'subscription' | 'oauth' | 'native';
+  /** URL of the host-side MCP server (for pi's HTTP bridge). */
+  hostMcpUrl?: string;
+  /** Session identifier passed to host MCP server. */
+  nanoclawSessionId?: string;
 }
 
 export interface QueryInput {
@@ -179,4 +195,34 @@ export type ProviderEvent =
       tokensReasoning: number;
       /** Text the model generated for this call (absent on tool-use-only calls). */
       responsePreview?: string;
-    };
+    }
+  /**
+   * Pi-native event passthrough. When pi is the harness, pi-agent-core's
+   * own events are forwarded unchanged so the playground trace panel can
+   * render pi's richer vocabulary directly (streaming text, per-tool
+   * live updates, thinking deltas) instead of the lossy translation to
+   * `tool_use`/`tool_result`/`model_call`. Trace consumers dispatch on
+   * `event.type` (the inner pi event type). Kept as `unknown` so this
+   * file has no dependency on the pi packages.
+   */
+  | { type: 'pi_event'; event: unknown };
+
+/**
+ * Per-turn usage and cost (best-effort from the provider SDK). Emitted as a
+ * separate event by pi after each `harness.prompt()` returns; classroom-side
+ * providers fold this into the `result` event's `tokens` field instead.
+ */
+export interface TurnUsage {
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+  totalTokens?: number;
+  inputCostUsd?: number;
+  outputCostUsd?: number;
+  cacheReadCostUsd?: number;
+  cacheWriteCostUsd?: number;
+  totalCostUsd?: number;
+  model?: string;
+  provider?: string;
+}

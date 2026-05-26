@@ -106,6 +106,15 @@ async function main(): Promise<void> {
     env: envWithModelOverride,
     additionalDirectories: additionalDirectories.length > 0 ? additionalDirectories : undefined,
     model: config.model || undefined,
+    effort: config.effort,
+    // Pi-specific options. Single-target providers (claude, codex) ignore them.
+    // modelProvider comes from container.json if set (the host writes it from
+    // container_configs); otherwise pi.ts falls back to 'anthropic' with a warn.
+    modelProvider: config.modelProvider,
+    // hostMcpUrl + nanoclawSessionId enable pi-mcp-bridge's HTTP bridge to
+    // the host-side MCP relay. Set by the host pi.ts container config.
+    hostMcpUrl: process.env.NANOCLAW_HOST_MCP_URL || undefined,
+    nanoclawSessionId: process.env.NANOCLAW_SESSION_ID || undefined,
   });
 
   await runPollLoop({
