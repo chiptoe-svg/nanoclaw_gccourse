@@ -58,37 +58,6 @@ export interface ModelEntry {
 }
 
 const BUILTIN_ENTRIES: ModelEntry[] = [
-  {
-    id: 'claude-haiku-4-5',
-    modelProvider: 'anthropic',
-    displayName: 'claude-haiku-4-5',
-    origin: 'cloud',
-    costPer1kInUsd: 0.001,
-    costPer1kOutUsd: 0.005,
-    costPer1kCachedInUsd: 0.0001,
-    costPer1kTokensUsd: 0.0008,
-    avgLatencySec: 0.9,
-    paramCount: 'not disclosed',
-    modalities: ['text', 'image'],
-    chips: ['⚡ fast', '$ cheap', '☁ Anthropic'],
-    bestFor: 'Short answers, classification, structured output.',
-  },
-  {
-    id: 'claude-sonnet-4-6',
-    modelProvider: 'anthropic',
-    displayName: 'claude-sonnet-4-6',
-    origin: 'cloud',
-    costPer1kInUsd: 0.003,
-    costPer1kOutUsd: 0.015,
-    costPer1kCachedInUsd: 0.0003,
-    costPer1kTokensUsd: 0.012,
-    avgLatencySec: 2.1,
-    paramCount: 'not disclosed',
-    modalities: ['text', 'image'],
-    chips: ['🐢 slower', '$$ pricier', '☁ Anthropic'],
-    bestFor: 'Reasoning, long outputs.',
-    default: true,
-  },
   // Codex model entries — IDs + descriptions + pricing pulled verbatim
   // from OpenAI's docs:
   //   https://developers.openai.com/codex/models

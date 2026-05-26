@@ -24,8 +24,10 @@ describe('getModelCatalog', () => {
     fs.writeFileSync(localPath, '[]');
     const { getModelCatalog } = await import('./model-catalog.js');
     const catalog = getModelCatalog();
-    expect(catalog.find((e) => e.id === 'claude-haiku-4-5')).toBeTruthy();
-    expect(catalog.find((e) => e.id === 'claude-sonnet-4-6')).toBeTruthy();
+    // Anthropic entries moved to claude-spec.ts catalogModels (mptab-2).
+    // They will re-appear in getModelCatalog() output after mptab-4 wires
+    // registered-provider catalogModels into the aggregation. For now, just
+    // verify the non-Anthropic builtin still exists.
     expect(catalog.find((e) => e.id === 'Qwen3.6-35B-A3B-UD-MLX-4bit')).toBeTruthy();
   });
 

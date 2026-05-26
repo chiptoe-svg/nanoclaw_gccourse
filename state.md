@@ -99,7 +99,7 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `multi-provider-models-tab`
-- **Last tag:** `phase-d-complete-2026-05-26` (9 commits ahead)
+- **Last tag:** `phase-d-complete-2026-05-26` (10 commits ahead)
 
 ### Working tree
 
@@ -107,14 +107,17 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ## multi-provider-models-tab
  M .gitignore
  M config/playground-seats.json
-M  src/providers/auth-registry.test.ts
-M  src/providers/auth-registry.ts
+M  src/model-catalog.test.ts
+M  src/model-catalog.ts
+A  src/providers/claude-spec.test.ts
+M  src/providers/claude-spec.ts
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+1226ec5 feat(provider): extend ProviderAuthSpec with catalogModels + reachability + 'none' shape (mptab-1)
 21478a5 docs(plan): multi-provider Models tab implementation plan
 c34711a docs(spec): multi-provider Models tab + per-student auth extension
 d611bc3 feat(compass): state.md project compass + SessionStart hook + auto-refresh
@@ -129,9 +132,8 @@ c6c0284 refactor(container): delete claude.ts + codex.ts adapters (d-4)
 8504cae refactor(provider): delete host-side claude.ts + codex.ts (d-3)
 7626779 fix(d-2): allowed_models migration + usage remap + models.js naming
 f233af3 feat(playground): model-provider dropdown replaces provider selector (d-2)
-b175e7e fix(d-1): match adjacent flag-parsing style + cover malformed-env migration path
 ```
 
 ### Last refresh
 
-2026-05-26T18:00:16Z
+2026-05-26T18:06:04Z
