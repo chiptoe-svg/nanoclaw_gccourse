@@ -112,6 +112,27 @@ export interface ModelsTabStateResponse {
     source: ProviderSource;
     actionLabel: string | null;
     credentialFileShape: 'oauth-token' | 'api-key' | 'mixed' | 'none';
+    /** spec.apiKey.placeholder — surfaced so the cred-dialog can show the
+     *  right hint (e.g. 'sk-…' for openai-platform) without home.js having
+     *  to duplicate the spec metadata. */
+    apiKeyPlaceholder?: string;
+    /** Which auth methods the spec supports (vs. credentialFileShape which
+     *  is the high-level shape). Lets home.js pick button labels like
+     *  "Add API key" vs "Connect" without re-deriving from shape strings. */
+    hasOauthMethod: boolean;
+    hasApiKeyMethod: boolean;
+    /** Per-student credential state — what's configured for THIS user. The
+     *  greying rule uses this to decide AVAILABLE-source; home.js uses it
+     *  for active-method toggles and disconnect buttons. */
+    creds: {
+      hasOAuth: boolean;
+      hasApiKey: boolean;
+      active?: 'oauth' | 'apiKey';
+      accountEmail?: string;
+    };
+    /** Class Controls policy — instructor's allow/provideDefault/allowByo
+     *  for this provider. Home renders different rows based on these. */
+    policy: { allow: boolean; provideDefault: boolean; allowByo: boolean };
     catalogModels: ModelEntry[];
   }>;
 }
@@ -155,6 +176,16 @@ export async function handleGetModelsTabState(input: {
         source: derived.source,
         actionLabel: derived.actionLabel,
         credentialFileShape: spec.credentialFileShape,
+        apiKeyPlaceholder: spec.apiKey?.placeholder,
+        hasOauthMethod: !!spec.oauth,
+        hasApiKeyMethod: !!spec.apiKey,
+        creds: {
+          hasOAuth: creds.hasOAuth,
+          hasApiKey: creds.hasApiKey,
+          active: credsRaw?.active,
+          accountEmail: credsRaw?.oauth?.account,
+        },
+        policy,
         catalogModels: derived.state === 'HIDDEN' ? [] : (spec.catalogModels ?? []),
       };
     }),

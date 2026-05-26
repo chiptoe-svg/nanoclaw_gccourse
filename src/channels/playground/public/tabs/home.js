@@ -729,55 +729,41 @@ function escapeHtml(s) {
 
 // ── classroom-provider-auth:providers-card-impl START ─────────────────────
 
-// Hardcoded provider metadata for the Home Providers card. The `id` values
-// match what auth-registry.ts registers (claude-spec, codex-spec,
-// openai-platform-spec, omlx-spec, clemson-spec). credentialFileShape drives
-// the cred-dialog variant; apiKey.placeholder is threaded into the api-key
-// paste input. Long-term cleanup: have the providers GET return this metadata
-// so this duplication goes away. Until then, keep in sync with the spec modules.
-const PROVIDERS = [
-  { id: 'codex',           displayName: 'OpenAI (ChatGPT subscription)', credentialFileShape: 'mixed' },
-  { id: 'claude',          displayName: 'Anthropic',                     credentialFileShape: 'mixed' },
-  { id: 'openai-platform', displayName: 'OpenAI Platform (direct API)',  credentialFileShape: 'api-key', apiKey: { placeholder: 'sk-…' } },
-  { id: 'omlx',            displayName: 'OMLX (local server)',           credentialFileShape: 'none' },
-  { id: 'clemson',         displayName: 'Clemson (campus LLM)',          credentialFileShape: 'none' },
-];
-
+// Home Providers card sources from /api/me/models-tab-state — the single
+// endpoint that composes spec metadata (credentialFileShape, apiKeyPlaceholder,
+// hasOauthMethod, hasApiKeyMethod), per-student cred state, and Class Controls
+// policy into one shape. Eliminates the previous PROVIDERS-array stub that had
+// to be kept in sync with the spec modules by hand. The agentGroupId query
+// param is what models-tab-state uses to scope class-pool lookups; for the
+// Home card the current agent's id works.
 async function renderProvidersCard(body) {
   if (!body) return;
   try {
-    const ccRes = await fetch('/api/class-controls', { credentials: 'same-origin' });
-    const cc = await ccRes.json();
-    const policies = cc.classes?.default?.providers || {};
+    const agentGroupId = (window.currentAgent && window.currentAgent.id) || '';
+    const res = await fetch(
+      `/api/me/models-tab-state?agentGroupId=${encodeURIComponent(agentGroupId)}`,
+      { credentials: 'same-origin' },
+    );
+    const data = await res.json();
+    const visibleProviders = (data.providers || []).filter((p) => p.state !== 'HIDDEN');
 
-    const rows = [];
-    const statuses = {};
-    for (const p of PROVIDERS) {
-      const policy = policies[p.id];
-      if (!policy || policy.allow === false) continue;
-      // 'none' shape providers (omlx, clemson) have no per-student creds, so
-      // skip the GET /api/me/providers/<id> fetch — render with an empty
-      // status so the row falls into the renderProviderRow 'none' branch.
-      let status = { hasApiKey: false, hasOAuth: false };
-      if (p.credentialFileShape !== 'none') {
-        const statusRes = await fetch(`/api/me/providers/${p.id}`, { credentials: 'same-origin' });
-        status = await statusRes.json();
-      }
-      statuses[p.id] = status;
-      rows.push(renderProviderRow(p, policy, status));
-    }
+    const rows = visibleProviders.map(renderProviderRow).filter(Boolean);
     body.innerHTML = rows.length
       ? rows.join('')
       : `<p class="muted">No providers enabled by your instructor.</p>`;
 
-    PROVIDERS.forEach((p) => { if (statuses[p.id]) wireProviderRow(body, p, statuses[p.id]); });
+    visibleProviders.forEach((p) => wireProviderRow(body, p));
   } catch (err) {
     body.innerHTML = `<p class="muted">Couldn't load providers: ${escapeHtml(String(err))}</p>`;
   }
 }
 
-function renderProviderRow(p, policy, status) {
-  const { hasApiKey, hasOAuth, active, oauth } = status;
+// p is one entry from /api/me/models-tab-state.providers, with shape:
+//   { id, displayName, credentialFileShape, apiKeyPlaceholder?, hasOauthMethod,
+//     hasApiKeyMethod, creds: {hasOAuth, hasApiKey, active?, accountEmail?},
+//     policy: {allow, provideDefault, allowByo}, state, source, actionLabel, … }
+function renderProviderRow(p) {
+  const { hasApiKey, hasOAuth, active, accountEmail } = p.creds;
   const displayName = escapeHtml(p.displayName);
 
   if (hasOAuth && hasApiKey) {
@@ -786,7 +772,7 @@ function renderProviderRow(p, policy, status) {
         <strong>✅ ${displayName}</strong>
         <div class="provider-active">
           Active:
-          <label><input type="radio" name="active-${p.id}" value="oauth" ${active === 'oauth' ? 'checked' : ''}> Subscription (${escapeHtml(oauth?.account || '')})</label>
+          <label><input type="radio" name="active-${p.id}" value="oauth" ${active === 'oauth' ? 'checked' : ''}> Subscription (${escapeHtml(accountEmail || '')})</label>
           <label><input type="radio" name="active-${p.id}" value="apiKey" ${active === 'apiKey' ? 'checked' : ''}> API key</label>
         </div>
         <div class="home-actions">
@@ -797,9 +783,9 @@ function renderProviderRow(p, policy, status) {
   if (hasOAuth) {
     return `
       <div class="provider-row" data-provider="${p.id}">
-        <strong>✅ ${displayName}</strong> · Subscription (${escapeHtml(oauth?.account || '')})
+        <strong>✅ ${displayName}</strong> · Subscription (${escapeHtml(accountEmail || '')})
         <div class="home-actions">
-          <button class="btn" data-add="apiKey">Add API key</button>
+          ${p.hasApiKeyMethod ? `<button class="btn" data-add="apiKey">Add API key</button>` : ''}
           <button class="btn btn-danger" data-disconnect="oauth">Disconnect</button>
         </div>
       </div>`;
@@ -809,14 +795,13 @@ function renderProviderRow(p, policy, status) {
       <div class="provider-row" data-provider="${p.id}">
         <strong>✅ ${displayName}</strong> · API key set
         <div class="home-actions">
-          <button class="btn" data-add="oauth">Add subscription</button>
+          ${p.hasOauthMethod ? `<button class="btn" data-add="oauth">Add subscription</button>` : ''}
           <button class="btn btn-danger" data-disconnect="apiKey">Disconnect</button>
         </div>
       </div>`;
   }
   // 'none' shape (omlx, clemson): no per-student creds. Render a status row
-  // with a Settings affordance that opens the cred-dialog's none-variant
-  // (URL field + reachability for omlx, just info for clemson).
+  // with a Settings affordance that opens the cred-dialog's none-variant.
   if (p.credentialFileShape === 'none') {
     const subtitle = p.id === 'omlx' ? 'Local server' : 'Provided by instructor';
     return `
@@ -828,21 +813,15 @@ function renderProviderRow(p, policy, status) {
       </div>`;
   }
   // No creds. Button label depends on what methods the provider supports.
-  // api-key-only providers say "Add API key" (no OAuth path available).
-  // oauth-or-mixed providers default to "Connect" (the dialog's tab logic
-  // shows whichever methods apply once it opens).
   const addLabel = p.credentialFileShape === 'api-key' ? 'Add API key' : 'Connect';
-  // Use a stable data-add value so wireProviderRow's selector still matches.
-  // The actual cred path (oauth vs api-key) is decided by the dialog from
-  // credentialFileShape — this attribute is just an event-binding hook.
-  if (policy.provideDefault) {
+  if (p.policy.provideDefault) {
     return `
       <div class="provider-row" data-provider="${p.id}">
         <strong>✅ ${displayName}</strong> · Provided by instructor
-        ${policy.allowByo ? `<div class="home-actions"><button class="btn" data-add="open">Use my own</button></div>` : ''}
+        ${p.policy.allowByo ? `<div class="home-actions"><button class="btn" data-add="open">Use my own</button></div>` : ''}
       </div>`;
   }
-  if (policy.allowByo) {
+  if (p.policy.allowByo) {
     return `
       <div class="provider-row" data-provider="${p.id}">
         <strong>⚠ ${displayName}</strong> · Not connected
@@ -851,10 +830,10 @@ function renderProviderRow(p, policy, status) {
         </div>
       </div>`;
   }
-  return ''; // hidden
+  return ''; // allow=true but no provideDefault + no allowByo: instructor said "show but block"
 }
 
-function wireProviderRow(body, p, status) {
+function wireProviderRow(body, p) {
   const row = body.querySelector(`.provider-row[data-provider="${p.id}"]`);
   if (!row) return;
 
@@ -873,18 +852,28 @@ function wireProviderRow(body, p, status) {
     });
   });
 
-  // Connect / Add buttons — open the shared cred dialog
+  // Connect / Add / Settings buttons — open the shared cred dialog. The
+  // providerSpec passed here is the flat object from models-tab-state — it
+  // already has the right credentialFileShape, apiKeyPlaceholder, etc., so the
+  // dialog's variant routing + placeholder text work without local stubs.
   row.querySelectorAll('[data-add]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const currentCredState = {
-        hasOAuth: status.hasOAuth,
-        hasApiKey: status.hasApiKey,
-        activeMethod: status.active,
-        accountEmail: status.oauth?.account || '',
+        hasOAuth: p.creds.hasOAuth,
+        hasApiKey: p.creds.hasApiKey,
+        activeMethod: p.creds.active,
+        accountEmail: p.creds.accountEmail || '',
       };
       openCredDialog({
         providerId: p.id,
-        providerSpec: p,
+        // Adapt the flat shape to what cred-dialog expects (apiKey field
+        // with placeholder rather than a top-level apiKeyPlaceholder).
+        providerSpec: {
+          id: p.id,
+          displayName: p.displayName,
+          credentialFileShape: p.credentialFileShape,
+          apiKey: p.apiKeyPlaceholder ? { placeholder: p.apiKeyPlaceholder } : undefined,
+        },
         currentCredState,
         onSaved: () => renderProvidersCard(body),
       });

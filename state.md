@@ -101,13 +101,14 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `main`
-- **Last tag:** `multi-provider-models-tab-complete-2026-05-26` (5 commits ahead)
+- **Last tag:** `multi-provider-models-tab-complete-2026-05-26` (6 commits ahead)
 
 ### Working tree
 
 ```
 ## main...origin/main
  M config/playground-seats.json
+M  src/channels/playground/api/models-tab-state.ts
 M  src/channels/playground/public/tabs/home.js
 ?? .codegraph/
 ```
@@ -115,6 +116,7 @@ M  src/channels/playground/public/tabs/home.js
 ### Recent commits (last 15)
 
 ```
+e598e0a feat(playground): polish Home Providers card for new providers
 c95b9d9 feat(playground): per-student OpenAI Platform key + OMLX prompt-cache bucket
 153a380 chore(playground): add data-provider breadcrumb to Models tab action links
 3f23d31 docs(state): log Clemson provider + pi-ai integration closeout
@@ -129,9 +131,8 @@ a64c33d feat(playground): OMLX 'none' variant of cred dialog + reachability endp
 41ab3d5 refactor(playground): extract shared cred-dialog component (mptab-10)
 0c5ad0b feat(api): GET /api/me/models-tab-state endpoint (mptab-9)
 8592718 feat(api): greying-rule pure function for Models tab state (mptab-8)
-3dadbd7 fix(proxy): default OMLX_API_KEY to 'godfrey' (mptab-7)
 ```
 
 ### Last refresh
 
-2026-05-26T22:44:53Z
+2026-05-26T22:52:12Z
