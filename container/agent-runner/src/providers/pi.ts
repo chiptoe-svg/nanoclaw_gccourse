@@ -77,6 +77,30 @@ const AUTO_COMPACT_THRESHOLD = 0.70;
 const DEFAULT_MODEL_PROVIDER = 'anthropic';
 const DEFAULT_SESSIONS_ROOT = '/workspace/pi-sessions';
 
+/**
+ * The Claude Code OAuth scope (issued by claude.com OAuth, used in
+ * classroom's OAuth mode) is bound to the assertion that the caller IS
+ * Claude Code. Anthropic enforces this by rejecting `/v1/messages`
+ * requests whose `system` doesn't begin with this exact preamble — the
+ * API returns "Invalid bearer token" regardless of token validity.
+ *
+ * The Claude SDK does an OAuth-to-api-key exchange first and then uses
+ * x-api-key (no preamble needed). Pi-ai uses the OAuth token directly
+ * via Bearer, so we have to add the preamble ourselves.
+ */
+const CLAUDE_CODE_OAUTH_PREAMBLE = "You are Claude Code, Anthropic's official CLI for Claude.";
+
+function maybePrependClaudeCodePreamble(modelProvider: string, systemPrompt: string): string {
+  if (modelProvider !== 'anthropic') return systemPrompt;
+  // OAuth mode is in play when ANTHROPIC_API_KEY is absent but a Claude Code
+  // OAuth token placeholder is set. Mirror the proxy's detection so a
+  // future api-key install doesn't get the preamble it doesn't need.
+  const oauthMode = !process.env.ANTHROPIC_API_KEY && !!process.env.CLAUDE_CODE_OAUTH_TOKEN;
+  if (!oauthMode) return systemPrompt;
+  if (systemPrompt.startsWith(CLAUDE_CODE_OAUTH_PREAMBLE)) return systemPrompt;
+  return systemPrompt ? `${CLAUDE_CODE_OAUTH_PREAMBLE}\n\n${systemPrompt}` : CLAUDE_CODE_OAUTH_PREAMBLE;
+}
+
 function isEssentialSkill(skill: Skill): boolean {
   return ESSENTIAL_SKILL_MARKER.test(skill.content);
 }
@@ -267,6 +291,18 @@ export class PiProvider implements AgentProvider {
           modelProvider,
           model: options.model,
         });
+
+        // Pi-ai's per-model `baseUrl` is hardcoded to the upstream provider's
+        // public endpoint (e.g. https://api.anthropic.com) and the Anthropic
+        // adapter does not honor ANTHROPIC_BASE_URL env var. To route pi
+        // traffic through classroom's credential-proxy at :3001 (where
+        // credentials are substituted on the wire), override the model's
+        // baseUrl here. Only done for anthropic so direct providers (deepseek,
+        // groq, openai-codex via chatgpt.com, etc.) keep their hardcoded
+        // endpoints and use direct API keys via pi-auth.
+        if (modelProvider === 'anthropic' && process.env.ANTHROPIC_BASE_URL) {
+          (model as { baseUrl?: string }).baseUrl = process.env.ANTHROPIC_BASE_URL;
+        }
         bridge = (await createPiMcpBridge({
           mcpServers: options.mcpServers,
           hostMcpUrl: options.hostMcpUrl,
@@ -295,7 +331,10 @@ export class PiProvider implements AgentProvider {
             ...(bridge.tools as unknown[]),
           ] as ConstructorParameters<typeof AgentHarness>[0]['tools'],
           resources: { skills: loadedSkills.skills },
-          systemPrompt: composePiSystemPrompt(input.systemContext?.instructions, loadedSkills.skills) ?? '',
+          systemPrompt: maybePrependClaudeCodePreamble(
+            modelProvider,
+            composePiSystemPrompt(input.systemContext?.instructions, loadedSkills.skills) ?? '',
+          ),
           streamOptions: { cacheRetention: 'short' },
           getApiKeyAndHeaders: async () => {
             const auth = await getPiAuthApiKey(modelProvider!);

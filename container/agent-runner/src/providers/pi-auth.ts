@@ -122,10 +122,28 @@ function readPiAuthCredentials(providerId: string, authPath: string): Record<str
  *   real key). Falls through to pi-ai's own getEnvApiKey() if absent.
  */
 export async function getPiAuthApiKey(providerId: string, authPath = PI_AUTH_FILE): Promise<PiAuthResult | null> {
-  // Anthropic: return the placeholder env var; the proxy handles real auth.
+  // Anthropic: the credential proxy at ANTHROPIC_BASE_URL substitutes the
+  // real credential on every request. WHICH header it substitutes depends
+  // on host authMode:
+  //   - api-key mode: proxy rewrites x-api-key. ANTHROPIC_API_KEY is set.
+  //   - oauth mode: proxy rewrites Authorization: Bearer ONLY when the
+  //     request carries an Authorization header. CLAUDE_CODE_OAUTH_TOKEN
+  //     is set (placeholder). Pi-ai's Anthropic client decides between
+  //     x-api-key and Authorization: Bearer based on the apiKey prefix —
+  //     `sk-ant-oat-` triggers Bearer. So in oauth mode we MUST return a
+  //     value starting with that prefix, otherwise pi-ai sends x-api-key
+  //     and the proxy passes it through unchanged, and Anthropic 401s.
   if (providerId === 'anthropic') {
-    const apiKey = process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_CODE_OAUTH_TOKEN;
-    return apiKey ? { apiKey } : null;
+    if (process.env.ANTHROPIC_API_KEY) {
+      return { apiKey: process.env.ANTHROPIC_API_KEY };
+    }
+    if (process.env.CLAUDE_CODE_OAUTH_TOKEN) {
+      // The placeholder value itself doesn't matter — the proxy substitutes
+      // the real OAuth token in the Authorization header. The prefix is
+      // what's load-bearing for pi-ai's header-selection logic.
+      return { apiKey: 'sk-ant-oat-placeholder' };
+    }
+    return null;
   }
 
   // openai-codex: OAuth via auth.json (chatgpt.com — proxy does not handle this).

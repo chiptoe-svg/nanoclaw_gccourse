@@ -101,15 +101,17 @@ describe('getPiAuthApiKey', () => {
     }
   });
 
-  it('returns CLAUDE_CODE_OAUTH_TOKEN placeholder for anthropic provider (oauth mode)', async () => {
+  it('returns sk-ant-oat- prefix for anthropic provider (oauth mode)', async () => {
     // In classroom OAuth mode, container-runner injects CLAUDE_CODE_OAUTH_TOKEN=placeholder.
-    // The credential proxy substitutes the real OAuth token; pi-auth passes placeholder through.
+    // pi-auth must return a value with `sk-ant-oat-` prefix so pi-ai's Anthropic
+    // client sends Authorization: Bearer (which the proxy substitutes), not
+    // x-api-key (which the proxy passes through in oauth mode → 401).
     const prev = process.env.ANTHROPIC_API_KEY;
     delete process.env.ANTHROPIC_API_KEY;
     process.env.CLAUDE_CODE_OAUTH_TOKEN = 'placeholder';
     try {
       const result = await getPiAuthApiKey('anthropic');
-      expect(result?.apiKey).toBe('placeholder');
+      expect(result?.apiKey.startsWith('sk-ant-oat-')).toBe(true);
     } finally {
       delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
       if (prev !== undefined) process.env.ANTHROPIC_API_KEY = prev;
