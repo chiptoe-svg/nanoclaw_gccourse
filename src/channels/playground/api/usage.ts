@@ -72,7 +72,7 @@ export function aggregateAgentUsage(agentGroupId: string): { thisMonth: UsageBuc
   const now = new Date();
   const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
   const catalog = getModelCatalog();
-  const catalogByKey = new Map(catalog.map((e) => [`${e.provider}:${e.id}`, e]));
+  const catalogByKey = new Map(catalog.map((e) => [`${e.modelProvider}:${e.id}`, e]));
 
   // Aggregation buckets keyed by `provider:model` so we can look up pricing.
   const thisMonth = new Map<string, { tokensIn: number; tokensOut: number; tokensCached: number }>();

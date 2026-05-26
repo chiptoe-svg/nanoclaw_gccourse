@@ -8,9 +8,8 @@ import { updateContainerConfigJson } from '../../../db/container-configs.js';
 import { readEnvFile } from '../../../env.js';
 import { type ModelEntry, getModelCatalog } from '../../../model-catalog.js';
 import { listAllForProvider } from '../../../model-discovery.js';
+import { setModelProviderAndModel } from '../../../model-provider-switch.js';
 import { getModelProvider } from '../../../model-providers/index.js';
-import { setModel } from '../../../model-switch.js';
-import { setProvider } from '../../../provider-switch.js';
 
 export interface ApiResult<T> {
   status: number;
@@ -18,7 +17,7 @@ export interface ApiResult<T> {
 }
 
 export interface DiscoveredModel {
-  provider: 'claude' | 'codex' | 'local';
+  modelProvider: string;
   id: string;
 }
 
@@ -26,7 +25,7 @@ export interface ModelsResponse {
   catalog: ModelEntry[];
   allowedModels: { provider: string; model: string }[];
   discovered: DiscoveredModel[];
-  activeModel: { provider: string; model: string } | null;
+  activeModel: { modelProvider: string; model: string } | null;
   /**
    * Reachability of the local OpenAI-compatible server (mlx-omni-server etc.).
    * Probed server-side because the browser-side fetch sees a *different*
@@ -71,7 +70,7 @@ export async function handleGetModels(draftFolder: string): Promise<ApiResult<Mo
     if (!group) return { status: 404, body: { error: `Agent group not found: ${draftFolder}` } };
     const cfg = materializeContainerJson(group.id);
     const catalog = getModelCatalog();
-    const catalogIds = new Set(catalog.map((m) => `${m.provider}:${m.id}`));
+    const catalogIds = new Set(catalog.map((m) => `${m.modelProvider}:${m.id}`));
 
     const [claudeHints, codexHints, localHints, localServerOnline] = await Promise.all([
       listAllForProvider('claude').catch(() => []),
@@ -82,23 +81,31 @@ export async function handleGetModels(draftFolder: string): Promise<ApiResult<Mo
 
     const discovered: DiscoveredModel[] = [];
     for (const h of claudeHints) {
-      if (!catalogIds.has(`claude:${h.id}`)) discovered.push({ provider: 'claude', id: h.id });
+      if (!catalogIds.has(`anthropic:${h.id}`)) discovered.push({ modelProvider: 'anthropic', id: h.id });
     }
     for (const h of codexHints) {
-      if (!catalogIds.has(`codex:${h.id}`)) discovered.push({ provider: 'codex', id: h.id });
+      if (!catalogIds.has(`openai-codex:${h.id}`)) discovered.push({ modelProvider: 'openai-codex', id: h.id });
     }
     for (const h of localHints) {
-      if (!catalogIds.has(`local:${h.id}`)) discovered.push({ provider: 'local', id: h.id });
+      if (!catalogIds.has(`local:${h.id}`)) discovered.push({ modelProvider: 'local', id: h.id });
     }
 
-    const activeModel = cfg.provider && cfg.model ? { provider: cfg.provider, model: cfg.model } : null;
+    const activeModel =
+      cfg.modelProvider && cfg.model
+        ? { modelProvider: cfg.modelProvider, model: cfg.model }
+        : cfg.provider && cfg.model
+          ? { modelProvider: cfg.provider, model: cfg.model }
+          : null;
 
     // Per-provider auth status. The local provider has no real auth — its
     // omlx adapter always returns a token — so reachability stands in for
     // usability there. Cloud providers resolve to false when the host has
     // no key/OAuth (getAuth() returns null).
     const providerAuth: Record<string, boolean> = {};
-    const providersSeen = new Set<string>([...catalog.map((m) => m.provider), ...discovered.map((d) => d.provider)]);
+    const providersSeen = new Set<string>([
+      ...catalog.map((m) => m.modelProvider),
+      ...discovered.map((d) => d.modelProvider),
+    ]);
     for (const p of providersSeen) {
       providerAuth[p] = p === 'local' ? localServerOnline !== false : getModelProvider(p)?.getAuth() != null;
     }
@@ -144,40 +151,22 @@ export function handlePutModels(
   }
 }
 
-export function handlePutActiveModel(
+export async function handlePutActiveModel(
   draftFolder: string,
-  body: { provider?: unknown; model?: unknown },
-): ApiResult<{ ok: true; activeModel: { provider: string; model: string } }> {
-  if (typeof body.provider !== 'string' || typeof body.model !== 'string') {
-    return { status: 400, body: { error: 'provider and model are required strings' } };
+  body: { modelProvider?: unknown; model?: unknown },
+): Promise<ApiResult<{ ok: true; activeModel: { modelProvider: string; model: string } }>> {
+  if (typeof body.modelProvider !== 'string' || typeof body.model !== 'string') {
+    return { status: 400, body: { error: 'modelProvider and model are required strings' } };
   }
-  const provider = body.provider;
+  const modelProvider = body.modelProvider;
   const model = body.model;
   try {
-    // Read current provider — if it's changing, route through setProvider
-    // so sessions + agent_groups + running containers stay in sync. If
-    // only the model is changing, just update container.json.
     const group = getAgentGroupByFolder(draftFolder);
     if (!group) return { status: 404, body: { error: `Agent group not found: ${draftFolder}` } };
-    const cfg = materializeContainerJson(group.id);
-    const currentProvider = cfg.provider ?? 'claude';
-    if (currentProvider !== provider) {
-      const result = setProvider(draftFolder, provider);
-      if (!result.ok && result.reason !== 'no-change') {
-        return { status: 500, body: { error: `provider switch failed: ${result.reason}` } };
-      }
-    }
-    // Persist model to the DB — container_configs.model is the source of truth that
-    // materializeContainerJson syncs into container.json on every spawn. Writing
-    // only to container.json (as this handler used to) gets silently clobbered
-    // on the next container start when the DB-driven sync runs.
-    if (!setModel(draftFolder, model)) {
-      return { status: 500, body: { error: 'setModel failed (agent group not found by folder)' } };
-    }
-    // Re-materialize after potential setProvider write so the on-disk file
-    // matches the DB without waiting for the next spawn-time sync.
-    materializeContainerJson(group.id);
-    return { status: 200, body: { ok: true, activeModel: { provider, model } } };
+    // Persist model_provider + model to the DB, materialize container.json,
+    // and kill running containers so the next inbound message respawns fresh.
+    await setModelProviderAndModel(group.id, { modelProvider, model });
+    return { status: 200, body: { ok: true, activeModel: { modelProvider, model } } };
   } catch (err) {
     return { status: 500, body: { error: (err as Error).message } };
   }
@@ -318,7 +307,7 @@ export async function handleAutoFillCatalog(body: {
     return { status: 200, body: { suggestion, source: 'huggingface' } };
   }
 
-  if (provider === 'claude' || provider === 'codex') {
+  if (provider === 'anthropic' || provider === 'openai-codex') {
     // Exact match first, then substring (gpt-5-mini in id "gpt-5-mini-2025-01-15", etc.).
     const exact = CLOUD_METADATA[id];
     if (exact) return { status: 200, body: { suggestion: exact, source: 'builtin-table' } };
@@ -342,22 +331,22 @@ export function handlePutLocalCatalogEntry(body: { entry?: unknown }): ApiResult
     return { status: 400, body: { error: 'entry object required' } };
   }
   if (typeof entry.id !== 'string' || !entry.id) return { status: 400, body: { error: 'entry.id required' } };
-  if (typeof entry.provider !== 'string' || !entry.provider)
-    return { status: 400, body: { error: 'entry.provider required' } };
+  if (typeof entry.modelProvider !== 'string' || !entry.modelProvider)
+    return { status: 400, body: { error: 'entry.modelProvider required' } };
   if (typeof entry.displayName !== 'string' || !entry.displayName)
     return { status: 400, body: { error: 'entry.displayName required' } };
 
-  // Coerce origin from provider if absent: cloud for claude/codex, local for local.
+  // Coerce origin from modelProvider if absent: local for local, cloud for everything else.
   const origin: 'cloud' | 'local' =
     entry.origin === 'local' || entry.origin === 'cloud'
       ? entry.origin
-      : entry.provider === 'local'
+      : entry.modelProvider === 'local'
         ? 'local'
         : 'cloud';
 
   const clean: ModelEntry = {
     id: entry.id,
-    provider: entry.provider,
+    modelProvider: entry.modelProvider,
     displayName: entry.displayName,
     origin,
     ...(typeof entry.paramCount === 'string' ? { paramCount: entry.paramCount } : {}),
@@ -381,7 +370,7 @@ export function handlePutLocalCatalogEntry(body: { entry?: unknown }): ApiResult
     } else {
       fs.mkdirSync(path.dirname(MODEL_CATALOG_LOCAL_PATH), { recursive: true });
     }
-    arr = arr.filter((e) => !(e.provider === clean.provider && e.id === clean.id));
+    arr = arr.filter((e) => !(e.modelProvider === clean.modelProvider && e.id === clean.id));
     arr.push(clean);
     fs.writeFileSync(MODEL_CATALOG_LOCAL_PATH, JSON.stringify(arr, null, 2) + '\n');
     return { status: 200, body: { ok: true, entry: clean } };
@@ -403,21 +392,23 @@ export function handlePutLocalCatalogEntry(body: { entry?: unknown }): ApiResult
  * dedup serves the right value on the next API call.
  */
 export function handleToggleDefaultModel(body: {
-  provider?: unknown;
+  modelProvider?: unknown;
   id?: unknown;
-}): ApiResult<{ ok: true; provider: string; id: string; default: boolean }> {
-  const provider = typeof body.provider === 'string' ? body.provider : '';
+}): ApiResult<{ ok: true; modelProvider: string; id: string; default: boolean }> {
+  const modelProvider = typeof body.modelProvider === 'string' ? body.modelProvider : '';
   const id = typeof body.id === 'string' ? body.id : '';
-  if (!provider || !id) return { status: 400, body: { error: 'provider and id required' } };
+  if (!modelProvider || !id) return { status: 400, body: { error: 'modelProvider and id required' } };
 
   const catalog = getModelCatalog();
-  const target = catalog.find((e) => e.provider === provider && e.id === id);
-  if (!target) return { status: 404, body: { error: `no catalog entry for ${provider}:${id}` } };
+  const target = catalog.find((e) => e.modelProvider === modelProvider && e.id === id);
+  if (!target) return { status: 404, body: { error: `no catalog entry for ${modelProvider}:${id}` } };
   const targetIsCurrentlyDefault = Boolean(target.default);
 
-  // Other entries for this provider currently flagged default. Will be
+  // Other entries for this modelProvider currently flagged default. Will be
   // unset when target gets set; left alone when target is being un-set.
-  const otherDefaults = catalog.filter((e) => e.provider === provider && !(e.id === id) && e.default === true);
+  const otherDefaults = catalog.filter(
+    (e) => e.modelProvider === modelProvider && !(e.id === id) && e.default === true,
+  );
 
   try {
     let arr: ModelEntry[] = [];
@@ -430,7 +421,7 @@ export function handleToggleDefaultModel(body: {
     }
 
     function upsert(entry: ModelEntry): void {
-      arr = arr.filter((e) => !(e.provider === entry.provider && e.id === entry.id));
+      arr = arr.filter((e) => !(e.modelProvider === entry.modelProvider && e.id === entry.id));
       arr.push(entry);
     }
 
@@ -445,7 +436,7 @@ export function handleToggleDefaultModel(body: {
     }
 
     fs.writeFileSync(MODEL_CATALOG_LOCAL_PATH, JSON.stringify(arr, null, 2) + '\n');
-    return { status: 200, body: { ok: true, provider, id, default: !targetIsCurrentlyDefault } };
+    return { status: 200, body: { ok: true, modelProvider, id, default: !targetIsCurrentlyDefault } };
   } catch (err) {
     return { status: 500, body: { error: (err as Error).message } };
   }

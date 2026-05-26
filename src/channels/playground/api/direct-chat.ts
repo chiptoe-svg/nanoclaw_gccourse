@@ -321,7 +321,7 @@ export async function handleDirectChat(body: {
   const { text, tokensIn, tokensOut, tokensCached, tokensReasoning } = dispatch;
 
   const catalog = getModelCatalog();
-  const entry = catalog.find((e) => e.provider === provider && e.id === model);
+  const entry = catalog.find((e) => e.modelProvider === provider && e.id === model);
   const costUsd = priceFor(entry, tokensIn, tokensOut, tokensCached);
 
   // Best-effort: record into the agent's pseudo session-outbound so usage

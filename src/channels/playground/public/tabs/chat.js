@@ -86,16 +86,16 @@ function loadModelDropdowns(el, folder) {
       // to appear in the dropdown — the user checked it in the Models tab
       // but couldn't actually select it for chat.
       const catalog = data.catalog || [];
-      const discovered = (data.discovered || []).map((d) => ({ provider: d.provider, id: d.id }));
+      const discovered = (data.discovered || []).map((d) => ({ modelProvider: d.modelProvider, id: d.id }));
       const combined = [...catalog, ...discovered];
       // Stash the merged catalog so appendAgentTraceCall (called from the SSE
       // handler in wireSse — a separate scope) can look up cost fields by
-      // provider+model when rendering an agent-mode call entry.
+      // modelProvider+model when rendering an agent-mode call entry.
       if (window.__pg) window.__pg.catalog = combined;
       const allow = (data.allowedModels && data.allowedModels.length > 0)
         ? new Set(data.allowedModels.map((a) => `${a.provider}/${a.model}`))
         : null;
-      const visible = allow ? combined.filter((m) => allow.has(`${m.provider}/${m.id}`)) : combined;
+      const visible = allow ? combined.filter((m) => allow.has(`${m.modelProvider}/${m.id}`)) : combined;
 
       // Filter providers by class-controls — owner sees everything;
       // students see only what the instructor authorized.
@@ -110,29 +110,29 @@ function loadModelDropdowns(el, folder) {
       // failed call. Applies to everyone, owner included. A provider absent
       // from the map stays visible (defensive: don't hide on partial data).
       const providerAuth = data.providerAuth || {};
-      const providers = [...new Set(visible.map((m) => m.provider))].filter(
+      const providers = [...new Set(visible.map((m) => m.modelProvider))].filter(
         (p) => (!providerAllowed || providerAllowed(p)) && providerAuth[p] !== false,
       );
       provSel.innerHTML = '';
       for (const p of providers) provSel.add(new Option(p, p));
 
-      // Pre-select the currently active provider+model returned by the API,
+      // Pre-select the currently active modelProvider+model returned by the API,
       // falling back to the first catalog entries when none is set. Without
-      // this the dropdowns default to whatever happens to be first alphabetically
-      // (`claude` / `claude-haiku-4-5`), misrepresenting agents currently
-      // configured for a different provider — confusing AND a footgun, since
-      // clicking elsewhere then `Apply` would silently rewrite the active model.
+      // this the dropdowns default to whatever happens to be first alphabetically,
+      // misrepresenting agents currently configured for a different provider —
+      // confusing AND a footgun, since clicking elsewhere then `Apply` would
+      // silently rewrite the active model.
       const active = data.activeModel;
-      if (active && providers.includes(active.provider)) {
-        provSel.value = active.provider;
+      if (active && providers.includes(active.modelProvider)) {
+        provSel.value = active.modelProvider;
       }
 
       const renderModels = () => {
         modelSel.innerHTML = '';
-        for (const m of visible.filter((mm) => mm.provider === provSel.value)) {
+        for (const m of visible.filter((mm) => mm.modelProvider === provSel.value)) {
           modelSel.add(new Option(m.displayName || m.id, m.id));
         }
-        if (active && active.provider === provSel.value) {
+        if (active && active.modelProvider === provSel.value) {
           // Use Array.from to test for membership without triggering a change event.
           const ids = Array.from(modelSel.options).map((o) => o.value);
           if (ids.includes(active.model)) modelSel.value = active.model;
@@ -156,23 +156,28 @@ function loadModelDropdowns(el, folder) {
             return;
           }
         }
+        // All provider flips respawn the container. Pick the first available
+        // model for the new provider and PUT both atomically.
+        renderModels();
+        const newModel = modelSel.value;
         try {
-          const r = await fetch(`/api/drafts/${folder}/provider`, {
+          const r = await fetch(`/api/drafts/${folder}/active-model`, {
             method: 'PUT',
             headers: { 'content-type': 'application/json' },
             credentials: 'same-origin',
-            body: JSON.stringify({ provider: newProvider }),
+            body: JSON.stringify({ modelProvider: newProvider, model: newModel }),
           });
           if (!r.ok) throw new Error(`status ${r.status}`);
           lastProvider = newProvider;
-          renderModels();
+          lastModel = newModel;
           // Fresh container = fresh conversation. Clear the chat log.
-          const log = el.querySelector('#chat-log');
-          if (log) log.innerHTML = '';
-          appendSystemNote(log, `— provider switched to ${newProvider}; container respawning —`);
+          const log2 = el.querySelector('#chat-log');
+          if (log2) log2.innerHTML = '';
+          appendSystemNote(log2, `— provider switched to ${newProvider}; container respawning —`);
         } catch (err) {
           appendSystemNote(el.querySelector('#chat-log'), `Provider switch failed: ${String(err)}`);
           provSel.value = lastProvider;
+          renderModels();
         }
       });
       renderModels();
@@ -184,19 +189,16 @@ function loadModelDropdowns(el, folder) {
         const newModel = modelSel.value;
         if (newModel === lastModel) return;
 
-        // In agent mode the model is persisted to container.json +
-        // agent_groups.model. The codex/local provider re-reads container.json
-        // each turn, so a same-provider switch applies on the next message —
-        // no respawn, conversation intact. The claude provider freezes its
-        // model at container spawn, so switching it needs a respawn: warn
-        // first and clear the dropped conversation.
+        // In agent mode every model flip persists to the DB and kills the
+        // running container — all providers freeze their model at spawn time
+        // now that everything runs through pi. Warn when there's a live
+        // conversation to lose.
         // In direct mode the dropdown directly controls the request body, no
         // persisted state changes and no container involved.
         const isAgentMode = el.querySelector('#mode-agent')?.classList.contains('active');
         if (isAgentMode) {
-          const needsRespawn = provSel.value === 'claude';
-          // Only warn (respawn case) when there's a live conversation to lose.
-          if (needsRespawn && log.querySelector('.msg.user, .msg.agent')) {
+          // Only warn when there's a live conversation to lose.
+          if (log.querySelector('.msg.user, .msg.agent')) {
             const ok = await showModelSwitchModal(lastModel, newModel);
             if (!ok) {
               modelSel.value = lastModel;
@@ -208,16 +210,12 @@ function loadModelDropdowns(el, folder) {
               method: 'PUT',
               headers: { 'content-type': 'application/json' },
               credentials: 'same-origin',
-              body: JSON.stringify({ provider: provSel.value, model: newModel }),
+              body: JSON.stringify({ modelProvider: provSel.value, model: newModel }),
             });
             if (!r.ok) throw new Error(`status ${r.status}`);
             lastModel = newModel;
-            if (needsRespawn) {
-              log.replaceChildren();
-              appendSystemNote(log, `— model switched to ${newModel}; container respawning —`);
-            } else {
-              appendChatNote(log, `— model switched to ${newModel}; next reply will use it —`);
-            }
+            log.replaceChildren();
+            appendSystemNote(log, `— model switched to ${newModel}; container respawning —`);
           } catch (err) {
             appendChatNote(log, `Model switch failed: ${String(err)}`);
             modelSel.value = lastModel;
@@ -1574,7 +1572,7 @@ function computeAgentCallCost(
 ) {
   if (tokensIn == null || tokensOut == null) return null;
   const catalog = (window.__pg && window.__pg.catalog) || [];
-  const entry = catalog.find((e) => e.provider === provider && e.id === model);
+  const entry = catalog.find((e) => e.modelProvider === provider && e.id === model);
   if (!entry) return null;
   if (entry.costPer1kInUsd != null || entry.costPer1kOutUsd != null) {
     // Three cache treatments depending on provider:

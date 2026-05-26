@@ -103,7 +103,7 @@ export function setProvider(folder: string, provider: string): SetProviderResult
   // gpt-5.5 string pointing at an mlx server that doesn't know it). Reset to
   // whichever model the catalog flags `default: true` for the new provider.
   // No default in the catalog → leave model alone (best-effort fallback).
-  const defaultEntry = getModelCatalog().find((e) => e.provider === provider && e.default === true);
+  const defaultEntry = getModelCatalog().find((e) => e.modelProvider === provider && e.default === true);
   const newModel = defaultEntry?.id ?? null;
 
   // 1. container.json

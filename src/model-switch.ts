@@ -50,7 +50,7 @@ export function resolveEffectiveModel(group: { agent_provider: string | null; mo
   // Generic fallback for any other registered provider: first catalog entry
   // for that provider. Used by local/opencode/pi/etc. without per-provider
   // branches here.
-  const fromCatalog = getModelCatalog().find((entry) => entry.provider === provider);
+  const fromCatalog = getModelCatalog().find((entry) => entry.modelProvider === provider);
   if (fromCatalog) return fromCatalog.id;
   // Last resort: surface the provider name so the operator sees something
   // meaningful in `ncl groups get` output rather than the cryptic '(unknown)'.
