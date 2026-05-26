@@ -1,9 +1,39 @@
+import type { McpServerConfig } from '../../container-config.js';
+import { materializeContainerJson } from '../../container-config.js';
 import { restartAgentGroupContainers } from '../../container-restart.js';
 import { buildAgentGroupImage, killContainer, wakeContainer } from '../../container-runner.js';
 import { getDb, hasTable } from '../../db/connection.js';
+import {
+  getContainerConfig,
+  updateContainerConfigJson,
+  updateContainerConfigScalars,
+} from '../../db/container-configs.js';
 import { getSession } from '../../db/sessions.js';
 import { writeSessionMessage } from '../../session-manager.js';
+import type { ContainerConfigRow } from '../../types.js';
 import { registerResource } from '../crud.js';
+
+/** Deserialize JSON columns for display (including classroom-only env + allowed_models). */
+function presentConfig(row: ContainerConfigRow): Record<string, unknown> {
+  return {
+    agent_group_id: row.agent_group_id,
+    provider: row.provider,
+    model: row.model,
+    effort: row.effort,
+    image_tag: row.image_tag,
+    assistant_name: row.assistant_name,
+    max_messages_per_prompt: row.max_messages_per_prompt,
+    skills: JSON.parse(row.skills),
+    mcp_servers: JSON.parse(row.mcp_servers),
+    packages_apt: JSON.parse(row.packages_apt),
+    packages_npm: JSON.parse(row.packages_npm),
+    additional_mounts: JSON.parse(row.additional_mounts),
+    cli_scope: row.cli_scope,
+    env: JSON.parse(row.env),
+    allowed_models: JSON.parse(row.allowed_models),
+    updated_at: row.updated_at,
+  };
+}
 
 registerResource({
   name: 'group',
@@ -170,6 +200,186 @@ registerResource({
         // From the host: restart all running containers in the group.
         const count = restartAgentGroupContainers(id, 'restarted via ncl', message);
         return { restarted: count, rebuilt: !!args.rebuild };
+      },
+    },
+    'config get': {
+      access: 'open',
+      description: 'Show the container config for a group. Use --id <group-id>.',
+      handler: async (args) => {
+        const id = args.id as string;
+        if (!id) throw new Error('--id is required');
+        const row = getContainerConfig(id);
+        if (!row) throw new Error(`No container config for group: ${id}`);
+        return presentConfig(row);
+      },
+    },
+    'config update': {
+      access: 'approval',
+      description:
+        'Update container config scalar fields. Saves and immediately materializes + restarts the container. ' +
+        'Use --id <group-id> and any of: --provider, --model, --effort, --image-tag, --assistant-name, --max-messages-per-prompt, --cli-scope.',
+      handler: async (args, ctx) => {
+        const id = args.id as string;
+        if (!id) throw new Error('--id is required');
+        const row = getContainerConfig(id);
+        if (!row) throw new Error(`No container config for group: ${id}`);
+
+        const updates: Partial<
+          Pick<
+            ContainerConfigRow,
+            'provider' | 'model' | 'effort' | 'image_tag' | 'assistant_name' | 'max_messages_per_prompt' | 'cli_scope'
+          >
+        > = {};
+        if (args.provider !== undefined) updates.provider = args.provider as string;
+        if (args.model !== undefined) updates.model = args.model as string;
+        if (args.effort !== undefined) updates.effort = args.effort as string;
+        if (args.image_tag !== undefined) updates.image_tag = args.image_tag as string;
+        if (args.assistant_name !== undefined) updates.assistant_name = args.assistant_name as string;
+        if (args.max_messages_per_prompt !== undefined)
+          updates.max_messages_per_prompt = Number(args.max_messages_per_prompt);
+        if (args['cli-scope'] !== undefined || args.cli_scope !== undefined) {
+          const scope = (args['cli-scope'] ?? args.cli_scope) as string;
+          if (!['disabled', 'group', 'global'].includes(scope)) {
+            throw new Error('--cli-scope must be one of: disabled, group, global');
+          }
+          updates.cli_scope = scope;
+        }
+
+        if (Object.keys(updates).length === 0) {
+          throw new Error(
+            'Nothing to update — provide at least one of: --provider, --model, --effort, --image-tag, --assistant-name, --max-messages-per-prompt, --cli-scope',
+          );
+        }
+
+        updateContainerConfigScalars(id, updates);
+        materializeContainerJson(id);
+        const message = args.message as string | undefined;
+        restartAgentGroupContainers(id, 'config updated', message);
+
+        const updated = getContainerConfig(id)!;
+        return presentConfig(updated);
+      },
+    },
+    'config add-mcp-server': {
+      access: 'approval',
+      description:
+        'Add an MCP server to a group. Materializes config and restarts the container. ' +
+        'Use --id <group-id> --name <server-name> --command <cmd> [--args <json-array>] [--env <json-object>] [--instructions <text>].',
+      handler: async (args, ctx) => {
+        const id = args.id as string;
+        if (!id) throw new Error('--id is required');
+        const name = args.name as string;
+        if (!name) throw new Error('--name is required');
+        const command = args.command as string;
+        if (!command) throw new Error('--command is required');
+
+        const row = getContainerConfig(id);
+        if (!row) throw new Error(`No container config for group: ${id}`);
+
+        const servers = JSON.parse(row.mcp_servers) as Record<string, McpServerConfig>;
+        const entry: McpServerConfig = {
+          command,
+          args: args.args ? (JSON.parse(args.args as string) as string[]) : [],
+          env: args.env ? (JSON.parse(args.env as string) as Record<string, string>) : {},
+        };
+        if (args.instructions) entry.instructions = args.instructions as string;
+        servers[name] = entry;
+        updateContainerConfigJson(id, 'mcp_servers', servers);
+        materializeContainerJson(id);
+        const message = args.message as string | undefined;
+        restartAgentGroupContainers(id, 'config updated', message);
+
+        return { added: name, servers };
+      },
+    },
+    'config remove-mcp-server': {
+      access: 'approval',
+      description:
+        'Remove an MCP server from a group. Materializes config and restarts the container. Use --id <group-id> --name <server-name>.',
+      handler: async (args, ctx) => {
+        const id = args.id as string;
+        if (!id) throw new Error('--id is required');
+        const name = args.name as string;
+        if (!name) throw new Error('--name is required');
+
+        const row = getContainerConfig(id);
+        if (!row) throw new Error(`No container config for group: ${id}`);
+
+        const servers = JSON.parse(row.mcp_servers) as Record<string, McpServerConfig>;
+        if (!servers[name]) throw new Error(`MCP server "${name}" not found`);
+        delete servers[name];
+        updateContainerConfigJson(id, 'mcp_servers', servers);
+        materializeContainerJson(id);
+        const message = args.message as string | undefined;
+        restartAgentGroupContainers(id, 'config updated', message);
+
+        return { removed: name };
+      },
+    },
+    'config add-package': {
+      access: 'approval',
+      description:
+        'Add a package to a group. Materializes config and restarts the container (image rebuild required for packages). ' +
+        'Use --id <group-id> --kind <apt|npm> --name <pkg>.',
+      handler: async (args, ctx) => {
+        const id = args.id as string;
+        if (!id) throw new Error('--id is required');
+        const kind = args.kind as string;
+        if (!kind || !['apt', 'npm'].includes(kind)) throw new Error('--kind must be apt or npm');
+        const pkgName = args.name as string;
+        if (!pkgName) throw new Error('--name is required');
+
+        const row = getContainerConfig(id);
+        if (!row) throw new Error(`No container config for group: ${id}`);
+
+        const jsonKey = kind === 'apt' ? 'packages_apt' : 'packages_npm';
+        const existing = JSON.parse(row[jsonKey]) as string[];
+        if (!existing.includes(pkgName)) {
+          existing.push(pkgName);
+          updateContainerConfigJson(id, jsonKey, existing);
+        }
+        materializeContainerJson(id);
+        const message = args.message as string | undefined;
+        restartAgentGroupContainers(
+          id,
+          'config updated',
+          message ?? `Package ${pkgName} added — image rebuild required to install it. Run ncl groups restart --rebuild to apply.`,
+        );
+
+        return {
+          added: { kind, name: pkgName },
+          note: 'Image rebuild required for packages to take effect. Use ncl groups restart --rebuild.',
+        };
+      },
+    },
+    'config remove-package': {
+      access: 'approval',
+      description:
+        'Remove a package from a group. Materializes config and restarts the container (image rebuild required). ' +
+        'Use --id <group-id> --kind <apt|npm> --name <pkg>.',
+      handler: async (args, ctx) => {
+        const id = args.id as string;
+        if (!id) throw new Error('--id is required');
+        const kind = args.kind as string;
+        if (!kind || !['apt', 'npm'].includes(kind)) throw new Error('--kind must be apt or npm');
+        const pkgName = args.name as string;
+        if (!pkgName) throw new Error('--name is required');
+
+        const row = getContainerConfig(id);
+        if (!row) throw new Error(`No container config for group: ${id}`);
+
+        const jsonKey = kind === 'apt' ? 'packages_apt' : 'packages_npm';
+        const existing = JSON.parse(row[jsonKey]) as string[];
+        const filtered = existing.filter((p) => p !== pkgName);
+        updateContainerConfigJson(id, jsonKey, filtered);
+        materializeContainerJson(id);
+        const message = args.message as string | undefined;
+        restartAgentGroupContainers(id, 'config updated', message);
+
+        return {
+          removed: { kind, name: pkgName },
+          note: 'Image rebuild required for package changes to take effect. Use ncl groups restart --rebuild.',
+        };
       },
     },
   },
