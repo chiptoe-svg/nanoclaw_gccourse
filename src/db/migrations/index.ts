@@ -13,6 +13,8 @@ import { migration013 } from './013-approval-render-metadata.js';
 import { migration014 } from './014-agent-model.js';
 import { migration015 } from './015-agent-group-metadata.js';
 import { migration016 } from './016-classroom-roster.js';
+import { migration017 } from './017-container-configs.js';
+import { migration018 } from './018-cli-scope.js';
 import { moduleApprovalsPendingApprovals } from './module-approvals-pending-approvals.js';
 import { moduleApprovalsTitleOptions } from './module-approvals-title-options.js';
 import { moduleClassLoginTokens } from './module-class-login-tokens.js';
@@ -41,6 +43,8 @@ const migrations: Migration[] = [
   migration014,
   migration015,
   migration016,
+  migration017,
+  migration018,
   moduleClassLoginTokens,
   moduleClassLoginPins,
   moduleClassTelegramPair,
