@@ -7,6 +7,7 @@ import { listProviderSpecs } from './providers/auth-registry.js';
 // Side-effect imports so registrations happen before any catalog read.
 import './providers/claude-spec.js';
 import './providers/codex-spec.js';
+import './providers/openai-platform-spec.js';
 // Future provider modules add their own import line here.
 
 export interface ModelEntry {

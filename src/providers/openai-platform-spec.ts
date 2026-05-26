@@ -1,0 +1,56 @@
+import type { ModelEntry } from '../model-catalog.js';
+import { registerProvider } from './auth-registry.js';
+
+registerProvider({
+  id: 'openai-platform',
+  displayName: 'OpenAI Platform',
+  proxyRoutePrefix: '/openai-platform/',
+  credentialFileShape: 'api-key',
+  apiKey: {
+    placeholder: 'sk-…',
+    validatePrefix: 'sk-',
+  },
+  catalogModels: [
+    {
+      id: 'gpt-4o',
+      modelProvider: 'openai-platform',
+      displayName: 'gpt-4o',
+      origin: 'cloud',
+      costPer1kInUsd: 0.0025,
+      costPer1kOutUsd: 0.01,
+      costPer1kCachedInUsd: 0.00125,
+      avgLatencySec: 2.0,
+      modalities: ['text', 'image'],
+      chips: ['☁ OpenAI', '$$ pricier'],
+      notes: 'OpenAI Platform direct-API. Standard multi-modal model.',
+      bestFor: 'General coding + writing when ChatGPT subscription routing is unavailable.',
+    },
+    {
+      id: 'gpt-4o-mini',
+      modelProvider: 'openai-platform',
+      displayName: 'gpt-4o-mini',
+      origin: 'cloud',
+      costPer1kInUsd: 0.00015,
+      costPer1kOutUsd: 0.0006,
+      costPer1kCachedInUsd: 0.000075,
+      avgLatencySec: 1.0,
+      modalities: ['text', 'image'],
+      chips: ['☁ OpenAI', '⚡ fast', '$ cheap'],
+      notes: 'Small fast Platform model.',
+      bestFor: 'Subagents, classification, short answers.',
+    },
+    {
+      id: 'o3-mini',
+      modelProvider: 'openai-platform',
+      displayName: 'o3-mini',
+      origin: 'cloud',
+      costPer1kInUsd: 0.0011,
+      costPer1kOutUsd: 0.0044,
+      avgLatencySec: 3.5,
+      modalities: ['text'],
+      chips: ['☁ OpenAI', '🧠 reasoning'],
+      notes: 'Reasoning-tuned Platform model.',
+      bestFor: 'Stepwise reasoning, math, structured analysis.',
+    },
+  ] satisfies ModelEntry[],
+});

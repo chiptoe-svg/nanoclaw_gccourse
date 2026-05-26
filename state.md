@@ -99,7 +99,7 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `multi-provider-models-tab`
-- **Last tag:** `phase-d-complete-2026-05-26` (12 commits ahead)
+- **Last tag:** `phase-d-complete-2026-05-26` (13 commits ahead)
 
 ### Working tree
 
@@ -107,14 +107,18 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ## multi-provider-models-tab
  M .gitignore
  M config/playground-seats.json
-M  src/model-catalog.test.ts
+M  src/credential-proxy.ts
 M  src/model-catalog.ts
+M  src/providers/index.ts
+A  src/providers/openai-platform-spec.test.ts
+A  src/providers/openai-platform-spec.ts
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+ed2ab99 refactor(catalog): assemble BUILTIN_ENTRIES from spec modules (mptab-4)
 a6270a2 refactor(provider): codex-spec owns OpenAI-codex catalog entries (mptab-3)
 ad9d28d refactor(provider): claude-spec owns Anthropic catalog entries (mptab-2)
 1226ec5 feat(provider): extend ProviderAuthSpec with catalogModels + reachability + 'none' shape (mptab-1)
@@ -129,9 +133,8 @@ d2b7256 fix(persistence): backfill messages_out usage on tool-call-only turns
 4cec55a refactor(playground): remove dead trace paths (d-5)
 59dc17c fix(d-4): delete dead sdk-probe script + surface missing-provider error
 c6c0284 refactor(container): delete claude.ts + codex.ts adapters (d-4)
-8504cae refactor(provider): delete host-side claude.ts + codex.ts (d-3)
 ```
 
 ### Last refresh
 
-2026-05-26T18:17:58Z
+2026-05-26T18:24:27Z
