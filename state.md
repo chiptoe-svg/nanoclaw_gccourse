@@ -81,6 +81,7 @@ Pointers, not duplications. Read the relevant one when you're going deep.
 
 Append-only, newest first. One line per decision: *what + 1-line why*. Prune (move to archive) when older than ~6 months.
 
+- **2026-05-26** — Multi-Provider Models Tab shipped. Why: extend per-student auth + Models tab UI to cover Anthropic + OpenAI-codex + OpenAI Platform (new) + OMLX (local), with each upstream provider as one TypeScript module (Approach A) so future Google/OpenRouter additions are one-file changes. New `GET /api/me/models-tab-state` endpoint runs the greying rule server-side. Cred-dialog extracted from home.js into a shared component reused by Home + (future) Models tab inline manage links. Extensibility verified live via Google POC in AC8: one new file + one barrel-import + one policy entry → new section appears in Models tab. Plan: `docs/superpowers/plans/2026-05-26-multi-provider-models-tab.md`. Tag: `multi-provider-models-tab-complete-2026-05-26`.
 - **2026-05-26** — Phase D shipped: pi sole agent harness. Why: collapse three harness adapters (claude.ts, codex.ts, pi.ts) to one; pi-ai handles all upstream routing internally. Plan: `docs/superpowers/plans/2026-05-25-phase-d-pi-sole-harness.md`. Tag: `phase-d-complete-2026-05-26`.
 - **2026-05-26** — `messages_out` usage backfill matches on seq, not in_reply_to. Why: MCP tool handlers run in a separate process and can't see poll-loop's `current-batch.ts` module state, so `send_message`-written rows have NULL in_reply_to. Commit: `b204567`.
 - **2026-05-26** — Stale outbound `-journal` recovery added at host startup. Why: SIGKILL during host-sweep's R/W transaction leaves journal; next readonly poll trips SQLITE_READONLY_ROLLBACK. Commit: `ef309cc`.
@@ -99,23 +100,22 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `multi-provider-models-tab`
-- **Last tag:** `phase-d-complete-2026-05-26` (23 commits ahead)
+- **Last tag:** `phase-d-complete-2026-05-26` (24 commits ahead)
 
 ### Working tree
 
 ```
 ## multi-provider-models-tab
- M .gitignore
+M  .gitignore
  M config/playground-seats.json
-M  docs/superpowers/plans/2026-05-14-omlx-local-model-integration.md
-M  src/providers/omlx-spec.test.ts
-M  src/providers/omlx-spec.ts
+M  state.md
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+ed3ce27 fix(omlx): probe sends bearer token + document OMLX smoke gap (mptab-15)
 2ee648b feat(class-controls): default openai-platform + omlx provider entries (mptab-14)
 81f1030 test(playground): cred-dialog variant tests via happy-dom (mptab-13)
 ec89a93 feat(playground): Models tab v2 layout — per-provider sections, greyed/hidden states (mptab-12)
@@ -130,9 +130,8 @@ ed2ab99 refactor(catalog): assemble BUILTIN_ENTRIES from spec modules (mptab-4)
 a6270a2 refactor(provider): codex-spec owns OpenAI-codex catalog entries (mptab-3)
 ad9d28d refactor(provider): claude-spec owns Anthropic catalog entries (mptab-2)
 1226ec5 feat(provider): extend ProviderAuthSpec with catalogModels + reachability + 'none' shape (mptab-1)
-21478a5 docs(plan): multi-provider Models tab implementation plan
 ```
 
 ### Last refresh
 
-2026-05-26T19:57:39Z
+2026-05-26T19:59:53Z
