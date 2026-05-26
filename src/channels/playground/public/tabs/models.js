@@ -53,7 +53,13 @@ function loadModels(el, folder) {
     .then(async (data) => {
       catalogCache = data.catalog || [];
       discoveredCache = data.discovered || [];
-      allowedModelsCache = data.allowedModels || [];
+      // Server returns { provider, model }; normalize to { modelProvider, model }
+      // for internal consistency with the rest of the UI (modelProvider is the
+      // field name used everywhere else in this file).
+      allowedModelsCache = (data.allowedModels || []).map((a) => ({
+        modelProvider: a.provider ?? a.modelProvider,
+        model: a.model,
+      }));
       activeModel = data.activeModel || null;
       originalAllowed = JSON.parse(JSON.stringify(allowedModelsCache));
       await renderSections(el);
@@ -174,7 +180,7 @@ function isActive(model) {
 function buildCard(m) {
   const card = document.createElement('div');
   card.className = `model-card origin-${m.origin || 'cloud'}`;
-  const isAllowed = allowedModelsCache.some((a) => a.provider === m.modelProvider && a.model === m.id);
+  const isAllowed = allowedModelsCache.some((a) => a.modelProvider === m.modelProvider && a.model === m.id);
   if (isAllowed) card.classList.add('selected');
   if (isActive({ modelProvider: m.modelProvider, model: m.id })) card.classList.add('active');
 
@@ -253,7 +259,7 @@ function buildCard(m) {
 function buildDiscoveredCard(d) {
   const card = document.createElement('div');
   card.className = `model-card origin-${d.modelProvider === 'local' ? 'local' : 'cloud'} model-card-discovered`;
-  const isAllowed = allowedModelsCache.some((a) => a.provider === d.modelProvider && a.model === d.id);
+  const isAllowed = allowedModelsCache.some((a) => a.modelProvider === d.modelProvider && a.model === d.id);
   if (isAllowed) card.classList.add('selected');
   if (isActive({ modelProvider: d.modelProvider, model: d.id })) card.classList.add('active');
 
@@ -304,25 +310,26 @@ async function toggleDefault({ modelProvider, id }) {
 }
 
 async function toggleModel(model, checked, card) {
-  // Update local cache.
+  // Update local cache (stored using modelProvider for internal consistency).
   allowedModelsCache = allowedModelsCache.filter(
-    (a) => !(a.provider === model.modelProvider && a.model === model.id),
+    (a) => !(a.modelProvider === model.modelProvider && a.model === model.id),
   );
   if (checked) {
-    allowedModelsCache.push({ provider: model.modelProvider, model: model.id });
+    allowedModelsCache.push({ modelProvider: model.modelProvider, model: model.id });
     card.classList.add('selected');
   } else {
     card.classList.remove('selected');
   }
 
-  // PUT to backend.
+  // PUT to backend. Server expects { provider, model } on the wire.
+  const wireModels = allowedModelsCache.map((a) => ({ provider: a.modelProvider, model: a.model }));
   const folder = window.__pg.agent.folder;
   try {
     const r = await fetch(`/api/drafts/${folder}/models`, {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
       credentials: 'same-origin',
-      body: JSON.stringify({ allowedModels: allowedModelsCache }),
+      body: JSON.stringify({ allowedModels: wireModels }),
     });
     if (!r.ok) throw new Error(`status ${r.status}`);
     if (JSON.stringify(allowedModelsCache) !== JSON.stringify(originalAllowed)) {
@@ -335,7 +342,7 @@ async function toggleModel(model, checked, card) {
     // Revert visual state on failure.
     if (checked) {
       allowedModelsCache = allowedModelsCache.filter(
-        (a) => !(a.provider === model.modelProvider && a.model === model.id),
+        (a) => !(a.modelProvider === model.modelProvider && a.model === model.id),
       );
       card.classList.remove('selected');
       card.querySelector('input[type="checkbox"]').checked = false;
