@@ -7,3 +7,4 @@
 
 import './pi.js';
 import './openai-platform-spec.js';
+import './omlx-spec.js';

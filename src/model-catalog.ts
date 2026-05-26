@@ -8,6 +8,7 @@ import { listProviderSpecs } from './providers/auth-registry.js';
 import './providers/claude-spec.js';
 import './providers/codex-spec.js';
 import './providers/openai-platform-spec.js';
+import './providers/omlx-spec.js';
 // Future provider modules add their own import line here.
 
 export interface ModelEntry {
@@ -64,31 +65,10 @@ export interface ModelEntry {
   default?: boolean;
 }
 
-/** Local entries pending migration to omlx-spec.ts in mptab-6. */
-const LOCAL_ENTRIES_PENDING_OMLX_SPEC: ModelEntry[] = [
-  {
-    id: 'Qwen3.6-35B-A3B-UD-MLX-4bit',
-    modelProvider: 'local',
-    displayName: 'Qwen 3.6 (35B, MLX 4-bit)',
-    origin: 'local',
-    costPer1kTokensUsd: 0,
-    avgLatencySec: 8,
-    paramCount: '35B',
-    modalities: ['text', 'image'],
-    notes: 'Runs on the host Mac. Free, no quota — but slower than cloud.',
-    host: 'http://localhost:8000',
-    contextSize: 32768,
-    quantization: 'MLX 4-bit',
-    chips: ['🆓 free', '💻 mlx local', '🐢 slower'],
-    bestFor: 'Comparing local vs cloud cost/latency tradeoffs.',
-    default: true,
-  },
-];
-
 /** Returns the assembled built-in catalog: concat of every registered
  *  ProviderAuthSpec's catalogModels. Order: registration order. */
 export function getBuiltinEntries(): ModelEntry[] {
-  return [...listProviderSpecs().flatMap((s) => s.catalogModels ?? []), ...LOCAL_ENTRIES_PENDING_OMLX_SPEC];
+  return listProviderSpecs().flatMap((s) => s.catalogModels ?? []);
 }
 
 function readLocalEntries(): ModelEntry[] {

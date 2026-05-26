@@ -99,7 +99,7 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `multi-provider-models-tab`
-- **Last tag:** `phase-d-complete-2026-05-26` (13 commits ahead)
+- **Last tag:** `phase-d-complete-2026-05-26` (14 commits ahead)
 
 ### Working tree
 
@@ -107,17 +107,17 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ## multi-provider-models-tab
  M .gitignore
  M config/playground-seats.json
-M  src/credential-proxy.ts
 M  src/model-catalog.ts
 M  src/providers/index.ts
-A  src/providers/openai-platform-spec.test.ts
-A  src/providers/openai-platform-spec.ts
+A  src/providers/omlx-spec.test.ts
+A  src/providers/omlx-spec.ts
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+7964d7c feat(provider): openai-platform-spec (API-key direct OpenAI API) (mptab-5)
 ed2ab99 refactor(catalog): assemble BUILTIN_ENTRIES from spec modules (mptab-4)
 a6270a2 refactor(provider): codex-spec owns OpenAI-codex catalog entries (mptab-3)
 ad9d28d refactor(provider): claude-spec owns Anthropic catalog entries (mptab-2)
@@ -132,9 +132,8 @@ d4a8147 Merge planning docs from plans/pi-prep-2026-05-25
 d2b7256 fix(persistence): backfill messages_out usage on tool-call-only turns
 4cec55a refactor(playground): remove dead trace paths (d-5)
 59dc17c fix(d-4): delete dead sdk-probe script + surface missing-provider error
-c6c0284 refactor(container): delete claude.ts + codex.ts adapters (d-4)
 ```
 
 ### Last refresh
 
-2026-05-26T18:24:27Z
+2026-05-26T18:29:26Z
