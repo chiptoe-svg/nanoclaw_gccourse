@@ -501,6 +501,25 @@ function handleEvent(event: ProviderEvent, routing: RoutingContext): void {
       log(
         `Error: ${event.message} (retryable: ${event.retryable}${event.classification ? `, ${event.classification}` : ''})`,
       );
+      // Also surface to the playground trace so the user sees what went wrong
+      // instead of staring at a missing reply. Wrapped as a pi_event with a
+      // synthetic _error type — chat.js's appendPiEvent default path renders
+      // unknown types via piAppendGenericEvent, which gives us a visible row
+      // with the message text.
+      if (routing.channelType === 'playground' && routing.platformId) {
+        emitTraceToPlayground(
+          {
+            type: 'pi_event',
+            event: {
+              type: 'nanoclaw_error',
+              message: event.message,
+              retryable: event.retryable,
+              classification: event.classification,
+            },
+          },
+          routing,
+        );
+      }
       break;
     case 'progress':
       log(`Progress: ${event.message}`);

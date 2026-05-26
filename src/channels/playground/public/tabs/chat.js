@@ -1246,11 +1246,30 @@ function piHandleTurnEnd(trace, event, st) {
 function piAppendGenericEvent(trace, event) {
   const target = trace._currentTurnUl || trace;
   const li = document.createElement('li');
-  li.className = 'trace';
+  // nanoclaw_error is the synthetic event the poll-loop emits when a
+  // provider error fires — gets the trace-error styling (red border,
+  // bold kind label) so the user sees the failure instead of a missing
+  // reply.
+  const isError = event.type === 'nanoclaw_error';
+  li.className = isError ? 'trace trace-error' : 'trace';
+
   const kindEl = document.createElement('div');
   kindEl.className = 'trace-kind';
-  kindEl.textContent = `pi: ${event.type || 'unknown'}`;
+  kindEl.textContent = isError ? 'ERROR' : `pi: ${event.type || 'unknown'}`;
   li.appendChild(kindEl);
+
+  // For errors, render the message + classification as a body so the user
+  // can read what went wrong without expanding anything.
+  if (isError && (event.message || event.classification)) {
+    const bodyEl = document.createElement('div');
+    bodyEl.className = 'trace-event-body';
+    bodyEl.style.cssText = 'color:#a40000;white-space:pre-wrap;font-size:11px;margin-top:2px;';
+    const parts = [];
+    if (event.message) parts.push(event.message);
+    if (event.classification) parts.push(`(${event.classification})`);
+    bodyEl.textContent = parts.join(' ');
+    li.appendChild(bodyEl);
+  }
   target.appendChild(li);
   trace.scrollTop = trace.scrollHeight;
 }
