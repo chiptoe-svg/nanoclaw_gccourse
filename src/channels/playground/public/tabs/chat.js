@@ -857,23 +857,41 @@ function piHandleMessageStart(trace, event, st) {
   const li = document.createElement('li');
   li.className = 'trace-event trace-pi-message';
 
-  const head = document.createElement('div');
-  head.className = 'trace-event-head';
-  const kindSpan = document.createElement('span');
-  kindSpan.className = 'trace-event-kind';
-  kindSpan.textContent = 'assistant';
-  head.appendChild(kindSpan);
-  li.appendChild(head);
+  // Use <details>/<summary> so the assistant body collapses behind a
+  // disclosure triangle — matches the tool_use / TOOL EXEC rows for
+  // visual consistency. Open during streaming so the user sees text
+  // arrive live; auto-collapsed by piHandleMessageEnd once done.
+  const details = document.createElement('details');
+  details.className = 'trace-details trace-pi-message-details';
+  details.open = true;
 
-  // Text body — streamed into by text_delta events.
+  const summaryEl = document.createElement('summary');
+  summaryEl.className = 'trace-summary';
+  const kindEl = document.createElement('span');
+  kindEl.className = 'trace-kind';
+  kindEl.textContent = 'assistant';
+  summaryEl.appendChild(kindEl);
+  // Preview span — filled with a one-line snippet of the streaming text
+  // by piHandleTextDelta so the collapsed summary stays informative.
+  const previewEl = document.createElement('span');
+  previewEl.className = 'trace-preview';
+  previewEl.textContent = '';
+  summaryEl.appendChild(previewEl);
+  details.appendChild(summaryEl);
+
   const bodyEl = document.createElement('div');
   bodyEl.className = 'trace-event-body';
+  bodyEl.style.cssText = 'white-space:pre-wrap;';
   bodyEl.textContent = '';
-  li.appendChild(bodyEl);
+  details.appendChild(bodyEl);
 
+  li.appendChild(details);
   target.appendChild(li);
+
   st.messageBubble = li;
   st.messageTextEl = bodyEl;
+  st.messagePreviewEl = previewEl;
+  st.messageDetails = details;
   // Reset thinking state for the new message.
   st.thinkingDetails = null;
   st.thinkingBodyEl = null;
@@ -913,6 +931,12 @@ function piHandleTextDelta(trace, ame, st) {
   }
   if (st.messageTextEl && typeof ame.delta === 'string') {
     st.messageTextEl.textContent += ame.delta;
+    // Keep summary preview in sync with the first ~80 chars so the
+    // post-collapse summary line is informative.
+    if (st.messagePreviewEl) {
+      const flat = st.messageTextEl.textContent.replace(/\s+/g, ' ').trim();
+      st.messagePreviewEl.textContent = flat.length > 80 ? flat.slice(0, 80) + '…' : flat;
+    }
   }
   trace.scrollTop = trace.scrollHeight;
 }
@@ -1024,6 +1048,10 @@ function piHandleToolcallEnd(trace, ame, st) {
  * Usage fields: input, output, cacheRead, cacheWrite, cost.total.
  */
 function piHandleMessageEnd(trace, event, st) {
+  // Auto-collapse the assistant body now that streaming is done — the
+  // summary still shows the preview snippet, click to re-expand.
+  if (st.messageDetails) st.messageDetails.open = false;
+
   const usage = event.message && event.message.usage;
   if (!usage || !st.messageBubble) return;
 
