@@ -124,4 +124,45 @@ describe('migration021 — container_configs.model_provider', () => {
 
     freshDb.close();
   });
+
+  it('skips rows with malformed env JSON without aborting transaction', () => {
+    const freshDb = new Database(':memory:');
+    createMinimalSchema(freshDb);
+
+    // Insert three rows: one with malformed env, one with valid env + key, one without key
+    freshDb.prepare(
+      `INSERT INTO container_configs
+         (agent_group_id, skills, mcp_servers, packages_apt, packages_npm,
+          additional_mounts, cli_scope, env, allowed_models, updated_at)
+       VALUES (?, '"all"', '{}', '[]', '[]', '[]', 'group', ?, '[]', ?)`,
+    ).run('ag-malformed', 'not-json', now());
+
+    const envWithKey = JSON.stringify({ NANOCLAW_PI_MODEL_PROVIDER: 'openai' });
+    insertConfigRow(freshDb, 'ag-valid-with-key', envWithKey);
+
+    const envWithoutKey = JSON.stringify({ OTHER: 'value' });
+    insertConfigRow(freshDb, 'ag-valid-without-key', envWithoutKey);
+
+    // Migration should complete without throwing
+    migration021.up(freshDb);
+
+    // Malformed row remains NULL
+    const malformed = freshDb
+      .prepare('SELECT model_provider FROM container_configs WHERE agent_group_id = ?')
+      .get('ag-malformed') as { model_provider: string | null };
+    expect(malformed.model_provider).toBeNull();
+
+    // Valid rows are still processed correctly
+    const validWithKey = freshDb
+      .prepare('SELECT model_provider FROM container_configs WHERE agent_group_id = ?')
+      .get('ag-valid-with-key') as { model_provider: string | null };
+    expect(validWithKey.model_provider).toBe('openai');
+
+    const validWithoutKey = freshDb
+      .prepare('SELECT model_provider FROM container_configs WHERE agent_group_id = ?')
+      .get('ag-valid-without-key') as { model_provider: string | null };
+    expect(validWithoutKey.model_provider).toBeNull();
+
+    freshDb.close();
+  });
 });

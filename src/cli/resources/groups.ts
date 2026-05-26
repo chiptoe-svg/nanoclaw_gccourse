@@ -252,9 +252,7 @@ registerResource({
           }
           updates.cli_scope = scope;
         }
-        if (args['model-provider'] !== undefined || args.model_provider !== undefined) {
-          updates.model_provider = (args['model-provider'] ?? args.model_provider) as string;
-        }
+        if (args.model_provider !== undefined) updates.model_provider = args.model_provider as string;
 
         if (Object.keys(updates).length === 0) {
           throw new Error(
