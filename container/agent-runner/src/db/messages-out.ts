@@ -142,6 +142,36 @@ export function getRoutingBySeq(
   return outRow ?? null;
 }
 
+/**
+ * Backfill provider/model/usage on messages_out rows that were written mid-turn
+ * (e.g. by send_message MCP tool) before usage data was available.
+ *
+ * Only touches rows where tokens_in IS NULL so pre-populated rows (e.g. those
+ * written by dispatchResultText for direct-text turns) are not overwritten.
+ */
+export function backfillUsage(
+  inReplyTo: string,
+  usage: { tokens_in: number | null; tokens_out: number | null; provider: string | null; model: string | null },
+): void {
+  getOutboundDb()
+    .prepare(
+      `UPDATE messages_out
+         SET tokens_in = $tokens_in,
+             tokens_out = $tokens_out,
+             provider = $provider,
+             model = $model
+       WHERE in_reply_to = $in_reply_to
+         AND tokens_in IS NULL`,
+    )
+    .run({
+      $in_reply_to: inReplyTo,
+      $tokens_in: usage.tokens_in,
+      $tokens_out: usage.tokens_out,
+      $provider: usage.provider,
+      $model: usage.model,
+    });
+}
+
 /** Get undelivered messages (for host polling — reads from outbound.db). */
 export function getUndeliveredMessages(): MessageOutRow[] {
   return getOutboundDb()

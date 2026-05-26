@@ -1,6 +1,6 @@
 import { findByName, findByRouting, getAllDestinations, type DestinationEntry } from './destinations.js';
 import { getPendingMessages, markProcessing, markCompleted, type MessageInRow } from './db/messages-in.js';
-import { writeMessageOut } from './db/messages-out.js';
+import { backfillUsage, writeMessageOut } from './db/messages-out.js';
 import { getInboundDb, touchHeartbeat, clearStaleProcessingAcks } from './db/connection.js';
 import { clearContinuation, migrateLegacyContinuation, setContinuation } from './db/session-state.js';
 import { clearCurrentInReplyTo, setCurrentInReplyTo } from './current-batch.js';
@@ -461,6 +461,19 @@ async function processQuery(
             model: event.model,
           };
           dispatchResultText(event.text, routing, cost);
+        }
+        // Backfill usage onto any messages_out rows written mid-turn by MCP
+        // tools (e.g. send_message) — they write routing/content but have no
+        // usage yet because the turn hasn't completed. Only rows with NULL
+        // tokens_in are updated; pre-populated rows from dispatchResultText
+        // above are not overwritten.
+        if (routing.inReplyTo && (event.tokens?.input != null || event.provider || event.model)) {
+          backfillUsage(routing.inReplyTo, {
+            tokens_in: event.tokens?.input ?? null,
+            tokens_out: event.tokens?.output ?? null,
+            provider: event.provider ?? null,
+            model: event.model ?? null,
+          });
         }
       } else if (event.type === 'compacted') {
         // The SDK auto-compacted the conversation. After compaction the
