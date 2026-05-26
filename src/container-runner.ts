@@ -18,7 +18,7 @@ import {
   TIMEZONE,
 } from './config.js';
 import { collectContainerEnv } from './container-env-registry.js';
-import { readContainerConfig, writeContainerConfig } from './container-config.js';
+import { materializeContainerJson, containerConfigPath } from './container-config.js';
 import {
   CONTAINER_HOST_GATEWAY,
   CONTAINER_RUNTIME_BIN,
@@ -28,6 +28,7 @@ import {
 } from './container-runtime.js';
 import { composeGroupClaudeMd } from './claude-md-compose.js';
 import { getAgentGroup } from './db/agent-groups.js';
+import { getContainerConfig, updateContainerConfigScalars } from './db/container-configs.js';
 import { getDb, hasTable } from './db/connection.js';
 import { initGroupFilesystem } from './group-init.js';
 import { stopTypingRefresh } from './modules/typing/index.js';
@@ -123,9 +124,10 @@ async function spawnContainer(session: Session): Promise<void> {
   }
   writeSessionRouting(agentGroup.id, session.id);
 
-  // Read container config once — threaded through provider resolution,
-  // buildMounts, and buildContainerArgs so we don't re-read the file.
-  const containerConfig = readContainerConfig(agentGroup.folder);
+  // Materialize container.json from DB — writes fresh file and returns
+  // the config object, threaded through provider resolution, buildMounts,
+  // and buildContainerArgs so we don't re-read.
+  const containerConfig = materializeContainerJson(agentGroup.id);
 
   // Resolve the effective provider + any host-side contribution it declares
   // (extra mounts, env passthrough). Computed once and threaded through both
@@ -490,15 +492,17 @@ function ensureRuntimeFields(
     containerConfig.provider = resolvedProvider;
     dirty = true;
   }
-  // Sync the per-group model override from the DB. Null clears any
-  // stale value so the in-container provider falls back to env / default.
-  const desiredModel = agentGroup.model ?? undefined;
+  // Sync the per-group model override from container_configs. Undefined clears
+  // any stale value so the in-container provider falls back to env / default.
+  const ccRow = getContainerConfig(agentGroup.id);
+  const desiredModel = ccRow?.model ?? undefined;
   if (containerConfig.model !== desiredModel) {
     containerConfig.model = desiredModel;
     dirty = true;
   }
   if (dirty) {
-    writeContainerConfig(agentGroup.folder, containerConfig);
+    const p = containerConfigPath(agentGroup.folder);
+    fs.writeFileSync(p, JSON.stringify(containerConfig, null, 2) + '\n');
   }
 }
 
@@ -622,9 +626,10 @@ export async function buildAgentGroupImage(agentGroupId: string): Promise<void> 
   const agentGroup = getAgentGroup(agentGroupId);
   if (!agentGroup) throw new Error('Agent group not found');
 
-  const containerConfig = readContainerConfig(agentGroup.folder);
-  const aptPackages = containerConfig.packages.apt;
-  const npmPackages = containerConfig.packages.npm;
+  const configRow = getContainerConfig(agentGroupId);
+  if (!configRow) throw new Error('Container config not found');
+  const aptPackages = JSON.parse(configRow.packages_apt) as string[];
+  const npmPackages = JSON.parse(configRow.packages_npm) as string[];
 
   if (aptPackages.length === 0 && npmPackages.length === 0) {
     throw new Error('No packages to install. Use install_packages first.');
@@ -639,7 +644,7 @@ export async function buildAgentGroupImage(agentGroupId: string): Promise<void> 
     // to /root/.npmrc (base image sets it up for agent-browser) so packages
     // with postinstall — e.g. playwright, puppeteer, native addons — don't
     // install silently broken.
-    const allowlist = npmPackages.map((p) => `echo 'only-built-dependencies[]=${p}' >> /root/.npmrc`).join(' && ');
+    const allowlist = npmPackages.map((p: string) => `echo 'only-built-dependencies[]=${p}' >> /root/.npmrc`).join(' && ');
     dockerfile += `RUN ${allowlist} && pnpm install -g ${npmPackages.join(' ')}\n`;
   }
   dockerfile += 'USER node\n';
@@ -661,9 +666,8 @@ export async function buildAgentGroupImage(agentGroupId: string): Promise<void> 
     fs.unlinkSync(tmpDockerfile);
   }
 
-  // Store the image tag in groups/<folder>/container.json
-  containerConfig.imageTag = imageTag;
-  writeContainerConfig(agentGroup.folder, containerConfig);
+  // Store the image tag in the DB
+  updateContainerConfigScalars(agentGroupId, { image_tag: imageTag });
 
   log.info('Per-agent-group image built', { agentGroupId, imageTag });
 }
