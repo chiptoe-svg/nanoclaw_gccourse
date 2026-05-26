@@ -202,7 +202,7 @@ registerResource({
         return { restarted: count, rebuilt: !!args.rebuild };
       },
     },
-    'config get': {
+    'config-get': {
       access: 'open',
       description: 'Show the container config for a group. Use --id <group-id>.',
       handler: async (args) => {
@@ -213,7 +213,7 @@ registerResource({
         return presentConfig(row);
       },
     },
-    'config update': {
+    'config-update': {
       access: 'approval',
       description:
         'Update container config scalar fields. Saves and immediately materializes + restarts the container. ' +
@@ -260,7 +260,7 @@ registerResource({
         return presentConfig(updated);
       },
     },
-    'config add-mcp-server': {
+    'config-add-mcp-server': {
       access: 'approval',
       description:
         'Add an MCP server to a group. Materializes config and restarts the container. ' +
@@ -292,7 +292,7 @@ registerResource({
         return { added: name, servers };
       },
     },
-    'config remove-mcp-server': {
+    'config-remove-mcp-server': {
       access: 'approval',
       description:
         'Remove an MCP server from a group. Materializes config and restarts the container. Use --id <group-id> --name <server-name>.',
@@ -316,7 +316,7 @@ registerResource({
         return { removed: name };
       },
     },
-    'config add-package': {
+    'config-add-package': {
       access: 'approval',
       description:
         'Add a package to a group. Materializes config and restarts the container (image rebuild required for packages). ' +
@@ -352,7 +352,7 @@ registerResource({
         };
       },
     },
-    'config remove-package': {
+    'config-remove-package': {
       access: 'approval',
       description:
         'Remove a package from a group. Materializes config and restarts the container (image rebuild required). ' +
