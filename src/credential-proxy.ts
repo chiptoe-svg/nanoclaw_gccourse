@@ -415,6 +415,10 @@ export function startCredentialProxy(port: number, host = '127.0.0.1'): Promise<
         // ── per-student-provider-auth:proxy-invocation START ──────────────────────
         let studentCredsApplied = false;
         if (agentGroupId && (isOpenAI || (!isGoogle && !isOmlx))) {
+          // NOTE: 'codex'/'claude' here are AUTH provider IDs (matching what
+          // codex-spec.ts / claude-spec.ts register in auth-registry.ts), NOT the
+          // agent harness provider (agent_groups.agent_provider, now always 'pi').
+          // These two namespaces share strings but are independent — do not merge.
           const providerId = isOpenAI ? 'codex' : 'claude';
           const resolved = await studentCredsHook(agentGroupId, providerId);
           if (resolved) {

@@ -73,7 +73,6 @@ import './class-pair-instructor.js';
 import './class-pair-ta.js';
 import './class-playground-gate.js';
 import './class-container-env.js';
-import './class-codex-auth.js';
 import './class-login-tokens.js';
 import './class-telegram-pair.js';
 

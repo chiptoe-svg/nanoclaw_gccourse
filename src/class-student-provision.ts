@@ -268,7 +268,7 @@ export function provisionStudent(opts: {
     id: `ag_${crypto.randomBytes(6).toString('hex')}`,
     name: opts.name,
     folder,
-    agent_provider: process.env.NANOCLAW_STUDENT_PROVIDER || 'codex',
+    agent_provider: process.env.NANOCLAW_STUDENT_PROVIDER || 'pi',
     created_at: now,
   };
 
@@ -336,7 +336,7 @@ export function provisionStudent(opts: {
       cli_scope: 'group',
       env: JSON.stringify(containerConfig.env ?? {}),
       allowed_models: JSON.stringify(containerConfig.allowedModels ?? []),
-      model_provider: null,
+      model_provider: 'openai-codex',
       updated_at: new Date().toISOString(),
     });
     materializeContainerJson(group.id);
