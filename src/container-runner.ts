@@ -351,6 +351,15 @@ function buildMounts(
     mounts.push({ hostPath: skillsSrc, containerPath: '/app/skills', readonly: true });
   }
 
+  // Per-provider fragment directory — read-only. destinations.ts looks up
+  // /app/CLAUDE.providers/<provider>.md at runtime and appends it to the
+  // system prompt when present. Skip the mount if the dir doesn't exist
+  // on the host (vanilla install with no provider fragments).
+  const providersSrc = path.join(projectRoot, 'container', 'CLAUDE.providers');
+  if (fs.existsSync(providersSrc)) {
+    mounts.push({ hostPath: providersSrc, containerPath: '/app/CLAUDE.providers', readonly: true });
+  }
+
   // Additional mounts from container config
   if (containerConfig.additionalMounts && containerConfig.additionalMounts.length > 0) {
     const validated = validateAdditionalMounts(containerConfig.additionalMounts, agentGroup.name);
