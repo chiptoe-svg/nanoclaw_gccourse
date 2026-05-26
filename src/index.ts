@@ -11,6 +11,7 @@ import { enforceStartupBackoff, resetCircuitBreaker } from './circuit-breaker.js
 import { migrateGroupsToClaudeLocal } from './claude-md-compose.js';
 import { initDb } from './db/connection.js';
 import { runMigrations } from './db/migrations/index.js';
+import { backfillContainerConfigs } from './backfill-container-configs.js';
 import { ensureContainerRuntimeRunning, cleanupOrphans, PROXY_BIND_HOST } from './container-runtime.js';
 import { startCredentialProxy, setStudentCredsHook } from './credential-proxy.js';
 // ── classroom-provider-auth:hook-registration START ───────────────────────
@@ -98,6 +99,11 @@ async function main(): Promise<void> {
   const db = initDb(dbPath);
   runMigrations(db);
   log.info('Central DB ready', { path: dbPath });
+
+  // 1a. One-time backfill: seed container_configs from existing on-disk
+  // container.json files. Idempotent — skips groups that already have a
+  // config row. See plans/classroom-upstream-catchup-2026-05-25.md Phase B½.
+  backfillContainerConfigs();
 
   // 1b. One-time filesystem cutover — idempotent, no-op after first run.
   migrateGroupsToClaudeLocal();
