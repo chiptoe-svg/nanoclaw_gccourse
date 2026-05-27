@@ -100,21 +100,23 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 
 ### Branch
 
-- **Current:** `main`
-- **Last tag:** `multi-provider-models-tab-complete-2026-05-26` (13 commits ahead)
+- **Current:** `feat/proxy-payload-log`
+- **Last tag:** `multi-provider-models-tab-complete-2026-05-26` (14 commits ahead)
 
 ### Working tree
 
 ```
-## main...origin/main [ahead 2]
+## feat/proxy-payload-log
  M config/playground-seats.json
-A  docs/superpowers/plans/2026-05-27-proxy-payload-log.md
+A  src/proxy-payload-log/store.test.ts
+A  src/proxy-payload-log/store.ts
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+929819b docs(plan): proxy payload log foundation — 6-task TDD plan
 f0f103a docs(spec): proxy payload log foundation
 8024422 docs(scope): capture multi-arc planning, drop Eval tab, expand Bench
 bb4874d docs(vision): reconcile roadmap with shipped state — 2026-05-26 audit
@@ -129,9 +131,8 @@ c95b9d9 feat(playground): per-student OpenAI Platform key + OMLX prompt-cache bu
 cdbc213 feat(pi): end-to-end Clemson + OMLX invocation via synthesized openai-completions model
 9346fc0 feat(provider): Clemson RCD-hosted LLM (clemson-spec)
 0f43393 docs(state): log multi-provider Models tab milestone + .gitignore .superpowers/ (mptab-16)
-ed3ce27 fix(omlx): probe sends bearer token + document OMLX smoke gap (mptab-15)
 ```
 
 ### Last refresh
 
-2026-05-27T14:16:52Z
+2026-05-27T14:23:47Z
