@@ -115,19 +115,22 @@ const SESSION_ID_HEADER = 'x-nanoclaw-session-id';
 
 interface PayloadLogCtx {
   baseDir: string;
-  stores: Map<string, PayloadStore>;
+  stores: Map<string, PayloadStore | null>;
 }
 
 function getStore(ctx: PayloadLogCtx, agentGroupId: string, sessionId: string): PayloadStore | null {
   const key = `${agentGroupId}|${sessionId}`;
-  let s = ctx.stores.get(key);
-  if (s) return s;
+  if (ctx.stores.has(key)) {
+    // Either an opened store, or a memoized failure (null).
+    return ctx.stores.get(key) ?? null;
+  }
   try {
-    s = openStore({ baseDir: ctx.baseDir, agentGroupId, sessionId });
+    const s = openStore({ baseDir: ctx.baseDir, agentGroupId, sessionId });
     ctx.stores.set(key, s);
     return s;
   } catch (err) {
-    log.error('proxy-payload-log: openStore failed', { agentGroupId, sessionId, err });
+    log.error('proxy-payload-log: openStore failed (will not retry this session)', { agentGroupId, sessionId, err });
+    ctx.stores.set(key, null); // memoize failure
     return null;
   }
 }
@@ -459,6 +462,8 @@ export function startCredentialProxy(port: number, host = '127.0.0.1', payloadLo
           const store = getStore(payloadLogCtx, agentGroupId, sessionId);
           if (store) {
             try {
+              // upstream_route values used for the payload store; kept distinct from
+              // the older 'google' log label which serves a different purpose.
               const route = isOpenAIPlatform
                 ? 'openai-platform'
                 : isOpenAI
@@ -478,7 +483,6 @@ export function startCredentialProxy(port: number, host = '127.0.0.1', payloadLo
               });
             } catch (err) {
               log.error('proxy-payload-log: write failed', { agentGroupId, sessionId, err });
-              payloadSeq = null;
             }
           }
         }
@@ -724,11 +728,16 @@ export function startCredentialProxy(port: number, host = '127.0.0.1', payloadLo
 
     server.on('close', () => {
       if (payloadLogCtx) {
+        // Close all open stores on server shutdown. In-flight responses whose
+        // upstreamRes.on('end', ...) listener fires after this will hit a closed-db
+        // error, which is caught by the patch try/catch — best-effort shutdown.
         for (const store of payloadLogCtx.stores.values()) {
-          try {
-            store.close();
-          } catch {
-            // best-effort close
+          if (store) {
+            try {
+              store.close();
+            } catch {
+              // best-effort close
+            }
           }
         }
       }
