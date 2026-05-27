@@ -10,7 +10,7 @@ import type { ModelEntry } from '../model-catalog.js';
 // doesn't matter — the user never lands on it (paste-back).
 registerProvider({
   id: 'codex',
-  displayName: 'OpenAI',
+  displayName: 'OpenAI subscription',
   proxyRoutePrefix: '/openai/',
   credentialFileShape: 'mixed',
   oauth: {

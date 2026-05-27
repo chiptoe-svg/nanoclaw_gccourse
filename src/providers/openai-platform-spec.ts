@@ -3,7 +3,7 @@ import { registerProvider } from './auth-registry.js';
 
 registerProvider({
   id: 'openai-platform',
-  displayName: 'OpenAI Platform',
+  displayName: 'OpenAI API',
   proxyRoutePrefix: '/openai-platform/',
   credentialFileShape: 'api-key',
   apiKey: {
