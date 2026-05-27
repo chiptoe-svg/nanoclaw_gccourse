@@ -101,21 +101,21 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `feat/proxy-payload-log`
-- **Last tag:** `multi-provider-models-tab-complete-2026-05-26` (16 commits ahead)
+- **Last tag:** `multi-provider-models-tab-complete-2026-05-26` (17 commits ahead)
 
 ### Working tree
 
 ```
 ## feat/proxy-payload-log
  M config/playground-seats.json
-A  src/proxy-payload-log/sections.test.ts
-A  src/proxy-payload-log/sections.ts
+M  src/container-runner.ts
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+9a50ac1 feat(proxy-payload-log): section parser for anthropic + openai-shaped routes
 8f7f691 fix(proxy-payload-log): busy_timeout pragma + batch-prune on every Nth write
 fc1b51d feat(proxy-payload-log): per-session storage layer with 50-row retention
 929819b docs(plan): proxy payload log foundation — 6-task TDD plan
@@ -130,9 +130,8 @@ e598e0a feat(playground): polish Home Providers card for new providers
 c95b9d9 feat(playground): per-student OpenAI Platform key + OMLX prompt-cache bucket
 153a380 chore(playground): add data-provider breadcrumb to Models tab action links
 3f23d31 docs(state): log Clemson provider + pi-ai integration closeout
-cdbc213 feat(pi): end-to-end Clemson + OMLX invocation via synthesized openai-completions model
 ```
 
 ### Last refresh
 
-2026-05-27T14:29:50Z
+2026-05-27T14:32:48Z
