@@ -101,14 +101,14 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `main`
-- **Last tag:** `multi-provider-models-tab-complete-2026-05-26` (7 commits ahead)
+- **Last tag:** `multi-provider-models-tab-complete-2026-05-26` (8 commits ahead)
 
 ### Working tree
 
 ```
 ## main...origin/main
  M config/playground-seats.json
-M  src/providers/codex-spec.ts
+MM src/providers/openai-platform-spec.test.ts
 M  src/providers/openai-platform-spec.ts
 ?? .codegraph/
 ```
@@ -116,6 +116,7 @@ M  src/providers/openai-platform-spec.ts
 ### Recent commits (last 15)
 
 ```
+87f0e18 feat(provider): rename OpenAI providers to subscription / API split
 21d2c71 refactor(playground): Home Providers card sources from /api/me/models-tab-state
 e598e0a feat(playground): polish Home Providers card for new providers
 c95b9d9 feat(playground): per-student OpenAI Platform key + OMLX prompt-cache bucket
@@ -130,9 +131,8 @@ ed3ce27 fix(omlx): probe sends bearer token + document OMLX smoke gap (mptab-15)
 ec89a93 feat(playground): Models tab v2 layout — per-provider sections, greyed/hidden states (mptab-12)
 a64c33d feat(playground): OMLX 'none' variant of cred dialog + reachability endpoint (mptab-11)
 41ab3d5 refactor(playground): extract shared cred-dialog component (mptab-10)
-0c5ad0b feat(api): GET /api/me/models-tab-state endpoint (mptab-9)
 ```
 
 ### Last refresh
 
-2026-05-27T02:34:14Z
+2026-05-27T02:42:29Z
