@@ -479,16 +479,15 @@ function renderClassControlsForm(body, cfg) {
     group.specIds.length > 0 &&
     group.specIds.every((sid) => !!(policies[sid] && policies[sid][field]));
   const providerRows = PROVIDER_GROUPS.map((g) => `
-        <tr data-cc-group-row="${g.id}">
+        <tr>
           <td>${escapeHtml(g.displayName)}</td>
           <td><input type="checkbox" data-cc-group-visible="${g.id}" ${groupFlag(g, 'allow') ? 'checked' : ''}></td>
           <td><input type="checkbox" data-cc-group-provided="${g.id}" ${groupFlag(g, 'provideDefault') ? 'checked' : ''}></td>
           <td><input type="checkbox" data-cc-group-byo="${g.id}" ${groupFlag(g, 'allowByo') ? 'checked' : ''}></td>
-          <td><button class="btn btn-primary cc-apply" data-cc-group-apply="${g.id}" title="Set Visible + Provided and save immediately">Apply</button></td>
         </tr>`).join('');
   const providersBlock = `
     <table class="cc-providers-table">
-      <thead><tr><th>Provider</th><th>Visible</th><th>Provided</th><th>Let students auth themselves</th><th></th></tr></thead>
+      <thead><tr><th>Provider</th><th>Visible</th><th>Provided</th><th>Let students auth themselves</th></tr></thead>
       <tbody>${providerRows}</tbody>
     </table>
   `;
@@ -505,12 +504,42 @@ function renderClassControlsForm(body, cfg) {
       ${providersBlock}
     </div>
     <div class="home-actions">
-      <button class="btn btn-primary" id="cc-save">Save class controls</button>
+      <button class="btn btn-primary" id="cc-save" disabled>Apply</button>
       <span class="muted" id="cc-status"></span>
     </div>
   `;
 
-  body.querySelector('#cc-save').addEventListener('click', async () => {
+  // Dirty tracking: snapshot the rendered form's checked state, then on
+  // any change compare and enable/disable the Apply button. Recapture
+  // after a successful save so the button greys out again.
+  const snapshotForm = () => {
+    const snap = {};
+    body.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+      const key = cb.dataset.ccTab
+        ? `tab:${cb.dataset.ccTab}`
+        : cb.dataset.ccGroupVisible
+          ? `vis:${cb.dataset.ccGroupVisible}`
+          : cb.dataset.ccGroupProvided
+            ? `prov:${cb.dataset.ccGroupProvided}`
+            : cb.dataset.ccGroupByo
+              ? `byo:${cb.dataset.ccGroupByo}`
+              : null;
+      if (key) snap[key] = cb.checked;
+    });
+    return snap;
+  };
+  let initialSnap = snapshotForm();
+  const applyBtn = body.querySelector('#cc-save');
+  const refreshApplyState = () => {
+    const current = snapshotForm();
+    const dirty = Object.keys(current).some((k) => current[k] !== initialSnap[k]);
+    applyBtn.disabled = !dirty;
+  };
+  body.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+    cb.addEventListener('change', refreshApplyState);
+  });
+
+  applyBtn.addEventListener('click', async () => {
     // Preserve unknown-spec entries (e.g. future specs registered on the
     // host but not yet in PROVIDER_GROUPS) so a UI save doesn't clobber
     // them. Then broadcast each group toggle to every underlying spec id.
@@ -546,50 +575,14 @@ function renderClassControlsForm(body, cfg) {
         status.textContent = `Save failed: ${err.error || res.status}`;
         return;
       }
-      status.textContent = 'Saved. Students will see the new settings on their next page load.';
+      status.textContent = 'Applied. Students will see the new settings on their next page load.';
+      // Reset the dirty baseline so the button greys out again until
+      // the next edit.
+      initialSnap = snapshotForm();
+      refreshApplyState();
     } catch (err) {
-      status.textContent = `Save failed: ${String(err)}`;
+      status.textContent = `Apply failed: ${String(err)}`;
     }
-  });
-
-  // Per-row Apply: sets Visible + Provided=true for this group's specs
-  // and saves immediately (no need to also click Save). Disconnects nothing.
-  body.querySelectorAll('button.cc-apply').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      const groupId = btn.dataset.ccGroupApply;
-      const group = PROVIDER_GROUPS.find((g) => g.id === groupId);
-      if (!group) return;
-      btn.disabled = true;
-      const originalText = btn.textContent;
-      btn.textContent = 'Applying…';
-      try {
-        const r = await fetch('/api/class-controls/apply-from-creds', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          credentials: 'same-origin',
-          body: JSON.stringify({ specIds: group.specIds }),
-        });
-        if (!r.ok) {
-          const errBody = await r.json().catch(() => ({}));
-          alert(`Couldn't apply ${group.displayName}: ${errBody.error || r.status}`);
-          btn.textContent = originalText;
-          btn.disabled = false;
-          return;
-        }
-        // Re-render the form against the new state so the Visible/Provided
-        // checkboxes catch up visually.
-        renderClassControlsCard(body);
-        btn.textContent = 'Applied ✓';
-        setTimeout(() => {
-          btn.textContent = originalText;
-          btn.disabled = false;
-        }, 1500);
-      } catch (err) {
-        alert(`Apply failed: ${String(err)}`);
-        btn.textContent = originalText;
-        btn.disabled = false;
-      }
-    });
   });
 }
 
