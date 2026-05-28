@@ -478,13 +478,27 @@ function renderClassControlsForm(body, cfg) {
   const groupFlag = (group, field) =>
     group.specIds.length > 0 &&
     group.specIds.every((sid) => !!(policies[sid] && policies[sid][field]));
-  const providerRows = PROVIDER_GROUPS.map((g) => `
-        <tr>
+  // providedReady is shipped on the GET response — true when the owner
+  // has a usable credential for at least one member spec (sibling
+  // fallback included). Used to disable the Provided checkbox so the
+  // instructor can't accidentally promise students access to a provider
+  // whose class-pool key isn't actually connected.
+  const providedReady = cfg.providedReady || {};
+  const groupProvidedReady = (group) => group.specIds.some((sid) => providedReady[sid]);
+  const providerRows = PROVIDER_GROUPS.map((g) => {
+    const ready = groupProvidedReady(g);
+    const provided = groupFlag(g, 'provideDefault');
+    const providedCell = ready
+      ? `<input type="checkbox" data-cc-group-provided="${g.id}" ${provided ? 'checked' : ''}>`
+      : `<input type="checkbox" data-cc-group-provided="${g.id}" disabled ${provided ? 'checked' : ''} title="Connect a ${escapeHtml(g.displayName)} credential in the LLM Providers card first">`;
+    return `
+        <tr ${ready ? '' : 'class="cc-row-provided-blocked"'}>
           <td>${escapeHtml(g.displayName)}</td>
           <td><input type="checkbox" data-cc-group-visible="${g.id}" ${groupFlag(g, 'allow') ? 'checked' : ''}></td>
-          <td><input type="checkbox" data-cc-group-provided="${g.id}" ${groupFlag(g, 'provideDefault') ? 'checked' : ''}></td>
+          <td>${providedCell}</td>
           <td><input type="checkbox" data-cc-group-byo="${g.id}" ${groupFlag(g, 'allowByo') ? 'checked' : ''}></td>
-        </tr>`).join('');
+        </tr>`;
+  }).join('');
   const providersBlock = `
     <table class="cc-providers-table">
       <thead><tr><th>Provider</th><th>Visible</th><th>Provided</th><th>Let students auth themselves</th></tr></thead>

@@ -1122,6 +1122,13 @@ select.model-changed {
 .cc-providers-table { width: 100%; border-collapse: collapse; font-size: 12px; margin: 4px 0; }
 .cc-providers-table th, .cc-providers-table td { padding: 4px 8px; border-bottom: 1px solid #eee; text-align: left; }
 .cc-providers-table th { color: #555; font-weight: 600; font-size: 11px; }
+/* Provided checkbox disabled because the owner hasn't connected a
+   credential for this group yet — tooltip on the input itself points
+   the instructor at the LLM Providers card. */
+.cc-providers-table tr.cc-row-provided-blocked td:nth-child(3) input[type="checkbox"] {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
 .provider-row { padding: 8px 0; border-bottom: 1px solid #eee; }
 .provider-row:last-child { border-bottom: none; }
 .provider-active { font-size: 12px; color: #555; margin-top: 4px; }

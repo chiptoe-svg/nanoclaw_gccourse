@@ -105,21 +105,25 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `main`
-- **Last tag:** `multi-provider-models-tab-complete-2026-05-26` (48 commits ahead)
+- **Last tag:** `multi-provider-models-tab-complete-2026-05-26` (49 commits ahead)
 
 ### Working tree
 
 ```
-## main...origin/main [ahead 37]
+## main...origin/main [ahead 38]
  M config/playground-seats.json
+M  src/channels/playground/api/class-controls.ts
 M  src/channels/playground/api/models-tab-state.ts
-A  src/hf-metadata.ts
+M  src/channels/playground/public/style.css
+M  src/channels/playground/public/tabs/home.js
+A  src/owner-creds-ready.ts
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+fe7497f feat(models-tab): enrich discovered local + clemson models from HuggingFace
 1010fca feat(models-tab): live Clemson discovery + per-card ✕ hide + refresh clears hides
 a0da6e7 feat(playground/chat): latency in pi message-end stats + turn totals
 32ea930 fix(playground/chat): collapse empty post-tool gpt-5.x turn into a note
@@ -134,9 +138,8 @@ ab6eac0 fix: class-pool gating + chat dropdown only shows checked models
 21c8b8f style(playground/home): bump provider gear icon from 16px to 24px
 a50f538 refactor(playground/home): split chip state from settings — gear icon on right
 913f955 fix(playground/cred-dialog): proper internal layout + helpful state-expired hint
-243411f fix(playground/home): single Apply button on Class Controls with dirty tracking
 ```
 
 ### Last refresh
 
-2026-05-28T22:04:57Z
+2026-05-28T23:13:23Z

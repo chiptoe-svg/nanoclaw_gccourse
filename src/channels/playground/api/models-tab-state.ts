@@ -99,26 +99,13 @@ import { loadStudentProviderCreds } from '../../../student-provider-auth.js';
 import { getOwnerUserId } from '../../../modules/permissions/db/user-roles.js';
 import { listAllForProvider, resetCacheForProvider } from '../../../model-discovery.js';
 import { fetchHfMetadata } from '../../../hf-metadata.js';
+import { ownerHasCredsForSpec } from '../../../owner-creds-ready.js';
 import type { ModelEntry } from '../../../model-catalog.js';
 
-// Mirrors SIBLING_API_KEY_SPECS in classroom-provider-resolver.ts — when
-// the resolver looks up class-pool creds for one OpenAI spec and the
-// owner only stored the key under the other, it falls back. Keep the
-// two maps in sync.
-const CLASS_POOL_SIBLINGS: Record<string, string[]> = {
-  codex: ['openai-platform'],
-  'openai-platform': ['codex'],
-};
-
+// classPoolReady delegates to the shared owner-creds-ready helper so
+// the answer matches the resolver's actual sibling-fallback behavior.
 function classPoolReadyForSpec(ownerId: string | null, specId: string): boolean {
-  if (!ownerId) return false;
-  const direct = loadStudentProviderCreds(ownerId, specId);
-  if (direct?.apiKey?.value || direct?.oauth?.accessToken) return true;
-  for (const sib of CLASS_POOL_SIBLINGS[specId] ?? []) {
-    const sibCreds = loadStudentProviderCreds(ownerId, sib);
-    if (sibCreds?.apiKey?.value) return true;
-  }
-  return false;
+  return ownerHasCredsForSpec(specId, ownerId);
 }
 
 /**
