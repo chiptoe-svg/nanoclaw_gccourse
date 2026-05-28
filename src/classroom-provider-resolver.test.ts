@@ -249,4 +249,27 @@ describe('classroom-provider-resolver: class pool = owner creds (C-1)', () => {
     const r = await resolveStudentCreds('g1', 'claude');
     expect(r).toBeNull();
   });
+
+  it('falls back to sibling API key when codex is empty but openai-platform is set', async () => {
+    const { addApiKey } = await import('./student-provider-auth.js');
+    const { resolveStudentCreds } = await import('./classroom-provider-resolver.js');
+    await setRoster([{ agentGroupId: 'g1', userId: 'student@x.edu' }]);
+    await setOwner('instructor@x.edu');
+    await writeProvideDefaultPolicy('codex');
+    addApiKey('instructor@x.edu', 'openai-platform', 'sk-from-platform');
+    // No codex creds — proxy is asking for /openai/ route.
+    const r = await resolveStudentCreds('g1', 'codex');
+    expect(r).toEqual({ kind: 'apiKey', value: 'sk-from-platform' });
+  });
+
+  it('falls back to sibling API key when openai-platform is empty but codex is set', async () => {
+    const { addApiKey } = await import('./student-provider-auth.js');
+    const { resolveStudentCreds } = await import('./classroom-provider-resolver.js');
+    await setRoster([{ agentGroupId: 'g1', userId: 'student@x.edu' }]);
+    await setOwner('instructor@x.edu');
+    await writeProvideDefaultPolicy('openai-platform');
+    addApiKey('instructor@x.edu', 'codex', 'sk-from-codex');
+    const r = await resolveStudentCreds('g1', 'openai-platform');
+    expect(r).toEqual({ kind: 'apiKey', value: 'sk-from-codex' });
+  });
 });

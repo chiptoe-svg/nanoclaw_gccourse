@@ -100,6 +100,18 @@ export function setOwnerLookupForTests(fn: () => string | null): void {
 
 const REFRESH_BUFFER_MS = 5 * 60 * 1000;
 
+// API keys are interchangeable across siblings inside a single user-facing
+// provider group: an OpenAI `sk-…` key works for both the codex (/openai/)
+// and openai-platform (/openai-platform/) proxy routes. When the instructor
+// pastes via the canonical-spec cred dialog (codex), the owner's openai-
+// platform bucket stays empty — students whose model entry routes through
+// /openai-platform/ would 502 without this fallback. OAuth tokens are
+// NOT cross-spec — they're issued for one specific provider.
+const SIBLING_API_KEY_SPECS: Record<string, string[]> = {
+  codex: ['openai-platform'],
+  'openai-platform': ['codex'],
+};
+
 // Class-pool credentials reader. Per Phase C-1: the class pool *is* the
 // owner's per-user credential store — same shape as student creds, looked
 // up via the same loadStudentProviderCreds helper. When the owner has
@@ -116,7 +128,17 @@ let classPoolCreds: (classId: string, providerId: string) => Promise<ResolvedCre
 ) => {
   const ownerId = ownerLookup();
   if (!ownerId) return null;
-  const creds = loadStudentProviderCreds(ownerId, providerId);
+  let creds = loadStudentProviderCreds(ownerId, providerId);
+  // Sibling fallback: try a paired spec when the requested one is empty
+  // (OpenAI's two routes share API keys; see SIBLING_API_KEY_SPECS).
+  if (!creds || (!creds.apiKey && !creds.oauth)) {
+    for (const sib of SIBLING_API_KEY_SPECS[providerId] ?? []) {
+      const sibCreds = loadStudentProviderCreds(ownerId, sib);
+      if (sibCreds?.apiKey?.value) {
+        return { kind: 'apiKey', value: sibCreds.apiKey.value };
+      }
+    }
+  }
   if (!creds) return null;
   if (creds.active === 'apiKey' && creds.apiKey) {
     return { kind: 'apiKey', value: creds.apiKey.value };

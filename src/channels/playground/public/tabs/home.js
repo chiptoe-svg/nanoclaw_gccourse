@@ -762,12 +762,16 @@ async function renderProvidersCard(body) {
 }
 
 // ── Instructor LLM Providers card ────────────────────────────────────────
-// One row per user-facing PROVIDER_GROUPS entry. Inside each group, one
-// sub-row per auth method (Connect / Paste / Settings). When two or more
-// sub-rows in the same group are connected, an active-method radio
-// surfaces on each — the class pool resolver uses owner.creds.active to
-// decide which auth to send to upstream. "Apply to class" sets allow +
-// provideDefault on each member spec via POST /apply-from-creds.
+// One row per user-facing PROVIDER_GROUPS entry. Each row:
+//   - status pill ("● Set (subscription)" / "○ Not connected" / …)
+//   - inline "subscription | API key" radio for mixed groups (OpenAI,
+//     Anthropic); writes to canonicalSpec.creds.active which the C-1
+//     class-pool resolver reads
+//   - one button per row (Connect / Manage / Settings) that opens the
+//     existing cred dialog on the canonical spec
+// Policy (Visible / Provided / Let students auth themselves) is handled
+// on the Class Controls card — credential management and policy are
+// intentionally split across the two cards.
 async function renderInstructorProvidersCard(body) {
   try {
     const agentGroupId = (window.currentAgent && window.currentAgent.id) || '';
@@ -779,186 +783,111 @@ async function renderInstructorProvidersCard(body) {
     const specsById = {};
     for (const p of data.providers || []) specsById[p.id] = p;
 
-    const groupHtml = PROVIDER_GROUPS.map((group) => {
-      // Count connected sub-rows so we can show an active radio when ≥2.
-      const subStates = group.subRows.map((sr) => {
-        const spec = specsById[sr.specId];
-        if (!spec) return { sr, spec: null, connected: false };
-        const alsoApiKey = (sr.alsoCheck || []).some((sid) => specsById[sid]?.creds?.hasApiKey);
-        if (sr.method === 'oauth') return { sr, spec, connected: !!spec.creds.hasOAuth };
-        if (sr.method === 'apiKey') return { sr, spec, connected: !!spec.creds.hasApiKey || alsoApiKey };
-        // 'settings' (none-variant): we treat "has any api-key creds for
-        // this spec under owner" as "configured" — that's how the C-1
-        // .env migration parks CAMPUS_LLM_API_KEY / OMLX_API_KEY.
-        if (sr.method === 'settings') return { sr, spec, connected: !!spec.creds.hasApiKey };
-        return { sr, spec, connected: false };
-      });
-      const connectedCount = subStates.filter((s) => s.connected).length;
-      const anyConnected = connectedCount > 0;
-      const showActive = connectedCount >= 2;
-
-      const subHtml = subStates
-        .map((s) => {
-          const { sr, spec, connected } = s;
-          if (!spec) {
-            return `<div class="provider-sub muted">${escapeHtml(sr.label)} — spec not registered</div>`;
-          }
-          const status = connected
-            ? sr.method === 'oauth'
-              ? `Connected${spec.creds.accountEmail ? ` (${escapeHtml(spec.creds.accountEmail)})` : ''}`
-              : 'Set'
-            : 'Not connected';
-          const actionLabel = connected
-            ? sr.method === 'settings'
-              ? 'Settings'
-              : 'Remove'
-            : sr.method === 'oauth'
-              ? 'Connect'
-              : sr.method === 'settings'
-                ? 'Settings'
-                : 'Paste';
-          const radio = showActive && connected
-            ? `<label class="provider-sub-active" title="Use this credential for class-pool calls"><input type="radio" name="active-group-${group.id}" value="${sr.specId}:${sr.method}" data-spec="${sr.specId}" data-method="${sr.method}" ${activeMatches(spec, sr.method) ? 'checked' : ''}> active</label>`
-            : '';
-          const mark = connected ? '●' : '○';
-          return `
-            <div class="provider-sub ${connected ? 'is-connected' : ''}" data-spec="${sr.specId}" data-method="${sr.method}">
-              <span class="provider-sub-mark">${mark}</span>
-              <span class="provider-sub-label">${escapeHtml(sr.label)}</span>
-              <span class="provider-sub-status">${status}</span>
-              ${radio}
-              <button class="btn provider-sub-action" data-action="${connected ? 'remove' : 'connect'}">${actionLabel}</button>
-            </div>`;
-        })
-        .join('');
-
-      const applyDisabled = anyConnected ? '' : 'disabled';
-      const applyTitle = anyConnected
-        ? 'Set this provider as Visible + Provided on the Class Controls card'
-        : 'Connect a credential below first';
-      return `
-        <div class="provider-group" data-group="${group.id}">
-          <div class="provider-group-header">
-            <strong>${escapeHtml(group.displayName)}</strong>
-            <button class="btn btn-primary provider-apply" ${applyDisabled} title="${applyTitle}">Apply to class</button>
-          </div>
-          ${subHtml}
-        </div>`;
-    }).join('');
-
-    body.innerHTML = groupHtml;
+    body.innerHTML = PROVIDER_GROUPS.map((group) => renderInstructorGroupRow(group, specsById))
+      .filter(Boolean)
+      .join('');
     wireInstructorProvidersCard(body, specsById);
   } catch (err) {
     body.innerHTML = `<p class="muted">Couldn't load providers: ${escapeHtml(String(err))}</p>`;
   }
 }
 
-function activeMatches(spec, method) {
-  // The active field is per-spec, not per-group. So the radio reflects
-  // the spec's own active, but the *user* picks across all connected
-  // sub-rows in the group. We use this to set the initial checked state.
-  return spec.creds.active === method;
+function renderInstructorGroupRow(group, specsById) {
+  const canonical = specsById[group.canonicalSpecId];
+  if (!canonical) {
+    return `<div class="provider-row muted">${escapeHtml(group.displayName)} — spec not registered</div>`;
+  }
+  // Aggregate across the group's specs so the OpenAI row reflects state
+  // for BOTH codex and openai-platform creds (per-spec storage; UI view
+  // of "do we have an OpenAI API key anywhere" is the union).
+  const hasAnyOAuth = group.specIds.some((sid) => specsById[sid]?.creds?.hasOAuth);
+  const hasAnyApiKey = group.specIds.some((sid) => specsById[sid]?.creds?.hasApiKey);
+  const anyConnected = hasAnyOAuth || hasAnyApiKey;
+
+  let status;
+  if (!anyConnected) status = 'Not connected';
+  else if (group.hasMixed && hasAnyOAuth && hasAnyApiKey) status = 'Subscription + API key set';
+  else if (hasAnyOAuth) {
+    const email = canonical.creds.accountEmail;
+    status = email ? `Subscription (${escapeHtml(email)})` : 'Subscription set';
+  } else status = 'API key set';
+
+  // Active-method radio for mixed groups. Always rendered when the group
+  // is mixed — un-connected methods are disabled. Drives canonical spec's
+  // creds.active, which the C-1 class-pool resolver reads.
+  let radioHtml = '';
+  if (group.hasMixed) {
+    const active = canonical.creds.active;
+    radioHtml = `
+      <span class="provider-active" title="Which credential to send for class-pool calls">
+        <label><input type="radio" name="active-${group.id}" value="oauth"  ${active === 'oauth'  ? 'checked' : ''} ${hasAnyOAuth  ? '' : 'disabled'}> Subscription</label>
+        <label><input type="radio" name="active-${group.id}" value="apiKey" ${active === 'apiKey' ? 'checked' : ''} ${hasAnyApiKey ? '' : 'disabled'}> API key</label>
+      </span>`;
+  }
+
+  const buttonLabel =
+    canonical.credentialFileShape === 'none' ? 'Settings' : anyConnected ? 'Manage' : 'Connect';
+  const mark = anyConnected ? '●' : '○';
+
+  return `
+    <div class="provider-row ${anyConnected ? 'is-connected' : ''}" data-group="${group.id}">
+      <span class="provider-mark">${mark}</span>
+      <strong class="provider-name">${escapeHtml(group.displayName)}</strong>
+      <span class="provider-status">${status}</span>
+      ${radioHtml}
+      <button class="btn provider-manage">${buttonLabel}</button>
+    </div>`;
 }
 
 function wireInstructorProvidersCard(body, specsById) {
-  body.querySelectorAll('.provider-group').forEach((groupEl) => {
-    const groupId = groupEl.dataset.group;
+  body.querySelectorAll('.provider-row[data-group]').forEach((rowEl) => {
+    const groupId = rowEl.dataset.group;
     const group = PROVIDER_GROUPS.find((g) => g.id === groupId);
     if (!group) return;
+    const canonical = specsById[group.canonicalSpecId];
+    if (!canonical) return;
 
-    // Connect / Paste / Settings / Remove buttons on each sub-row.
-    groupEl.querySelectorAll('.provider-sub').forEach((subEl) => {
-      const specId = subEl.dataset.spec;
-      const spec = specsById[specId];
-      if (!spec) return;
-      const btn = subEl.querySelector('button.provider-sub-action');
-      if (!btn) return;
-      btn.addEventListener('click', async () => {
-        const action = btn.dataset.action;
-        if (action === 'remove') {
-          const method = subEl.dataset.method;
-          const which = method === 'oauth' ? 'oauth' : 'apiKey';
-          if (!confirm(`Disconnect ${spec.displayName} (${which})?`)) return;
-          await fetch(`/api/me/providers/${specId}?which=${which}`, {
-            method: 'DELETE',
-            credentials: 'same-origin',
-          });
-          renderInstructorProvidersCard(body);
-          return;
-        }
-        // Connect / Paste / Settings — open existing cred dialog.
+    // Manage / Connect / Settings — open the existing cred dialog on the
+    // canonical spec. Its mixed variant already exposes both Connect-
+    // subscription and Paste-API-key flows in one place; the 'none'
+    // variant covers OMLX reachability + Clemson settings.
+    const btn = rowEl.querySelector('button.provider-manage');
+    if (btn) {
+      btn.addEventListener('click', () => {
         openCredDialog({
-          providerId: specId,
+          providerId: canonical.id,
           providerSpec: {
-            id: specId,
-            displayName: spec.displayName,
-            credentialFileShape: spec.credentialFileShape,
-            apiKey: spec.apiKeyPlaceholder ? { placeholder: spec.apiKeyPlaceholder } : undefined,
+            id: canonical.id,
+            displayName: group.displayName,
+            credentialFileShape: canonical.credentialFileShape,
+            apiKey: canonical.apiKeyPlaceholder
+              ? { placeholder: canonical.apiKeyPlaceholder }
+              : undefined,
           },
           currentCredState: {
-            hasOAuth: spec.creds.hasOAuth,
-            hasApiKey: spec.creds.hasApiKey,
-            activeMethod: spec.creds.active,
-            accountEmail: spec.creds.accountEmail || '',
+            hasOAuth: canonical.creds.hasOAuth,
+            hasApiKey: canonical.creds.hasApiKey,
+            activeMethod: canonical.creds.active,
+            accountEmail: canonical.creds.accountEmail || '',
           },
           onSaved: () => renderInstructorProvidersCard(body),
         });
       });
-    });
+    }
 
-    // Active-method radio (only present when ≥2 sub-rows connected).
-    groupEl.querySelectorAll(`input[name="active-group-${groupId}"]`).forEach((input) => {
+    // Active-method radio (mixed groups only).
+    rowEl.querySelectorAll(`input[name="active-${groupId}"]`).forEach((input) => {
       input.addEventListener('change', async () => {
-        const specId = input.dataset.spec;
-        const method = input.dataset.method;
-        const r = await fetch(`/api/me/providers/${specId}/active`, {
+        const r = await fetch(`/api/me/providers/${canonical.id}/active`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           credentials: 'same-origin',
-          body: JSON.stringify({ active: method }),
+          body: JSON.stringify({ active: input.value }),
         });
-        if (!r.ok) alert(`Couldn't switch active method for ${specId} (${r.status}).`);
+        if (!r.ok) alert(`Couldn't switch active method for ${group.displayName} (${r.status}).`);
         renderInstructorProvidersCard(body);
       });
     });
-
-    // Apply-to-class button.
-    const applyBtn = groupEl.querySelector('.provider-apply');
-    if (applyBtn) {
-      applyBtn.addEventListener('click', async () => {
-        applyBtn.disabled = true;
-        applyBtn.textContent = 'Applying…';
-        try {
-          const r = await fetch('/api/class-controls/apply-from-creds', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            credentials: 'same-origin',
-            body: JSON.stringify({ specIds: group.specIds }),
-          });
-          if (!r.ok) {
-            const errBody = await r.json().catch(() => ({}));
-            alert(`Couldn't apply ${group.displayName} to class: ${errBody.error || r.status}`);
-            applyBtn.disabled = false;
-            applyBtn.textContent = 'Apply to class';
-            return;
-          }
-          applyBtn.textContent = 'Applied ✓';
-          // Refresh the Class Controls card on this same Home tab so the
-          // policy state visually catches up (the server's SSE broadcast
-          // handles other open tabs).
-          const ccBody = document.getElementById('class-controls-body');
-          if (ccBody) renderClassControlsCard(ccBody);
-          setTimeout(() => {
-            applyBtn.textContent = 'Apply to class';
-            applyBtn.disabled = false;
-          }, 1500);
-        } catch (err) {
-          alert(`Apply failed: ${String(err)}`);
-          applyBtn.disabled = false;
-          applyBtn.textContent = 'Apply to class';
-        }
-      });
-    }
   });
 }
 

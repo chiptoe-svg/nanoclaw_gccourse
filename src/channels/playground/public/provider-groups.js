@@ -9,65 +9,52 @@
  * underneath. See plans/class-controls-provider-grouping.md.
  */
 /**
- * Per-group sub-row recipes: how each user-facing group decomposes into
- * connectable auth methods. The instructor LLM Providers card renders
- * one sub-row per entry, mapping label → underlying spec + method:
+ * Per-group metadata for the instructor LLM Providers card:
  *
- *   method: 'oauth'   → opens cred dialog at the spec's OAuth path
- *   method: 'apiKey'  → opens cred dialog at the spec's api-key paste
- *   method: 'settings'→ opens cred dialog 'none' variant (test connection)
+ *   canonicalSpecId — which spec the [Manage] button opens. For mixed
+ *     groups (OpenAI, Anthropic) this is the spec with `credentialFileShape:
+ *     'mixed'` — its cred dialog already exposes both Connect-subscription
+ *     and Paste-API-key flows in one place.
+ *   hasMixed — render the inline "subscription | API key" active-method
+ *     radio. The radio writes to canonicalSpec.creds.active, which the
+ *     C-1 class-pool resolver reads.
+ *   specIds — full set of underlying specs. "Apply to class" sets allow +
+ *     provideDefault on every member.
  *
- * Notes:
- *   - OpenAI's "API key" routes through `openai-platform`, not the
- *     codex spec's redundant api-key option — keeps the surface simple
- *     and makes Platform vs Subscription the meaningful distinction.
- *   - Anthropic exposes both Claude Code OAuth and the API key on the
- *     same `claude` spec (mixed shape).
- *   - Local + Clemson have no per-user OAuth and the spec doesn't
- *     declare an apiKey shape (it's `'none'`); the migration from C-1
- *     parks the .env-sourced key under the owner's creds silently and
- *     "Settings" opens the existing none-variant dialog.
+ * Cross-spec note: for the OpenAI group the canonical spec is `codex`
+ * (mixed). The proxy's `/openai-platform/*` route looks up
+ * `openai-platform` creds at request time — when the instructor's API
+ * key is stored under codex, the C-1 resolver's sibling-fallback
+ * (see SIBLING_API_KEY_SPECS in src/classroom-provider-resolver.ts)
+ * makes it visible on the openai-platform path too.
  */
 export const PROVIDER_GROUPS = [
   {
     id: 'openai',
     displayName: 'OpenAI',
     specIds: ['codex', 'openai-platform'],
-    subRows: [
-      { label: 'ChatGPT subscription', specId: 'codex', method: 'oauth' },
-      // An OpenAI Platform API key is functionally the same artifact
-      // wherever it's stored — the credential-proxy accepts it on either
-      // route. C-1's `.env`-to-owner migration parked OPENAI_API_KEY under
-      // codex; reflect that here so the sub-row shows as connected even
-      // before the instructor re-pastes into the preferred openai-platform
-      // bucket. Paste/Remove still target the preferred spec.
-      {
-        label: 'Platform API key',
-        specId: 'openai-platform',
-        method: 'apiKey',
-        alsoCheck: ['codex'],
-      },
-    ],
+    canonicalSpecId: 'codex',
+    hasMixed: true,
   },
   {
     id: 'anthropic',
     displayName: 'Anthropic',
     specIds: ['claude'],
-    subRows: [
-      { label: 'Claude Code OAuth', specId: 'claude', method: 'oauth' },
-      { label: 'API key', specId: 'claude', method: 'apiKey' },
-    ],
+    canonicalSpecId: 'claude',
+    hasMixed: true,
   },
   {
     id: 'local',
     displayName: 'Local (OMLX)',
     specIds: ['omlx'],
-    subRows: [{ label: 'Server', specId: 'omlx', method: 'settings' }],
+    canonicalSpecId: 'omlx',
+    hasMixed: false,
   },
   {
     id: 'clemson',
     displayName: 'Clemson',
     specIds: ['clemson'],
-    subRows: [{ label: 'Configured', specId: 'clemson', method: 'settings' }],
+    canonicalSpecId: 'clemson',
+    hasMixed: false,
   },
 ];
