@@ -101,22 +101,21 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `main`
-- **Last tag:** `multi-provider-models-tab-complete-2026-05-26` (25 commits ahead)
+- **Last tag:** `multi-provider-models-tab-complete-2026-05-26` (26 commits ahead)
 
 ### Working tree
 
 ```
-## main...origin/main [ahead 14]
+## main...origin/main [ahead 15]
  M config/playground-seats.json
-A  plans/class-controls-provider-grouping.md
-A  src/channels/playground/public/provider-groups.js
-M  src/channels/playground/public/tabs/home.js
+A  plans/instructor-class-pool-and-grouping.md
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+5b765ed fix(playground/home): un-break Class Controls form, group OpenAI specs into one row
 557c42d fix(playground/chat): derive providerAuth via auth-registry, not legacy model-providers
 521b757 fix(container/test-infra): honor SESSION_*_DB_PATH env vars + sync test schema
 f4b0fec fix(api/payloads): reject path-traversal IDs + sanitize numeric query params
@@ -131,9 +130,8 @@ fc1b51d feat(proxy-payload-log): per-session storage layer with 50-row retention
 929819b docs(plan): proxy payload log foundation — 6-task TDD plan
 f0f103a docs(spec): proxy payload log foundation
 8024422 docs(scope): capture multi-arc planning, drop Eval tab, expand Bench
-bb4874d docs(vision): reconcile roadmap with shipped state — 2026-05-26 audit
 ```
 
 ### Last refresh
 
-2026-05-28T16:00:06Z
+2026-05-28T16:26:33Z
