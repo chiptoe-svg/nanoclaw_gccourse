@@ -479,15 +479,16 @@ function renderClassControlsForm(body, cfg) {
     group.specIds.length > 0 &&
     group.specIds.every((sid) => !!(policies[sid] && policies[sid][field]));
   const providerRows = PROVIDER_GROUPS.map((g) => `
-        <tr>
+        <tr data-cc-group-row="${g.id}">
           <td>${escapeHtml(g.displayName)}</td>
           <td><input type="checkbox" data-cc-group-visible="${g.id}" ${groupFlag(g, 'allow') ? 'checked' : ''}></td>
           <td><input type="checkbox" data-cc-group-provided="${g.id}" ${groupFlag(g, 'provideDefault') ? 'checked' : ''}></td>
           <td><input type="checkbox" data-cc-group-byo="${g.id}" ${groupFlag(g, 'allowByo') ? 'checked' : ''}></td>
+          <td><button class="btn btn-primary cc-apply" data-cc-group-apply="${g.id}" title="Set Visible + Provided and save immediately">Apply</button></td>
         </tr>`).join('');
   const providersBlock = `
     <table class="cc-providers-table">
-      <thead><tr><th>Provider</th><th>Visible</th><th>Provided</th><th>Let students auth themselves</th></tr></thead>
+      <thead><tr><th>Provider</th><th>Visible</th><th>Provided</th><th>Let students auth themselves</th><th></th></tr></thead>
       <tbody>${providerRows}</tbody>
     </table>
   `;
@@ -549,6 +550,46 @@ function renderClassControlsForm(body, cfg) {
     } catch (err) {
       status.textContent = `Save failed: ${String(err)}`;
     }
+  });
+
+  // Per-row Apply: sets Visible + Provided=true for this group's specs
+  // and saves immediately (no need to also click Save). Disconnects nothing.
+  body.querySelectorAll('button.cc-apply').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const groupId = btn.dataset.ccGroupApply;
+      const group = PROVIDER_GROUPS.find((g) => g.id === groupId);
+      if (!group) return;
+      btn.disabled = true;
+      const originalText = btn.textContent;
+      btn.textContent = 'Applying…';
+      try {
+        const r = await fetch('/api/class-controls/apply-from-creds', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ specIds: group.specIds }),
+        });
+        if (!r.ok) {
+          const errBody = await r.json().catch(() => ({}));
+          alert(`Couldn't apply ${group.displayName}: ${errBody.error || r.status}`);
+          btn.textContent = originalText;
+          btn.disabled = false;
+          return;
+        }
+        // Re-render the form against the new state so the Visible/Provided
+        // checkboxes catch up visually.
+        renderClassControlsCard(body);
+        btn.textContent = 'Applied ✓';
+        setTimeout(() => {
+          btn.textContent = originalText;
+          btn.disabled = false;
+        }, 1500);
+      } catch (err) {
+        alert(`Apply failed: ${String(err)}`);
+        btn.textContent = originalText;
+        btn.disabled = false;
+      }
+    });
   });
 }
 
@@ -806,29 +847,30 @@ function renderInstructorGroupRow(group, specsById) {
   const active = canonical.creds.active;
   const mark = anyConnected ? '●' : '○';
 
-  // Method labels are the only interactive surface — no separate button.
-  // Click any label → opens the cred dialog at the canonical spec (mixed
-  // variant exposes both Connect-subscription and Paste-API-key flows;
-  // 'none' variant covers Local/Clemson settings). Visual styling tells
-  // the rest: filled = connected & active, outlined = connected, dim = not
-  // connected. Disconnect + active-method switching live inside the dialog.
+  // Each mixed-group chip has two click targets:
+  //   1. small leading radio dot → set this method as active for the class
+  //      pool (POST /api/me/providers/<spec>/active). Disabled when the
+  //      method isn't connected — can't make active what doesn't exist.
+  //   2. chip body (label text) → open the cred dialog at the canonical
+  //      spec (mixed variant exposes both Connect-subscription + Paste-
+  //      API-key + disconnect in one place; 'none' variant for Local /
+  //      Clemson settings).
+  // Visual: chip outline = connected/not, filled radio dot = active.
   const methodChip = (label, method, connected) => {
     const isActive = active === method && connected;
-    const classes = [
-      'provider-method',
-      connected ? 'is-connected' : '',
-      isActive ? 'is-active' : '',
-    ]
+    const chipClasses = ['provider-method', connected ? 'is-connected' : '', isActive ? 'is-active' : '']
       .filter(Boolean)
       .join(' ');
-    const tooltip = isActive
-      ? canonical.creds.accountEmail
-        ? `Active for class — ${canonical.creds.accountEmail}`
-        : 'Active for class'
-      : connected
-        ? 'Connected (click to manage)'
-        : 'Click to connect';
-    return `<span class="${classes}" data-method="${method}" tabindex="0" role="button" title="${escapeHtml(tooltip)}">${escapeHtml(label)}</span>`;
+    const labelTooltip = connected ? 'Click to manage credential' : 'Click to connect';
+    const radioTooltip = connected ? 'Use this credential for class-pool calls' : 'Connect this method first';
+    const radio = group.hasMixed
+      ? `<input type="radio" class="provider-radio" name="active-${group.id}" value="${method}" ${isActive ? 'checked' : ''} ${connected ? '' : 'disabled'} title="${escapeHtml(radioTooltip)}">`
+      : '';
+    return `
+      <span class="${chipClasses}" data-method="${method}">
+        ${radio}
+        <span class="provider-method-text" tabindex="0" role="button" title="${escapeHtml(labelTooltip)}">${escapeHtml(label)}</span>
+      </span>`;
   };
 
   let methodsHtml;
@@ -869,7 +911,7 @@ function wireInstructorProvidersCard(body, specsById) {
     // key + active-method switching + disconnect all in one place; the
     // 'none' variant handles OMLX reachability / Clemson settings. Enter
     // and Space activate too (chips have role=button + tabindex=0).
-    const open = () =>
+    const openDialog = () =>
       openCredDialog({
         providerId: canonical.id,
         providerSpec: {
@@ -886,13 +928,33 @@ function wireInstructorProvidersCard(body, specsById) {
         },
         onSaved: () => renderInstructorProvidersCard(body),
       });
-    rowEl.querySelectorAll('.provider-method').forEach((chip) => {
-      chip.addEventListener('click', open);
-      chip.addEventListener('keydown', (e) => {
+
+    // Chip label → open cred dialog (connect / manage / disconnect).
+    rowEl.querySelectorAll('.provider-method-text').forEach((label) => {
+      label.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openDialog();
+      });
+      label.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
-          open();
+          openDialog();
         }
+      });
+    });
+
+    // Active-method radio (mixed groups only) → POST set-active.
+    rowEl.querySelectorAll('input.provider-radio').forEach((input) => {
+      input.addEventListener('change', async () => {
+        if (input.disabled) return;
+        const r = await fetch(`/api/me/providers/${canonical.id}/active`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ active: input.value }),
+        });
+        if (!r.ok) alert(`Couldn't switch active method for ${group.displayName} (${r.status}).`);
+        renderInstructorProvidersCard(body);
       });
     });
   });

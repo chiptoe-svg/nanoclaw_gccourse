@@ -278,6 +278,40 @@ html, body {
   pointer-events: auto;
 }
 
+/* Cred dialog — centered modal card with backdrop. Used by both the
+   student LLM Providers card and the instructor view. The overlay
+   handles the click-outside-to-close via cred-dialog.js; the card
+   floats above. Without these rules the dialog renders unstyled and
+   chip-click appears to do nothing. */
+.cred-modal-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 60px 20px 20px;
+  background: rgba(20, 22, 30, 0.45);
+  overflow-y: auto;
+}
+.cred-modal {
+  background: #ffffff;
+  border-radius: 10px;
+  padding: 22px 24px 18px;
+  width: min(560px, 100%);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.22);
+  max-height: 80vh;
+  overflow-y: auto;
+}
+.cred-modal h3 {
+  margin: 0 0 12px;
+  font-size: 16px;
+  color: #1c1f24;
+}
+.cred-modal-body { margin: 4px 0 14px; font-size: 13px; color: #333; }
+.cred-modal-body p { margin: 8px 0; }
+.cred-modal-body .muted { color: #777; }
+.cred-modal-close { margin-top: 4px; }
+
 /* ── Toasts ──────────────────────────────────────────────────────────── */
 
 #toasts {
@@ -1017,33 +1051,31 @@ select.model-changed {
 .provider-row[data-group] .provider-methods { display: flex; gap: 8px; flex-wrap: wrap; justify-self: end; }
 
 .provider-method {
-  display: inline-block;
-  padding: 4px 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px 3px 6px;
   font-size: 12px;
   border-radius: 4px;
   border: 1px solid #d8d8d8;
   background: #fafafa;
   color: #999;
-  cursor: pointer;
   user-select: none;
   white-space: nowrap;
   transition: background 0.12s, color 0.12s, border-color 0.12s;
 }
-.provider-method:hover { background: #efefef; color: #333; border-color: #b8b8b8; }
-.provider-method:focus-visible { outline: 2px solid #4b82e8; outline-offset: 2px; }
-.provider-method.is-connected {
-  background: #ffffff;
-  color: #1d3b1d;
-  border-color: #9bc6a0;
+.provider-method.is-connected { background: #ffffff; color: #1d3b1d; border-color: #9bc6a0; }
+.provider-method.is-active { border-color: #2a8b34; box-shadow: inset 0 0 0 1px #2a8b34; }
+.provider-method .provider-radio { margin: 0; cursor: pointer; }
+.provider-method .provider-radio:disabled { cursor: not-allowed; }
+.provider-method-text {
+  cursor: pointer;
+  padding: 1px 2px;
+  border-radius: 2px;
 }
-.provider-method.is-connected:hover { background: #f1faf3; }
-.provider-method.is-active {
-  background: #2a8b34;
-  color: #ffffff;
-  border-color: #2a8b34;
-  font-weight: 600;
-}
-.provider-method.is-active:hover { background: #226e2a; border-color: #226e2a; }
+.provider-method-text:hover { background: rgba(42, 139, 52, 0.08); }
+.provider-method-text:focus-visible { outline: 2px solid #4b82e8; outline-offset: 2px; }
+.provider-method.is-active .provider-method-text { font-weight: 600; color: #1f5e26; }
 .provider-paste-form { margin-top: 8px; padding: 8px; background: #f8fafe; border: 1px solid #d6e2f5; border-radius: 6px; }
 .provider-paste-form .paste-open-link { margin-bottom: 10px; display: flex; align-items: center; flex-wrap: wrap; }
 .provider-paste-form .paste-open-link a { text-decoration: none; }

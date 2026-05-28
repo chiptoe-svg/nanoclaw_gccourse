@@ -94,6 +94,51 @@ describe('class-controls — new wrapped shape', () => {
   });
 });
 
+describe('handleApplyProviderToClass (Class Controls per-row Apply)', () => {
+  beforeEach(() => {
+    vi.doMock('../../../providers/auth-registry.js', () => ({
+      listProviderSpecs: () => [
+        { id: 'codex' },
+        { id: 'openai-platform' },
+        { id: 'claude' },
+        { id: 'omlx' },
+        { id: 'clemson' },
+      ],
+    }));
+  });
+
+  it('sets allow + provideDefault on each registered specId, preserves allowByo', async () => {
+    fs.writeFileSync(
+      path.join(tmpRoot, 'config', 'class-controls.json'),
+      JSON.stringify({
+        classes: {
+          default: {
+            tabsVisibleToStudents: [],
+            authModesAvailable: [],
+            providers: { codex: { allow: false, provideDefault: false, allowByo: true } },
+          },
+        },
+      }),
+    );
+    const { handleApplyProviderToClass, readClassControls } = await import('./class-controls.js');
+    const r = handleApplyProviderToClass({ specIds: ['codex', 'openai-platform'] });
+    expect(r.status).toBe(200);
+    const after = readClassControls().classes.default!.providers;
+    expect(after.codex).toEqual({ allow: true, provideDefault: true, allowByo: true });
+    expect(after['openai-platform']).toEqual({ allow: true, provideDefault: true, allowByo: false });
+  });
+
+  it('rejects unknown specIds', async () => {
+    const { handleApplyProviderToClass } = await import('./class-controls.js');
+    expect(handleApplyProviderToClass({ specIds: ['fake'] }).status).toBe(400);
+  });
+
+  it('rejects empty specIds', async () => {
+    const { handleApplyProviderToClass } = await import('./class-controls.js');
+    expect(handleApplyProviderToClass({ specIds: [] }).status).toBe(400);
+  });
+});
+
 describe('Class Controls — new provider defaults (mptab-14)', () => {
   it('DEFAULT_CLASS_CONTROL includes openai-platform and omlx', async () => {
     const { readClassControls, DEFAULT_CLASS_ID } = await import('./class-controls.js');

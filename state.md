@@ -105,13 +105,16 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `main`
-- **Last tag:** `multi-provider-models-tab-complete-2026-05-26` (31 commits ahead)
+- **Last tag:** `multi-provider-models-tab-complete-2026-05-26` (32 commits ahead)
 
 ### Working tree
 
 ```
-## main...origin/main [ahead 20]
+## main...origin/main [ahead 21]
  M config/playground-seats.json
+M  src/channels/playground/api-routes.ts
+M  src/channels/playground/api/class-controls.test.ts
+M  src/channels/playground/api/class-controls.ts
 M  src/channels/playground/public/style.css
 M  src/channels/playground/public/tabs/home.js
 ?? .codegraph/
@@ -120,6 +123,7 @@ M  src/channels/playground/public/tabs/home.js
 ### Recent commits (last 15)
 
 ```
+3d169ed refactor(playground/home): clickable method chips, no separate button
 d8e414f fix(playground/home): grid layout for instructor providers card, drop status text
 37606a6 refactor(playground/home): simplify instructor LLM Providers card per UX review
 95758c1 feat(playground/home): instructor-view LLM Providers card (Phase C-2)
@@ -134,9 +138,8 @@ f13ea4e fix(credential-proxy): memoize openStore failures + cleanup notes
 f797c05 feat(credential-proxy): capture request bodies to per-session payload log
 a870b97 feat(container/proxy-fetch): propagate X-NanoClaw-Session-Id alongside agent-group
 5ddb39b feat(container-runner): inject X_NANOCLAW_SESSION_ID env for payload-log attribution
-9a50ac1 feat(proxy-payload-log): section parser for anthropic + openai-shaped routes
 ```
 
 ### Last refresh
 
-2026-05-28T18:17:35Z
+2026-05-28T18:30:34Z
