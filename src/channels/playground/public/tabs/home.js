@@ -803,37 +803,56 @@ function renderInstructorGroupRow(group, specsById) {
   const hasAnyOAuth = group.specIds.some((sid) => specsById[sid]?.creds?.hasOAuth);
   const hasAnyApiKey = group.specIds.some((sid) => specsById[sid]?.creds?.hasApiKey);
   const anyConnected = hasAnyOAuth || hasAnyApiKey;
-
-  // Active-method radio for mixed groups. Always rendered when the group
-  // is mixed — un-connected methods are disabled. Drives canonical spec's
-  // creds.active, which the C-1 class-pool resolver reads. The radio
-  // doubles as the status display: filled = connected, empty = not.
-  let radioHtml = '';
-  if (group.hasMixed) {
-    const active = canonical.creds.active;
-    const tooltip = canonical.creds.accountEmail
-      ? `Connected as ${canonical.creds.accountEmail}`
-      : 'Which credential to send for class-pool calls';
-    radioHtml = `
-      <span class="provider-active" title="${escapeHtml(tooltip)}">
-        <label><input type="radio" name="active-${group.id}" value="oauth"  ${active === 'oauth'  ? 'checked' : ''} ${hasAnyOAuth  ? '' : 'disabled'}> Subscription</label>
-        <label><input type="radio" name="active-${group.id}" value="apiKey" ${active === 'apiKey' ? 'checked' : ''} ${hasAnyApiKey ? '' : 'disabled'}> API key</label>
-      </span>`;
-  } else {
-    // Non-mixed groups (Local, Clemson): the mark dot is the only signal.
-    radioHtml = '<span class="provider-active"></span>';
-  }
-
-  const buttonLabel =
-    canonical.credentialFileShape === 'none' ? 'Settings' : anyConnected ? 'Manage' : 'Connect';
+  const active = canonical.creds.active;
   const mark = anyConnected ? '●' : '○';
+
+  // Method labels are the only interactive surface — no separate button.
+  // Click any label → opens the cred dialog at the canonical spec (mixed
+  // variant exposes both Connect-subscription and Paste-API-key flows;
+  // 'none' variant covers Local/Clemson settings). Visual styling tells
+  // the rest: filled = connected & active, outlined = connected, dim = not
+  // connected. Disconnect + active-method switching live inside the dialog.
+  const methodChip = (label, method, connected) => {
+    const isActive = active === method && connected;
+    const classes = [
+      'provider-method',
+      connected ? 'is-connected' : '',
+      isActive ? 'is-active' : '',
+    ]
+      .filter(Boolean)
+      .join(' ');
+    const tooltip = isActive
+      ? canonical.creds.accountEmail
+        ? `Active for class — ${canonical.creds.accountEmail}`
+        : 'Active for class'
+      : connected
+        ? 'Connected (click to manage)'
+        : 'Click to connect';
+    return `<span class="${classes}" data-method="${method}" tabindex="0" role="button" title="${escapeHtml(tooltip)}">${escapeHtml(label)}</span>`;
+  };
+
+  let methodsHtml;
+  if (group.hasMixed) {
+    methodsHtml = `
+      ${methodChip('Subscription', 'oauth', hasAnyOAuth)}
+      ${methodChip('API key', 'apiKey', hasAnyApiKey)}`;
+  } else {
+    const label =
+      canonical.credentialFileShape === 'none'
+        ? anyConnected
+          ? 'Configured'
+          : 'Set up'
+        : anyConnected
+          ? 'Manage'
+          : 'Connect';
+    methodsHtml = methodChip(label, 'settings', anyConnected);
+  }
 
   return `
     <div class="provider-row ${anyConnected ? 'is-connected' : ''}" data-group="${group.id}">
       <span class="provider-mark">${mark}</span>
       <strong class="provider-name">${escapeHtml(group.displayName)}</strong>
-      ${radioHtml}
-      <button class="btn provider-manage">${buttonLabel}</button>
+      <span class="provider-methods">${methodsHtml}</span>
     </div>`;
 }
 
@@ -845,45 +864,35 @@ function wireInstructorProvidersCard(body, specsById) {
     const canonical = specsById[group.canonicalSpecId];
     if (!canonical) return;
 
-    // Manage / Connect / Settings — open the existing cred dialog on the
-    // canonical spec. Its mixed variant already exposes both Connect-
-    // subscription and Paste-API-key flows in one place; the 'none'
-    // variant covers OMLX reachability + Clemson settings.
-    const btn = rowEl.querySelector('button.provider-manage');
-    if (btn) {
-      btn.addEventListener('click', () => {
-        openCredDialog({
-          providerId: canonical.id,
-          providerSpec: {
-            id: canonical.id,
-            displayName: group.displayName,
-            credentialFileShape: canonical.credentialFileShape,
-            apiKey: canonical.apiKeyPlaceholder
-              ? { placeholder: canonical.apiKeyPlaceholder }
-              : undefined,
-          },
-          currentCredState: {
-            hasOAuth: canonical.creds.hasOAuth,
-            hasApiKey: canonical.creds.hasApiKey,
-            activeMethod: canonical.creds.active,
-            accountEmail: canonical.creds.accountEmail || '',
-          },
-          onSaved: () => renderInstructorProvidersCard(body),
-        });
+    // Click any method chip → open the cred dialog on the canonical spec.
+    // The dialog's mixed variant exposes Connect-subscription + Paste-API-
+    // key + active-method switching + disconnect all in one place; the
+    // 'none' variant handles OMLX reachability / Clemson settings. Enter
+    // and Space activate too (chips have role=button + tabindex=0).
+    const open = () =>
+      openCredDialog({
+        providerId: canonical.id,
+        providerSpec: {
+          id: canonical.id,
+          displayName: group.displayName,
+          credentialFileShape: canonical.credentialFileShape,
+          apiKey: canonical.apiKeyPlaceholder ? { placeholder: canonical.apiKeyPlaceholder } : undefined,
+        },
+        currentCredState: {
+          hasOAuth: canonical.creds.hasOAuth,
+          hasApiKey: canonical.creds.hasApiKey,
+          activeMethod: canonical.creds.active,
+          accountEmail: canonical.creds.accountEmail || '',
+        },
+        onSaved: () => renderInstructorProvidersCard(body),
       });
-    }
-
-    // Active-method radio (mixed groups only).
-    rowEl.querySelectorAll(`input[name="active-${groupId}"]`).forEach((input) => {
-      input.addEventListener('change', async () => {
-        const r = await fetch(`/api/me/providers/${canonical.id}/active`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          credentials: 'same-origin',
-          body: JSON.stringify({ active: input.value }),
-        });
-        if (!r.ok) alert(`Couldn't switch active method for ${group.displayName} (${r.status}).`);
-        renderInstructorProvidersCard(body);
+    rowEl.querySelectorAll('.provider-method').forEach((chip) => {
+      chip.addEventListener('click', open);
+      chip.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          open();
+        }
       });
     });
   });
