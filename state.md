@@ -105,20 +105,22 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `main`
-- **Last tag:** `multi-provider-models-tab-complete-2026-05-26` (46 commits ahead)
+- **Last tag:** `multi-provider-models-tab-complete-2026-05-26` (47 commits ahead)
 
 ### Working tree
 
 ```
-## main...origin/main [ahead 35]
+## main...origin/main [ahead 36]
  M config/playground-seats.json
-M  src/channels/playground/public/tabs/chat.js
+M  src/channels/playground/api/models-tab-state.ts
+M  src/channels/playground/public/tabs/models.js
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+a0da6e7 feat(playground/chat): latency in pi message-end stats + turn totals
 32ea930 fix(playground/chat): collapse empty post-tool gpt-5.x turn into a note
 3657abe feat(playground/models): pre-add probe — fail fast with the upstream's error
 be704d4 fix(pi): per-modelProvider continuation + duplicate-item recovery + Models tab refresh button
@@ -133,9 +135,8 @@ a50f538 refactor(playground/home): split chip state from settings — gear icon 
 913f955 fix(playground/cred-dialog): proper internal layout + helpful state-expired hint
 243411f fix(playground/home): single Apply button on Class Controls with dirty tracking
 d7cf2e8 fix(playground/home): visible cred dialog + on-row active radio + Class Controls Apply
-3d169ed refactor(playground/home): clickable method chips, no separate button
 ```
 
 ### Last refresh
 
-2026-05-28T20:53:25Z
+2026-05-28T21:01:31Z

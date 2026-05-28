@@ -151,6 +151,66 @@ async function omlxLiveCatalog(staticEntries: readonly ModelEntry[]): Promise<Mo
   return out;
 }
 
+// Clemson endpoint live-discovery: same shape as OMLX (OpenAI-compatible
+// /v1/models), just a different URL and a different bearer token. Direct
+// fetch — model-discovery's registry only knows the per-provider adapters
+// today and Clemson doesn't have one. Cached per-call by the caller's
+// `refreshSpec` semantics; not de-duplicated across concurrent requests.
+let clemsonCache: { entries: ModelEntry[]; expiresAt: number } | null = null;
+const CLEMSON_CACHE_MS = 60_000;
+
+async function clemsonLiveCatalog(staticEntries: readonly ModelEntry[]): Promise<ModelEntry[]> {
+  const now = Date.now();
+  if (clemsonCache && clemsonCache.expiresAt > now) return clemsonCache.entries;
+
+  const env = (await import('../../../env.js')).readEnvFile(['CAMPUS_LLM_BASE_URL', 'CAMPUS_LLM_API_KEY']);
+  const base = (env.CAMPUS_LLM_BASE_URL || 'https://llm.rcd.clemson.edu').replace(/\/$/, '');
+  const key = env.CAMPUS_LLM_API_KEY;
+  if (!key) {
+    clemsonCache = { entries: [], expiresAt: now + CLEMSON_CACHE_MS };
+    return [];
+  }
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 4000);
+  let ids: string[] = [];
+  try {
+    const res = await fetch(`${base}/v1/models`, {
+      signal: ctrl.signal,
+      headers: { authorization: `Bearer ${key}` },
+    });
+    if (res.ok) {
+      const json = (await res.json()) as { data?: Array<{ id?: string }> };
+      ids = (json.data ?? []).map((m) => m.id).filter((id): id is string => typeof id === 'string');
+    }
+  } catch {
+    /* network blip — return whatever static catalog covers */
+  } finally {
+    clearTimeout(timer);
+  }
+  const known = new Set(staticEntries.map((e) => e.id));
+  const discovered: ModelEntry[] = [];
+  for (const id of ids) {
+    if (known.has(id)) continue;
+    discovered.push({
+      id,
+      modelProvider: 'clemson',
+      displayName: id,
+      origin: 'cloud',
+      costPer1kTokensUsd: 0,
+      modalities: ['text'],
+      chips: ['🏛 Clemson', '🆓 free', '🔍 discovered'],
+      notes: 'Discovered live from Clemson RCD /v1/models.',
+    });
+  }
+  clemsonCache = { entries: discovered, expiresAt: now + CLEMSON_CACHE_MS };
+  return discovered;
+}
+
+/** Test seam / refresh-button cache buster. */
+export function resetClemsonCache(): void {
+  clemsonCache = null;
+}
+
 const REACHABILITY_CACHE_MS = 30_000;
 
 /** Exported so tests / the future re-test button can bust the cache. */
@@ -214,18 +274,18 @@ export async function handleGetModelsTabState(input: {
 
   if (input.refreshSpec) {
     reachabilityCache.delete(input.refreshSpec);
-    // The model-discovery cache is keyed by provider-adapter name (claude
-    // / codex / local), not spec id. Map specId → adapter name where
-    // they differ. omlx is the only OMLX/local discoverable today.
+    // model-discovery's cache is keyed by adapter name (claude / codex /
+    // local). Map specId → adapter name where they differ.
     const SPEC_TO_DISCOVERY: Record<string, string> = {
       claude: 'claude',
       codex: 'codex',
       'openai-platform': 'codex',
       omlx: 'local',
-      clemson: 'local', // clemson uses no discovery path today; harmless
     };
     const adapter = SPEC_TO_DISCOVERY[input.refreshSpec];
     if (adapter) resetCacheForProvider(adapter);
+    // Clemson has its own live-fetch cache, not in model-discovery.
+    if (input.refreshSpec === 'clemson') resetClemsonCache();
   }
 
   const providers = await Promise.all(
@@ -252,13 +312,20 @@ export async function handleGetModelsTabState(input: {
       };
       const classPoolReady = classPoolReadyForSpec(ownerId, spec.id);
       const derived = deriveProviderState({ spec: facts, policy, creds, reachable, classPoolReady });
-      // OMLX-specific: live-augment the catalog with whatever the local
-      // server is currently serving. Hidden specs skip the query.
+      // Live-augment catalog for providers with a discoverable /v1/models:
+      //   omlx    → mlx-omni-server on host
+      //   clemson → Clemson RCD endpoint
+      // Hidden specs skip the query.
       const staticEntries = spec.catalogModels ?? [];
       let fullCatalog: ModelEntry[] = staticEntries;
-      if (spec.id === 'omlx' && derived.state !== 'HIDDEN') {
-        const live = await omlxLiveCatalog(staticEntries);
-        fullCatalog = [...staticEntries, ...live];
+      if (derived.state !== 'HIDDEN') {
+        if (spec.id === 'omlx') {
+          const live = await omlxLiveCatalog(staticEntries);
+          fullCatalog = [...staticEntries, ...live];
+        } else if (spec.id === 'clemson') {
+          const live = await clemsonLiveCatalog(staticEntries);
+          fullCatalog = [...staticEntries, ...live];
+        }
       }
       return {
         id: spec.id,

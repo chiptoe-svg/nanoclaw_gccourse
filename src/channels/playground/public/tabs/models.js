@@ -213,13 +213,16 @@ function renderProviderSection(provider, rootEl) {
 
   section.appendChild(headerDiv);
 
-  // Model grid
+  // Model grid — filter out any models the user ✕'d earlier (per-agent
+  // localStorage hide list, busted on refresh).
   const grid = document.createElement('div');
   grid.className = 'model-grid';
-  for (const model of provider.catalogModels) {
+  const hidden = getHideList(provider.canonicalSpecId || provider.id);
+  const visibleModels = provider.catalogModels.filter((m) => !hidden.has(m.id));
+  for (const model of visibleModels) {
     grid.appendChild(renderModelCard(model, provider, rootEl));
   }
-  if (provider.catalogModels.length === 0) {
+  if (visibleModels.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'muted';
     empty.style.cssText = 'grid-column:1/-1;padding:12px';
@@ -237,6 +240,34 @@ function renderProviderSection(provider, rootEl) {
 function renderModelCard(model, group, rootEl) {
   const card = document.createElement('div');
   card.className = `model-card origin-${model.origin || 'cloud'}`;
+  card.style.position = 'relative';
+
+  // ✕ delete affordance — hides this model from the tab via the
+  // per-agent hide list. Refresh (or removing it from the list) brings
+  // it back. Lives on every card; cheap.
+  const deleteBtn = document.createElement('button');
+  deleteBtn.type = 'button';
+  deleteBtn.className = 'model-card-delete';
+  deleteBtn.textContent = '✕';
+  deleteBtn.title = 'Hide this model from the Models tab (refresh to restore)';
+  deleteBtn.style.cssText =
+    'position:absolute;top:6px;right:8px;width:18px;height:18px;line-height:1;font-size:11px;background:transparent;color:#aaa;border:1px solid transparent;border-radius:3px;cursor:pointer;padding:0';
+  deleteBtn.addEventListener('mouseenter', () => {
+    deleteBtn.style.background = '#fdecea';
+    deleteBtn.style.color = '#922b21';
+    deleteBtn.style.borderColor = '#f5b7b1';
+  });
+  deleteBtn.addEventListener('mouseleave', () => {
+    deleteBtn.style.background = 'transparent';
+    deleteBtn.style.color = '#aaa';
+    deleteBtn.style.borderColor = 'transparent';
+  });
+  deleteBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    hideModel(group.canonicalSpecId || group.id, model.id);
+    card.remove();
+  });
+  card.appendChild(deleteBtn);
 
   // Selected = the model id is in allowedModels under ANY name that
   // belongs to this group: spec id OR catalog modelProvider name. The two
@@ -417,16 +448,45 @@ async function toggleModel(model, group, card, rootEl) {
 }
 
 async function refreshSection(specId, rootEl) {
-  // The server-side handler busts model-discovery + reachability caches
-  // for the given spec id, then re-derives state from a fresh probe.
-  // We then re-render the whole Models tab against the new response.
+  // Two parts to a refresh:
+  //   1. server-side cache bust — model-discovery + reachability + (for
+  //      clemson) the live-fetch cache. Returns a fresh derived state.
+  //   2. local hide-list bust — anything the user ✕'d earlier in this
+  //      group becomes visible again. Per user's request: refresh
+  //      restores deleted models.
   const folder = window.__pg && window.__pg.agent && window.__pg.agent.folder;
   if (!folder) return;
+  clearHideList(specId);
   await fetch(
     `/api/me/models-tab-state?agentGroupId=${encodeURIComponent(folder)}&refresh=${encodeURIComponent(specId)}`,
     { credentials: 'same-origin' },
   );
   await loadModels(rootEl);
+}
+
+/** localStorage-backed per-agent hide list. Key: `hidden-models:<folder>:<specId>`. */
+function hideListKey(specId) {
+  const folder = (window.__pg && window.__pg.agent && window.__pg.agent.folder) || '';
+  return `hidden-models:${folder}:${specId}`;
+}
+function getHideList(specId) {
+  try {
+    const raw = localStorage.getItem(hideListKey(specId));
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+function setHideList(specId, set) {
+  try { localStorage.setItem(hideListKey(specId), JSON.stringify([...set])); } catch { /* quota — ignore */ }
+}
+function hideModel(specId, modelId) {
+  const set = getHideList(specId);
+  set.add(modelId);
+  setHideList(specId, set);
+}
+function clearHideList(specId) {
+  try { localStorage.removeItem(hideListKey(specId)); } catch { /* ignore */ }
 }
 
 /**
