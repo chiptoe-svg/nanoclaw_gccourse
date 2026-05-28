@@ -997,6 +997,22 @@ select.model-changed {
 .provider-row:last-child { border-bottom: none; }
 .provider-active { font-size: 12px; color: #555; margin-top: 4px; }
 .provider-active label { margin-right: 12px; }
+/* Instructor view — group + sub-row layout. One group per user-facing
+   provider (OpenAI/Anthropic/Local/Clemson); sub-rows expose each auth
+   method that group offers. */
+.provider-group { padding: 10px 0; border-bottom: 1px solid #eee; }
+.provider-group:last-child { border-bottom: none; }
+.provider-group-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.provider-group-header strong { font-size: 14px; }
+.provider-sub { display: flex; align-items: center; gap: 10px; padding: 4px 0 4px 14px; font-size: 13px; }
+.provider-sub.is-connected { color: #1d3b1d; }
+.provider-sub-mark { width: 14px; color: #6b6b6b; }
+.provider-sub.is-connected .provider-sub-mark { color: #2a8b34; }
+.provider-sub-label { min-width: 180px; }
+.provider-sub-status { flex: 1; color: #555; font-size: 12px; }
+.provider-sub-active { font-size: 11px; color: #555; display: inline-flex; align-items: center; gap: 4px; }
+.provider-sub-action { font-size: 12px; padding: 3px 8px; }
+.provider-apply[disabled] { opacity: 0.5; cursor: not-allowed; }
 .provider-paste-form { margin-top: 8px; padding: 8px; background: #f8fafe; border: 1px solid #d6e2f5; border-radius: 6px; }
 .provider-paste-form .paste-open-link { margin-bottom: 10px; display: flex; align-items: center; flex-wrap: wrap; }
 .provider-paste-form .paste-open-link a { text-decoration: none; }

@@ -89,7 +89,12 @@ import {
   handlePutModels,
   handleToggleDefaultModel,
 } from './api/models.js';
-import { handleGetClassControls, handlePutClassControls, DEFAULT_CLASS_ID } from './api/class-controls.js';
+import {
+  handleGetClassControls,
+  handlePutClassControls,
+  handleApplyProviderToClass,
+  DEFAULT_CLASS_ID,
+} from './api/class-controls.js';
 import { handleGetModelsTabState } from './api/models-tab-state.js';
 import { handleGetClassBase, handlePutClassBase } from './api/class-base.js';
 import { handleAddStudent, handleGetTunnel, handleStopTunnel } from './api/students-admin.js';
@@ -673,6 +678,21 @@ export async function route(
     }
     const body = await readJsonBody(req);
     const r = handlePutClassControls(body);
+    if (r.status === 200) pushToAll('class-controls-changed', r.body);
+    return send(res, r.status, r.body);
+  }
+
+  // POST /api/class-controls/apply-from-creds — owner-only. Body: { specIds: [] }.
+  // Sets allow=true + provideDefault=true on each member spec; leaves allowByo
+  // alone. Used by the instructor LLM Providers card's per-group "Apply to
+  // class" button. Broadcasts the same SSE event as PUT so any open Class
+  // Controls form refreshes.
+  if (method === 'POST' && url.pathname === '/api/class-controls/apply-from-creds') {
+    if (!session.userId || !isOwner(session.userId)) {
+      return send(res, 403, { error: 'owner role required' });
+    }
+    const body = await readJsonBody(req);
+    const r = handleApplyProviderToClass(body as { specIds?: unknown });
     if (r.status === 200) pushToAll('class-controls-changed', r.body);
     return send(res, r.status, r.body);
   }

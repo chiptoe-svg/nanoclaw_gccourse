@@ -15,6 +15,7 @@ import fs from 'fs';
 import path from 'path';
 
 import { PROJECT_ROOT } from '../../../config.js';
+import { listProviderSpecs } from '../../../providers/auth-registry.js';
 import type { ApiResult } from './me.js';
 
 const CONFIG_PATH = path.join(PROJECT_ROOT, 'config', 'class-controls.json');
@@ -110,6 +111,43 @@ export function writeClassControls(cc: ClassControls): void {
 
 export function handleGetClassControls(): ApiResult<ClassControls> {
   return { status: 200, body: readClassControls() };
+}
+
+/**
+ * Apply-to-class: for each given spec id, set allow=true AND
+ * provideDefault=true (leave allowByo alone). Called by the instructor
+ * LLM Providers card's "Apply to class" button. Server validates that
+ * each spec id is actually a registered provider — prevents clients
+ * from creating policies for unknown specs.
+ *
+ * The mapping from a user-facing "group" to its underlying spec ids
+ * lives client-side in provider-groups.js; this endpoint just takes the
+ * already-expanded specIds.
+ */
+export function handleApplyProviderToClass(body: { specIds?: unknown }): ApiResult<ClassControls> {
+  if (!Array.isArray(body.specIds) || body.specIds.length === 0) {
+    return { status: 400, body: { error: 'specIds: non-empty array required' } };
+  }
+  const registered = new Set(listProviderSpecs().map((s) => s.id));
+  const cc = readClassControls();
+  const cls = cc.classes[DEFAULT_CLASS_ID] ?? structuredClone(DEFAULT_CLASS_CONTROL);
+  let touched = 0;
+  for (const sid of body.specIds) {
+    if (typeof sid !== 'string' || !registered.has(sid)) continue;
+    const current = cls.providers[sid] ?? { allow: false, provideDefault: false, allowByo: false };
+    cls.providers[sid] = { ...current, allow: true, provideDefault: true };
+    touched++;
+  }
+  if (touched === 0) {
+    return { status: 400, body: { error: 'no recognized specIds in request' } };
+  }
+  cc.classes[DEFAULT_CLASS_ID] = cls;
+  try {
+    writeClassControls(cc);
+    return { status: 200, body: cc };
+  } catch (err) {
+    return { status: 500, body: { error: (err as Error).message } };
+  }
 }
 
 export function handlePutClassControls(body: Partial<ClassControls>): ApiResult<ClassControls> {

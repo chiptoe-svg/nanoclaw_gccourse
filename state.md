@@ -81,6 +81,7 @@ Pointers, not duplications. Read the relevant one when you're going deep.
 
 Append-only, newest first. One line per decision: *what + 1-line why*. Prune (move to archive) when older than ~6 months.
 
+- **2026-05-28** — Phase C-2: instructor-view LLM Providers card. Why: the existing per-spec student-flavored card was the wrong shape for the instructor (no Apply-to-class affordance, two duplicate OpenAI rows). New `renderInstructorProvidersCard` (Home tab) renders one row per `PROVIDER_GROUPS` entry with sub-rows per auth method (OAuth / API key / Settings), active-method radio when ≥2 sub-rows connected, and a per-row "Apply to class" button that POSTs to a new `/api/class-controls/apply-from-creds` endpoint (owner-only). Sub-row connected state can fall back across sibling specs via `alsoCheck` (e.g. Platform API key sub-row reads codex.apiKey too — necessary because C-1 migrated OPENAI_API_KEY to codex while the canonical OpenAI API-key bucket post-grouping is openai-platform). Student view branch is unchanged. Plan: `plans/instructor-class-pool-and-grouping.md` Phase C-2.
 - **2026-05-28** — Phase C-1: class pool = owner's per-user creds. Why: makes the LLM Providers card the single source of truth for class-pool credentials (was `.env`). `classroom-provider-resolver.ts`'s `classPoolCreds` default now loads the owner's creds via `loadStudentProviderCreds`; the `.env`-to-owner-creds migration (`env-to-owner-migration.ts`) runs once at startup (marker file `data/.env-to-owner-migration-done` gates re-runs). `.env` API keys left in place as recovery hatch but the resolver no longer prefers them when the owner has matching creds. Plan: `plans/instructor-class-pool-and-grouping.md`.
 - **2026-05-28** — Class Controls form on Home tab fixed + reshaped around 4 hard-coded user-facing provider groups (OpenAI, Anthropic, Local, Clemson) with renamed columns (Visible / Provided / Let students auth themselves). Why: `21d2c71` had removed `const PROVIDERS = [...]` for the Home Providers card refactor but left two refs in `renderClassControlsForm`, throwing ReferenceError on render; while fixing, switched to a `provider-groups.js` single source of truth. Plan: `plans/class-controls-provider-grouping.md`. Commit: `5b765ed`.
 - **2026-05-26** — Clemson RCD-hosted LLM provider added + pi-ai integration gap closed for OMLX and Clemson. Why: institution-paid endpoint (FERPA-friendly, no per-student billing) becomes the preferred class-pool default; the "pi-ai doesn't know about local/clemson" gap from mptab-15 closed by synthesizing a `Model<'openai-completions'>` directly in `pi-model.ts` (pi-ai's `Provider`/`Api` types are open-ended strings, so a hand-rolled Model works without upstream PR). Load-bearing detail: baseUrl must include `/v1` because the OpenAI Node SDK appends `/chat/completions` directly. Live-verified: pi-test agent invokes both `clemson/gptoss-20b` and `local/Qwen3.6-35B-A3B` end-to-end with real token accounting. Commits: `9346fc0` (Clemson provider surface), `cdbc213` (pi-ai integration).
@@ -103,19 +104,19 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `main`
-- **Last tag:** `multi-provider-models-tab-complete-2026-05-26` (27 commits ahead)
+- **Last tag:** `multi-provider-models-tab-complete-2026-05-26` (28 commits ahead)
 
 ### Working tree
 
 ```
-## main...origin/main [ahead 16]
+## main...origin/main [ahead 17]
  M config/playground-seats.json
-M  src/classroom-provider-resolver.test.ts
-M  src/classroom-provider-resolver.ts
-A  src/env-to-owner-migration.test.ts
-A  src/env-to-owner-migration.ts
-M  src/index.ts
-M  src/modules/permissions/db/user-roles.ts
+M  src/channels/playground/api-routes.ts
+M  src/channels/playground/api/class-controls.test.ts
+M  src/channels/playground/api/class-controls.ts
+M  src/channels/playground/public/provider-groups.js
+M  src/channels/playground/public/style.css
+M  src/channels/playground/public/tabs/home.js
 M  state.md
 ?? .codegraph/
 ```
@@ -123,6 +124,7 @@ M  state.md
 ### Recent commits (last 15)
 
 ```
+24f86da feat(classroom): class pool = owner's per-user creds (Phase C-1)
 4a5f555 docs(plan): instructor class-pool + provider grouping (Phase C)
 5b765ed fix(playground/home): un-break Class Controls form, group OpenAI specs into one row
 557c42d fix(playground/chat): derive providerAuth via auth-registry, not legacy model-providers
@@ -137,9 +139,8 @@ a870b97 feat(container/proxy-fetch): propagate X-NanoClaw-Session-Id alongside a
 8f7f691 fix(proxy-payload-log): busy_timeout pragma + batch-prune on every Nth write
 fc1b51d feat(proxy-payload-log): per-session storage layer with 50-row retention
 929819b docs(plan): proxy payload log foundation — 6-task TDD plan
-f0f103a docs(spec): proxy payload log foundation
 ```
 
 ### Last refresh
 
-2026-05-28T16:34:38Z
+2026-05-28T16:52:21Z
