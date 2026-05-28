@@ -101,22 +101,26 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `feat/proxy-payload-log`
-- **Last tag:** `multi-provider-models-tab-complete-2026-05-26` (22 commits ahead)
+- **Last tag:** `multi-provider-models-tab-complete-2026-05-26` (23 commits ahead)
 
 ### Working tree
 
 ```
 ## feat/proxy-payload-log
  M config/playground-seats.json
-M  src/channels/playground/api-routes.ts
-M  src/channels/playground/api/payloads.test.ts
-M  src/channels/playground/api/payloads.ts
+M  container/agent-runner/src/db/connection.ts
+M  container/agent-runner/src/providers/pi-mcp-bridge.test.ts
+ M src/channels/playground/api-routes.ts
+ M src/channels/playground/api/models-tab-state.ts
+ M src/channels/playground/api/models.test.ts
+ M src/channels/playground/api/models.ts
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+f4b0fec fix(api/payloads): reject path-traversal IDs + sanitize numeric query params
 b911658 feat(api): GET /api/sessions/:id/payloads handler for trace/context panel
 f13ea4e fix(credential-proxy): memoize openStore failures + cleanup notes
 f797c05 feat(credential-proxy): capture request bodies to per-session payload log
@@ -131,9 +135,8 @@ f0f103a docs(spec): proxy payload log foundation
 bb4874d docs(vision): reconcile roadmap with shipped state — 2026-05-26 audit
 96b09cf fix(agents): buildModalShell builds actions skeleton before calling bodyFn
 d413236 feat(provider): mirror codex's 5-model lineup on openai-platform
-87f0e18 feat(provider): rename OpenAI providers to subscription / API split
 ```
 
 ### Last refresh
 
-2026-05-27T14:54:11Z
+2026-05-28T15:35:47Z

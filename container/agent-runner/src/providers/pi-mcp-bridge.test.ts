@@ -66,7 +66,12 @@ describe('createPiMcpBridge', () => {
         platform_id TEXT,
         channel_type TEXT,
         thread_id TEXT,
-        content TEXT NOT NULL
+        content TEXT NOT NULL,
+        tokens_in INTEGER,
+        tokens_out INTEGER,
+        latency_ms INTEGER,
+        provider TEXT,
+        model TEXT
       );
     `);
     outbound.close();
