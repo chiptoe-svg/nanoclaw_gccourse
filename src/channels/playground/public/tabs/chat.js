@@ -520,24 +520,32 @@ function finalizeTurn(turnEl) {
   const foot = turnEl.querySelector('.trace-turn-foot');
   if (!foot) return;
   const agentCall = turnEl.querySelector('.trace-agent-call');
-  let tokensIn = 0, tokensOut = 0, cost = 0;
+  let tokensIn = 0, tokensOut = 0, cost = 0, latencyMs = 0;
   if (agentCall) {
     tokensIn  = parseFloat(agentCall.dataset.tokensIn  || '0') || 0;
     tokensOut = parseFloat(agentCall.dataset.tokensOut || '0') || 0;
     cost      = parseFloat(agentCall.dataset.cost      || '0') || 0;
+    latencyMs = parseFloat(agentCall.dataset.latencyMs || '0') || 0;
   } else {
-    // pi-event turns — aggregate any cost annotations from pi message_end rows.
+    // pi-event turns — sum cost + latency across every pi message_end bubble.
     for (const li of turnEl.querySelectorAll('[data-cost]')) {
       cost += parseFloat(li.dataset.cost || '0') || 0;
     }
+    for (const li of turnEl.querySelectorAll('[data-latency-ms]')) {
+      latencyMs += parseFloat(li.dataset.latencyMs || '0') || 0;
+    }
   }
-  if (tokensIn === 0 && tokensOut === 0 && cost === 0) {
+  if (tokensIn === 0 && tokensOut === 0 && cost === 0 && latencyMs === 0) {
     foot.textContent = '(no usage)';
     return;
   }
   const parts = [];
   if (tokensIn > 0) parts.push(`${tokensIn} in`);
   if (tokensOut > 0) parts.push(`${tokensOut} out`);
+  if (latencyMs > 0) {
+    const sec = latencyMs / 1000;
+    parts.push(sec < 10 ? `${sec.toFixed(1)}s` : `${Math.round(sec)}s`);
+  }
   if (cost > 0) parts.push(cost < 0.001 ? `$${cost.toFixed(5)}` : `$${cost.toFixed(4)}`);
   foot.textContent = `turn total: ${parts.join(' · ')}`;
 }
@@ -874,6 +882,9 @@ function piHandleMessageStart(trace, event, st) {
   st.messageTextEl = bodyEl;
   st.messagePreviewEl = previewEl;
   st.messageDetails = details;
+  // Wall-clock start for the latency stat in piHandleMessageEnd. Pi
+  // emits message.timestamp; fall back to Date.now() if absent.
+  st.messageStartedAt = (event.message && event.message.timestamp) || Date.now();
   // Reset thinking state for the new message.
   st.thinkingDetails = null;
   st.thinkingBodyEl = null;
@@ -1064,6 +1075,15 @@ function piHandleMessageEnd(trace, event, st) {
   if (typeof usage.cacheRead === 'number' && usage.cacheRead > 0) parts.push(`${usage.cacheRead} cache-`);
   if (typeof usage.cacheWrite === 'number' && usage.cacheWrite > 0) parts.push(`${usage.cacheWrite} cache+`);
   if (typeof usage.output === 'number') parts.push(`${usage.output} out`);
+  // Latency: message_end timestamp minus message_start timestamp the
+  // wirer stashed on st. Pi-ai emits ms-precision timestamps; if
+  // either side is missing we just drop the stat.
+  const endedAt = (event.message && event.message.timestamp) || Date.now();
+  if (typeof st.messageStartedAt === 'number' && endedAt > st.messageStartedAt) {
+    const sec = (endedAt - st.messageStartedAt) / 1000;
+    parts.push(sec < 10 ? `${sec.toFixed(1)}s` : `${Math.round(sec)}s`);
+    st.messageBubble.dataset.latencyMs = String(endedAt - st.messageStartedAt);
+  }
   if (usage.cost && typeof usage.cost.total === 'number') {
     const c = usage.cost.total;
     parts.push(c < 0.001 ? `$${c.toFixed(5)}` : `$${c.toFixed(4)}`);
