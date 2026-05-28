@@ -122,9 +122,22 @@ async function main(): Promise<void> {
     nanoclawSessionId: process.env.NANOCLAW_SESSION_ID || undefined,
   });
 
+  // Pi routes to many upstream model providers (anthropic, openai-codex,
+  // openai-platform, local, clemson, …). Each backend keeps its own
+  // session/continuation format — anthropic conversation history is not
+  // valid input for the OpenAI Responses API and vice versa. Key the
+  // continuation slot by `pi:<modelProvider>` so flipping modelProvider
+  // naturally starts a fresh session for the new backend instead of
+  // replaying the previous backend's items (which produced "Duplicate
+  // item found with id msg_3" 400s from chatgpt.com).
+  const continuationKey =
+    providerName === 'pi' && config.modelProvider
+      ? `pi:${String(config.modelProvider).toLowerCase()}`
+      : providerName;
+
   await runPollLoop({
     provider,
-    providerName,
+    providerName: continuationKey,
     cwd: CWD,
     systemContext: { instructions },
   });

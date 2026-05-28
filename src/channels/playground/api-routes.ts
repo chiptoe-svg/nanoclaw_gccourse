@@ -351,10 +351,12 @@ export async function route(
   // registered provider (class policy + personal creds + reachability).
   if (method === 'GET' && url.pathname === '/api/me/models-tab-state') {
     const agentGroupId = url.searchParams.get('agentGroupId') ?? '';
+    const refreshSpec = url.searchParams.get('refresh') || undefined;
     const r = await handleGetModelsTabState({
       userId: session.userId ?? '',
       agentGroupId,
       classId: DEFAULT_CLASS_ID,
+      refreshSpec,
     });
     return send(res, r.status, r.body);
   }

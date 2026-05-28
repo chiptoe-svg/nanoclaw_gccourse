@@ -149,6 +149,38 @@ function renderProviderSection(provider, rootEl) {
 
   headerDiv.appendChild(titleGroup);
 
+  // Per-section ↻ refresh. Busts the upstream /v1/models discovery
+  // cache + reachability cache for the canonical spec of this group,
+  // then re-renders the whole tab against the fresh server response.
+  const refreshBtn = document.createElement('button');
+  refreshBtn.type = 'button';
+  refreshBtn.className = 'model-section-refresh';
+  refreshBtn.textContent = '↻';
+  refreshBtn.title = `Re-fetch ${provider.displayName} model list from the upstream server`;
+  refreshBtn.style.cssText =
+    'background:transparent;border:1px solid transparent;color:#888;font-size:14px;line-height:1;padding:2px 8px;border-radius:4px;cursor:pointer;margin-left:auto;margin-right:8px';
+  refreshBtn.addEventListener('mouseenter', () => {
+    refreshBtn.style.background = '#f1faf3';
+    refreshBtn.style.color = '#2a8b34';
+    refreshBtn.style.borderColor = '#cfe6d3';
+  });
+  refreshBtn.addEventListener('mouseleave', () => {
+    refreshBtn.style.background = 'transparent';
+    refreshBtn.style.color = '#888';
+    refreshBtn.style.borderColor = 'transparent';
+  });
+  refreshBtn.addEventListener('click', async () => {
+    refreshBtn.disabled = true;
+    refreshBtn.textContent = '…';
+    try {
+      await refreshSection(provider.canonicalSpecId || provider.id, rootEl);
+    } finally {
+      refreshBtn.textContent = '↻';
+      refreshBtn.disabled = false;
+    }
+  });
+  headerDiv.appendChild(refreshBtn);
+
   if (provider.actionLabel) {
     const actionLink = document.createElement('a');
     actionLink.className = 'provider-action';
@@ -363,6 +395,19 @@ async function toggleModel(modelId, group, card, rootEl) {
       updateToggleLabel(card, true);
     }
   }
+}
+
+async function refreshSection(specId, rootEl) {
+  // The server-side handler busts model-discovery + reachability caches
+  // for the given spec id, then re-derives state from a fresh probe.
+  // We then re-render the whole Models tab against the new response.
+  const folder = window.__pg && window.__pg.agent && window.__pg.agent.folder;
+  if (!folder) return;
+  await fetch(
+    `/api/me/models-tab-state?agentGroupId=${encodeURIComponent(folder)}&refresh=${encodeURIComponent(specId)}`,
+    { credentials: 'same-origin' },
+  );
+  await loadModels(rootEl);
 }
 
 function groupAllowedNames(group) {

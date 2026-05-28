@@ -97,7 +97,7 @@ import { listProviderSpecs } from '../../../providers/auth-registry.js';
 import { DEFAULT_CLASS_ID, readClassControls } from './class-controls.js';
 import { loadStudentProviderCreds } from '../../../student-provider-auth.js';
 import { getOwnerUserId } from '../../../modules/permissions/db/user-roles.js';
-import { listAllForProvider } from '../../../model-discovery.js';
+import { listAllForProvider, resetCacheForProvider } from '../../../model-discovery.js';
 import type { ModelEntry } from '../../../model-catalog.js';
 
 // Mirrors SIBLING_API_KEY_SPECS in classroom-provider-resolver.ts — when
@@ -202,11 +202,31 @@ export async function handleGetModelsTabState(input: {
   userId: string;
   agentGroupId: string;
   classId: string;
+  /** Bust caches for one spec before computing. Used by the Models tab
+   *  per-section refresh button — clears the reachability cache + the
+   *  upstream /v1/models discovery cache for that provider. */
+  refreshSpec?: string;
 }): Promise<{ status: number; body: ModelsTabStateResponse }> {
   const cc = readClassControls();
   const policies = cc.classes[input.classId]?.providers ?? {};
   const specs = listProviderSpecs();
   const ownerId = getOwnerUserId();
+
+  if (input.refreshSpec) {
+    reachabilityCache.delete(input.refreshSpec);
+    // The model-discovery cache is keyed by provider-adapter name (claude
+    // / codex / local), not spec id. Map specId → adapter name where
+    // they differ. omlx is the only OMLX/local discoverable today.
+    const SPEC_TO_DISCOVERY: Record<string, string> = {
+      claude: 'claude',
+      codex: 'codex',
+      'openai-platform': 'codex',
+      omlx: 'local',
+      clemson: 'local', // clemson uses no discovery path today; harmless
+    };
+    const adapter = SPEC_TO_DISCOVERY[input.refreshSpec];
+    if (adapter) resetCacheForProvider(adapter);
+  }
 
   const providers = await Promise.all(
     specs.map(async (spec) => {

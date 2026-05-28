@@ -105,20 +105,26 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `main`
-- **Last tag:** `multi-provider-models-tab-complete-2026-05-26` (42 commits ahead)
+- **Last tag:** `multi-provider-models-tab-complete-2026-05-26` (43 commits ahead)
 
 ### Working tree
 
 ```
-## main...origin/main [ahead 31]
+## main...origin/main [ahead 32]
  M config/playground-seats.json
-M  src/channels/playground/api/direct-chat.ts
+M  container/agent-runner/src/index.ts
+M  container/agent-runner/src/providers/pi.ts
+M  src/channels/playground/api-routes.ts
+M  src/channels/playground/api/models-tab-state.ts
+M  src/channels/playground/public/tabs/models.js
+M  src/model-discovery.ts
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+a3cda47 fix(direct-chat): accept catalog modelProvider names (openai-codex, anthropic, ...)
 77e1bd8 fix(playground/models): recognize both namespaces in whitelist + write to catalog name
 2795cba fix(playground/chat): providerAuth keyed by modelProvider not spec id
 0f64b40 feat(models-tab): live-augment OMLX catalog from server + add claude-opus-4-7
@@ -133,9 +139,8 @@ d7cf2e8 fix(playground/home): visible cred dialog + on-row active radio + Class 
 d8e414f fix(playground/home): grid layout for instructor providers card, drop status text
 37606a6 refactor(playground/home): simplify instructor LLM Providers card per UX review
 95758c1 feat(playground/home): instructor-view LLM Providers card (Phase C-2)
-24f86da feat(classroom): class pool = owner's per-user creds (Phase C-1)
 ```
 
 ### Last refresh
 
-2026-05-28T20:35:24Z
+2026-05-28T20:45:27Z
