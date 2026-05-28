@@ -98,6 +98,7 @@ import { DEFAULT_CLASS_ID, readClassControls } from './class-controls.js';
 import { loadStudentProviderCreds } from '../../../student-provider-auth.js';
 import { getOwnerUserId } from '../../../modules/permissions/db/user-roles.js';
 import { listAllForProvider, resetCacheForProvider } from '../../../model-discovery.js';
+import { fetchHfMetadata } from '../../../hf-metadata.js';
 import type { ModelEntry } from '../../../model-catalog.js';
 
 // Mirrors SIBLING_API_KEY_SPECS in classroom-provider-resolver.ts — when
@@ -134,21 +135,21 @@ async function omlxLiveCatalog(staticEntries: readonly ModelEntry[]): Promise<Mo
     return [];
   }
   const known = new Set(staticEntries.map((e) => e.id));
-  const out: ModelEntry[] = [];
-  for (const h of hints) {
-    if (known.has(h.id)) continue;
-    out.push({
-      id: h.id,
-      modelProvider: 'local',
-      displayName: h.id,
-      origin: 'local',
-      costPer1kTokensUsd: 0,
-      modalities: ['text'],
-      chips: ['🆓 free', '💻 mlx local', '🔍 discovered'],
-      notes: h.note || 'Discovered live from your mlx-omni-server.',
-    });
-  }
-  return out;
+  const newIds = hints.filter((h) => !known.has(h.id));
+  // Parallel HF lookups so we don't serialise N round-trips.
+  const enriched = await Promise.all(newIds.map(async (h) => ({ h, hf: await fetchHfMetadata(h.id) })));
+  return enriched.map(({ h, hf }) => ({
+    id: h.id,
+    modelProvider: 'local',
+    displayName: h.id,
+    origin: 'local',
+    costPer1kTokensUsd: 0,
+    modalities: hf?.modalities ?? ['text'],
+    chips: ['🆓 free', '💻 mlx local', '🔍 discovered'],
+    paramCount: hf?.paramCount,
+    contextSize: hf?.contextSize,
+    notes: hf?.notes ?? h.note ?? 'Discovered live from your mlx-omni-server.',
+  }));
 }
 
 // Clemson endpoint live-discovery: same shape as OMLX (OpenAI-compatible
@@ -188,20 +189,20 @@ async function clemsonLiveCatalog(staticEntries: readonly ModelEntry[]): Promise
     clearTimeout(timer);
   }
   const known = new Set(staticEntries.map((e) => e.id));
-  const discovered: ModelEntry[] = [];
-  for (const id of ids) {
-    if (known.has(id)) continue;
-    discovered.push({
-      id,
-      modelProvider: 'clemson',
-      displayName: id,
-      origin: 'cloud',
-      costPer1kTokensUsd: 0,
-      modalities: ['text'],
-      chips: ['🏛 Clemson', '🆓 free', '🔍 discovered'],
-      notes: 'Discovered live from Clemson RCD /v1/models.',
-    });
-  }
+  const newIds = ids.filter((id) => !known.has(id));
+  const enriched = await Promise.all(newIds.map(async (id) => ({ id, hf: await fetchHfMetadata(id) })));
+  const discovered: ModelEntry[] = enriched.map(({ id, hf }) => ({
+    id,
+    modelProvider: 'clemson',
+    displayName: id,
+    origin: 'cloud',
+    costPer1kTokensUsd: 0,
+    modalities: hf?.modalities ?? ['text'],
+    chips: ['🏛 Clemson', '🆓 free', '🔍 discovered'],
+    paramCount: hf?.paramCount,
+    contextSize: hf?.contextSize,
+    notes: hf?.notes ?? 'Discovered live from Clemson RCD /v1/models.',
+  }));
   clemsonCache = { entries: discovered, expiresAt: now + CLEMSON_CACHE_MS };
   return discovered;
 }
