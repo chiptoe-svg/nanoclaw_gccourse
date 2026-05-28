@@ -105,20 +105,21 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `main`
-- **Last tag:** `multi-provider-models-tab-complete-2026-05-26` (41 commits ahead)
+- **Last tag:** `multi-provider-models-tab-complete-2026-05-26` (42 commits ahead)
 
 ### Working tree
 
 ```
-## main...origin/main [ahead 30]
+## main...origin/main [ahead 31]
  M config/playground-seats.json
-M  src/channels/playground/public/tabs/models.js
+M  src/channels/playground/api/direct-chat.ts
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+77e1bd8 fix(playground/models): recognize both namespaces in whitelist + write to catalog name
 2795cba fix(playground/chat): providerAuth keyed by modelProvider not spec id
 0f64b40 feat(models-tab): live-augment OMLX catalog from server + add claude-opus-4-7
 ab6eac0 fix: class-pool gating + chat dropdown only shows checked models
@@ -133,9 +134,8 @@ d8e414f fix(playground/home): grid layout for instructor providers card, drop st
 37606a6 refactor(playground/home): simplify instructor LLM Providers card per UX review
 95758c1 feat(playground/home): instructor-view LLM Providers card (Phase C-2)
 24f86da feat(classroom): class pool = owner's per-user creds (Phase C-1)
-4a5f555 docs(plan): instructor class-pool + provider grouping (Phase C)
 ```
 
 ### Last refresh
 
-2026-05-28T19:48:24Z
+2026-05-28T20:35:24Z

@@ -288,7 +288,7 @@ export async function handleDirectChat(body: {
   agentFolder?: unknown;
   reasoningEffort?: unknown;
 }): Promise<ApiResult<DirectChatResponse>> {
-  const provider = typeof body.provider === 'string' ? body.provider : '';
+  const rawProvider = typeof body.provider === 'string' ? body.provider : '';
   const model = typeof body.model === 'string' ? body.model : '';
   const messages = Array.isArray(body.messages) ? (body.messages as DirectChatMessage[]) : [];
   const agentFolder = typeof body.agentFolder === 'string' ? body.agentFolder : '';
@@ -296,8 +296,22 @@ export async function handleDirectChat(body: {
     body.reasoningEffort === 'low' || body.reasoningEffort === 'medium' || body.reasoningEffort === 'high'
       ? body.reasoningEffort
       : undefined;
-  if (!provider || !model) return { status: 400, body: { error: 'provider and model required' } };
+  if (!rawProvider || !model) return { status: 400, body: { error: 'provider and model required' } };
   if (messages.length === 0) return { status: 400, body: { error: 'messages array required' } };
+
+  // Chat tab sends catalog `modelProvider` names (openai-codex, anthropic,
+  // local, clemson, openai-platform). The dispatch branches below are keyed
+  // by handler-internal names (codex, claude, local, clemson). Normalize.
+  // Both openai-codex AND openai-platform route through /openai/v1 — the
+  // credential-proxy's sibling fallback (codex ↔ openai-platform) covers
+  // whichever bucket the owner's API key actually lives in.
+  const NORMALIZE: Record<string, string> = {
+    'openai-codex': 'codex',
+    'openai-platform': 'codex',
+    anthropic: 'claude',
+    // 'local', 'clemson', 'codex', 'claude' pass through unchanged
+  };
+  const provider = NORMALIZE[rawProvider] ?? rawProvider;
 
   // Three providers, two wire formats:
   //   codex / local → OpenAI Chat Completions (/openai/v1, /omlx/v1)
@@ -312,7 +326,7 @@ export async function handleDirectChat(body: {
     } else if (provider === 'claude') {
       dispatch = await dispatchAnthropic(model, messages);
     } else {
-      return { status: 400, body: { error: `direct-chat doesn't support provider ${provider} yet` } };
+      return { status: 400, body: { error: `direct-chat doesn't support provider ${rawProvider} yet` } };
     }
   } catch (err) {
     const e = err as { status?: number; message: string };
@@ -320,15 +334,17 @@ export async function handleDirectChat(body: {
   }
   const { text, tokensIn, tokensOut, tokensCached, tokensReasoning } = dispatch;
 
+  // Catalog lookup keys by catalog modelProvider (rawProvider), not the
+  // normalized handler key.
   const catalog = getModelCatalog();
-  const entry = catalog.find((e) => e.modelProvider === provider && e.id === model);
+  const entry = catalog.find((e) => e.modelProvider === rawProvider && e.id === model);
   const costUsd = priceFor(entry, tokensIn, tokensOut, tokensCached);
 
   // Best-effort: record into the agent's pseudo session-outbound so usage
   // aggregation picks it up. Failure is non-fatal.
   if (agentFolder) {
     const group = getAgentGroupByFolder(agentFolder);
-    if (group) recordDirectChatUsage(group.id, provider, model, text, tokensIn, tokensOut);
+    if (group) recordDirectChatUsage(group.id, rawProvider, model, text, tokensIn, tokensOut);
   }
 
   return {
