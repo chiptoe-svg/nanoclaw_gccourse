@@ -206,12 +206,13 @@ function renderModelCard(model, group, rootEl) {
   const card = document.createElement('div');
   card.className = `model-card origin-${model.origin || 'cloud'}`;
 
-  // Selected = the model id is in allowedModels under ANY of the group's
-  // member spec ids. Toggle writes to the canonical spec; deselect cleans
-  // every sibling so the wire stays consistent.
-  const memberIds = (group.members || []).map((m) => m.id);
+  // Selected = the model id is in allowedModels under ANY name that
+  // belongs to this group: spec id OR catalog modelProvider name. The two
+  // are different namespaces ("codex" vs "openai-codex", "omlx" vs
+  // "local") and historical data may use either.
+  const groupNames = groupAllowedNames(group);
   const isAllowed = allowedModelsCache.some(
-    (a) => memberIds.includes(a.modelProvider) && a.model === model.id,
+    (a) => groupNames.has(a.modelProvider) && a.model === model.id,
   );
   if (isAllowed) card.classList.add('selected');
 
@@ -308,22 +309,29 @@ function formatCostLatency(m) {
 }
 
 async function toggleModel(modelId, group, card, rootEl) {
-  const memberIds = (group.members || []).map((m) => m.id);
+  const groupNames = groupAllowedNames(group);
   const isAllowed = allowedModelsCache.some(
-    (a) => memberIds.includes(a.modelProvider) && a.model === modelId,
+    (a) => groupNames.has(a.modelProvider) && a.model === modelId,
   );
   const nowAllowed = !isAllowed;
 
   // Snapshot for rollback.
   const before = allowedModelsCache.slice();
 
-  // Optimistic local update — remove ALL sibling entries for this model
-  // id, then add a fresh one under the canonical spec if turning on.
+  // Wipe every entry that belongs to this group/model — spec ids AND
+  // catalog modelProvider names — so legacy duplicates don't survive.
   allowedModelsCache = allowedModelsCache.filter(
-    (a) => !(memberIds.includes(a.modelProvider) && a.model === modelId),
+    (a) => !(groupNames.has(a.modelProvider) && a.model === modelId),
   );
   if (nowAllowed) {
-    allowedModelsCache.push({ modelProvider: group.canonicalSpecId, model: modelId });
+    // Write using the catalog model's actual modelProvider value (e.g.
+    // 'openai-codex' for the OpenAI group). That's what the chat-tab
+    // filter `${m.modelProvider}/${m.id}` looks up against the catalog.
+    const candidate = (group.members || [])
+      .flatMap((m) => m.catalogModels || [])
+      .find((c) => c.id === modelId);
+    const mp = candidate?.modelProvider ?? group.canonicalSpecId;
+    allowedModelsCache.push({ modelProvider: mp, model: modelId });
     card.classList.add('selected');
     updateToggleLabel(card, true);
   } else {
@@ -355,6 +363,21 @@ async function toggleModel(modelId, group, card, rootEl) {
       updateToggleLabel(card, true);
     }
   }
+}
+
+function groupAllowedNames(group) {
+  // All identifiers under which an allowedModels entry might claim
+  // membership in this group. Includes spec ids (codex, openai-platform,
+  // claude, omlx, clemson) AND catalog modelProvider names
+  // (openai-codex, openai-platform, anthropic, local, clemson). The two
+  // are distinct namespaces and historical writes used spec ids.
+  const names = new Set((group.members || []).map((m) => m.id));
+  for (const m of group.members || []) {
+    for (const entry of m.catalogModels || []) {
+      if (entry.modelProvider) names.add(entry.modelProvider);
+    }
+  }
+  return names;
 }
 
 function updateToggleLabel(card, allowed) {
