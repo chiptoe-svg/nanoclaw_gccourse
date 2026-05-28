@@ -840,29 +840,22 @@ function renderInstructorGroupRow(group, specsById) {
   const active = canonical.creds.active;
   const mark = anyConnected ? '●' : '○';
 
-  // Each mixed-group chip has two click targets:
-  //   1. small leading radio dot → set this method as active for the class
-  //      pool (POST /api/me/providers/<spec>/active). Disabled when the
-  //      method isn't connected — can't make active what doesn't exist.
-  //   2. chip body (label text) → open the cred dialog at the canonical
-  //      spec (mixed variant exposes both Connect-subscription + Paste-
-  //      API-key + disconnect in one place; 'none' variant for Local /
-  //      Clemson settings).
-  // Visual: chip outline = connected/not, filled radio dot = active.
+  // Chips are display-only state indicators now. For mixed groups (OpenAI,
+  // Anthropic) each chip shows connection state + a radio for choosing
+  // the class-pool default. For non-mixed groups, a single "Configured" /
+  // "Not connected" status label. Opening the cred dialog (connect /
+  // manage / disconnect / paste) lives on a separate settings gear icon
+  // on the right side of the row so the chip doesn't try to do double duty.
   const methodChip = (label, method, connected) => {
     const isActive = active === method && connected;
     const chipClasses = ['provider-method', connected ? 'is-connected' : '', isActive ? 'is-active' : '']
       .filter(Boolean)
       .join(' ');
-    const labelTooltip = connected ? 'Click to manage credential' : 'Click to connect';
     const radioTooltip = connected ? 'Use this credential for class-pool calls' : 'Connect this method first';
-    const radio = group.hasMixed
-      ? `<input type="radio" class="provider-radio" name="active-${group.id}" value="${method}" ${isActive ? 'checked' : ''} ${connected ? '' : 'disabled'} title="${escapeHtml(radioTooltip)}">`
-      : '';
     return `
       <span class="${chipClasses}" data-method="${method}">
-        ${radio}
-        <span class="provider-method-text" tabindex="0" role="button" title="${escapeHtml(labelTooltip)}">${escapeHtml(label)}</span>
+        <input type="radio" class="provider-radio" name="active-${group.id}" value="${method}" ${isActive ? 'checked' : ''} ${connected ? '' : 'disabled'} title="${escapeHtml(radioTooltip)}">
+        <span class="provider-method-text">${escapeHtml(label)}</span>
       </span>`;
   };
 
@@ -872,22 +865,29 @@ function renderInstructorGroupRow(group, specsById) {
       ${methodChip('Subscription', 'oauth', hasAnyOAuth)}
       ${methodChip('API key', 'apiKey', hasAnyApiKey)}`;
   } else {
-    const label =
+    // Single-method groups: status pill, no radio (no choice to make).
+    const statusLabel =
       canonical.credentialFileShape === 'none'
         ? anyConnected
           ? 'Configured'
-          : 'Set up'
+          : 'Not configured'
         : anyConnected
-          ? 'Manage'
-          : 'Connect';
-    methodsHtml = methodChip(label, 'settings', anyConnected);
+          ? 'Connected'
+          : 'Not connected';
+    methodsHtml = `<span class="provider-status ${anyConnected ? 'is-connected' : ''}">${escapeHtml(statusLabel)}</span>`;
   }
+
+  // Settings gear opens the cred dialog. Same affordance for every row,
+  // independent of whether the group is mixed or single-method.
+  const gearTooltip = anyConnected ? `Manage ${group.displayName} credential` : `Set up ${group.displayName}`;
+  const gearHtml = `<button class="provider-gear" type="button" title="${escapeHtml(gearTooltip)}" aria-label="${escapeHtml(gearTooltip)}">⚙</button>`;
 
   return `
     <div class="provider-row ${anyConnected ? 'is-connected' : ''}" data-group="${group.id}">
       <span class="provider-mark">${mark}</span>
       <strong class="provider-name">${escapeHtml(group.displayName)}</strong>
       <span class="provider-methods">${methodsHtml}</span>
+      ${gearHtml}
     </div>`;
 }
 
@@ -922,19 +922,11 @@ function wireInstructorProvidersCard(body, specsById) {
         onSaved: () => renderInstructorProvidersCard(body),
       });
 
-    // Chip label → open cred dialog (connect / manage / disconnect).
-    rowEl.querySelectorAll('.provider-method-text').forEach((label) => {
-      label.addEventListener('click', (e) => {
-        e.stopPropagation();
-        openDialog();
-      });
-      label.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          openDialog();
-        }
-      });
-    });
+    // Gear icon → open cred dialog (connect / manage / disconnect).
+    const gear = rowEl.querySelector('.provider-gear');
+    if (gear) {
+      gear.addEventListener('click', openDialog);
+    }
 
     // Active-method radio (mixed groups only) → POST set-active.
     rowEl.querySelectorAll('input.provider-radio').forEach((input) => {

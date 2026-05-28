@@ -105,21 +105,22 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `main`
-- **Last tag:** `multi-provider-models-tab-complete-2026-05-26` (34 commits ahead)
+- **Last tag:** `multi-provider-models-tab-complete-2026-05-26` (35 commits ahead)
 
 ### Working tree
 
 ```
-## main...origin/main [ahead 23]
+## main...origin/main [ahead 24]
  M config/playground-seats.json
-M  src/channels/playground/public/components/cred-dialog.js
 M  src/channels/playground/public/style.css
+M  src/channels/playground/public/tabs/home.js
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+913f955 fix(playground/cred-dialog): proper internal layout + helpful state-expired hint
 243411f fix(playground/home): single Apply button on Class Controls with dirty tracking
 d7cf2e8 fix(playground/home): visible cred dialog + on-row active radio + Class Controls Apply
 3d169ed refactor(playground/home): clickable method chips, no separate button
@@ -134,9 +135,8 @@ d8e414f fix(playground/home): grid layout for instructor providers card, drop st
 f4b0fec fix(api/payloads): reject path-traversal IDs + sanitize numeric query params
 b911658 feat(api): GET /api/sessions/:id/payloads handler for trace/context panel
 f13ea4e fix(credential-proxy): memoize openStore failures + cleanup notes
-f797c05 feat(credential-proxy): capture request bodies to per-session payload log
 ```
 
 ### Last refresh
 
-2026-05-28T18:43:19Z
+2026-05-28T18:46:46Z
