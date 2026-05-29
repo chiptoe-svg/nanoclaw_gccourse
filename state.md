@@ -105,19 +105,20 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `main`
-- **Last tag:** `phase-c-complete-2026-05-28` (2 commits ahead)
+- **Last tag:** `phase-c-complete-2026-05-28` (3 commits ahead)
 
 ### Working tree
 
 ```
-## main...origin/main
-M  config/playground-seats.json
+## main...origin/main [ahead 1]
+M  src/providers/claude-spec.ts
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+7668e30 chore(playground-seats): add Pi Test seat as owner
 d169b4c refactor(openai): shared OPENAI_CATALOG; derive CODEX_WHITELIST from it
 159cefc catalog(openai): retire 5.3-codex + 5.2; add 5.5-pro + 5.4-nano; move default to 5.4
 27c1de5 feat(playground/chat): /recent endpoint backfills dropped-SSE messages
@@ -132,9 +133,8 @@ a0da6e7 feat(playground/chat): latency in pi message-end stats + turn totals
 3657abe feat(playground/models): pre-add probe — fail fast with the upstream's error
 be704d4 fix(pi): per-modelProvider continuation + duplicate-item recovery + Models tab refresh button
 a3cda47 fix(direct-chat): accept catalog modelProvider names (openai-codex, anthropic, ...)
-77e1bd8 fix(playground/models): recognize both namespaces in whitelist + write to catalog name
 ```
 
 ### Last refresh
 
-2026-05-29T03:18:04Z
+2026-05-29T03:19:15Z
