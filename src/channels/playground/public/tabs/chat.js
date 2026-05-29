@@ -276,6 +276,38 @@ function wireSse(el, folder) {
   // Clear trace empty-state on first event of any kind.
   let traceEmpty = trace.querySelector('.trace-empty');
 
+  // Highest agent-reply seq already rendered. The host's SSE pushes are
+  // fire-and-forget — any reply that lands while the EventSource is in
+  // its reconnect window is gone. On mount AND on every SSE reconnect
+  // we hit /recent to catch up to anything we missed.
+  let lastSeenSeq = 0;
+  const catchUpFromRecent = async () => {
+    try {
+      const r = await fetch(
+        `/api/drafts/${folder}/recent?limit=20&sinceSeq=${lastSeenSeq}`,
+        { credentials: 'same-origin' },
+      );
+      if (!r.ok) return;
+      const { messages } = await r.json();
+      for (const m of messages || []) {
+        if (m.seq <= lastSeenSeq) continue;
+        lastSeenSeq = m.seq;
+        appendAgentReply(log, {
+          content: m.content,
+          provider: m.provider,
+          model: m.model,
+          tokens: m.tokensIn != null && m.tokensOut != null ? { input: m.tokensIn, output: m.tokensOut } : undefined,
+          latencyMs: m.latencyMs,
+        });
+      }
+    } catch {
+      /* network blip — next reconnect will retry */
+    }
+  };
+  // Initial fill — no banner; reconnect-after-blip — silent too.
+  catchUpFromRecent();
+  sse.addEventListener('open', () => { catchUpFromRecent(); });
+
   sse.addEventListener('message', (e) => {
     let data;
     try { data = JSON.parse(e.data); } catch { return; }

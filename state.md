@@ -105,20 +105,23 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `main`
-- **Last tag:** `multi-provider-models-tab-complete-2026-05-26` (52 commits ahead)
+- **Last tag:** `multi-provider-models-tab-complete-2026-05-26` (53 commits ahead)
 
 ### Working tree
 
 ```
-## main...origin/main [ahead 1]
+## main...origin/main [ahead 2]
  M config/playground-seats.json
-M  src/channels/playground/api/models-tab-state.ts
+M  src/channels/playground/api-routes.ts
+A  src/channels/playground/api/recent.ts
+M  src/channels/playground/public/tabs/chat.js
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+3434c91 feat(models-tab): live discovery for Anthropic + OpenAI sections
 7d8ada8 feat(hf-metadata): fetch contextSize from repo config.json (incl. nested text_config)
 ff4105b feat(chat-tab): provider dropdown reads PROVIDER_GROUPS; server resolves group on PUT (Phase C-5)
 2495a8c feat(class-controls): grey out Provided when owner has no cred (Phase C-3)
@@ -133,9 +136,8 @@ a3cda47 fix(direct-chat): accept catalog modelProvider names (openai-codex, anth
 2795cba fix(playground/chat): providerAuth keyed by modelProvider not spec id
 0f64b40 feat(models-tab): live-augment OMLX catalog from server + add claude-opus-4-7
 ab6eac0 fix: class-pool gating + chat dropdown only shows checked models
-626ab94 feat(playground/models): group + dedupe + richer cards + explicit toggle (Phase C-4)
 ```
 
 ### Last refresh
 
-2026-05-28T23:57:51Z
+2026-05-29T00:02:51Z
