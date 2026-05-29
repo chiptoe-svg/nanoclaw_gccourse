@@ -247,6 +247,16 @@ export async function expandAlias(provider: string | null, input: string): Promi
 }
 
 /** Internal helper for tests — clears the in-memory cache. */
+/**
+ * Bust the discovery cache for a single provider, forcing the next
+ * `listAllForProvider` / `hintsForProvider` to re-query the upstream
+ * `/v1/models`. Used by the Models-tab refresh button.
+ */
+export function resetCacheForProvider(provider: string | null): void {
+  const key = (provider || 'claude').toLowerCase();
+  cache.delete(key);
+}
+
 export function _resetCacheForTest(): void {
   cache.clear();
 }

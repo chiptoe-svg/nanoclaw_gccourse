@@ -35,6 +35,14 @@ registerProvider({
     placeholder: 'sk-ant-api03-…',
     validatePrefix: 'sk-ant-',
   },
+  // Anthropic's haiku/sonnet/opus naturally maps to 3 of the 5 tiers
+  // from the 2026-05-28 review — no -pro above opus, no -nano below
+  // haiku. Chip/note voice matches the OpenAI catalog so the chat
+  // dropdown reads consistently across providers.
+  //
+  //   claude-opus-4-7    frontier        (== OpenAI gpt-5.5)
+  //   claude-sonnet-4-6  daily driver ★  (== OpenAI gpt-5.4)
+  //   claude-haiku-4-5   fast/cheap      (== OpenAI gpt-5.4-mini)
   catalogModels: [
     {
       id: 'claude-haiku-4-5',
@@ -48,8 +56,9 @@ registerProvider({
       avgLatencySec: 0.9,
       paramCount: 'not disclosed',
       modalities: ['text', 'image'],
-      chips: ['⚡ fast', '$ cheap', '☁ Anthropic'],
-      bestFor: 'Short answers, classification, structured output.',
+      chips: ['☁ Anthropic', '⚡ fast', '$ cheap'],
+      notes: 'Fast, efficient haiku tier for responsive tasks and subagents.',
+      bestFor: 'Short tasks, classification, subagents — when latency matters more than depth.',
     },
     {
       id: 'claude-sonnet-4-6',
@@ -63,9 +72,28 @@ registerProvider({
       avgLatencySec: 2.1,
       paramCount: 'not disclosed',
       modalities: ['text', 'image'],
-      chips: ['🐢 slower', '$$ pricier', '☁ Anthropic'],
-      bestFor: 'Reasoning, long outputs.',
+      chips: ['☁ Anthropic', '⚖ balanced'],
+      notes: 'Daily driver — balanced quality + cost. Recommended default for most class work.',
+      bestFor: 'Reasoning, long outputs, writing.',
       default: true,
+    },
+    {
+      id: 'claude-opus-4-7',
+      modelProvider: 'anthropic',
+      displayName: 'claude-opus-4-7',
+      origin: 'cloud',
+      // Anthropic Opus pricing tier (revise after the next published rate
+      // update). Per-1M token rates → divide by 1000 for per-1k.
+      costPer1kInUsd: 0.015,
+      costPer1kOutUsd: 0.075,
+      costPer1kCachedInUsd: 0.0015,
+      costPer1kTokensUsd: 0.045,
+      avgLatencySec: 3.5,
+      paramCount: 'not disclosed',
+      modalities: ['text', 'image'],
+      chips: ['☁ Anthropic', '🔝 frontier', '$$$ premium'],
+      notes: "Anthropic's frontier — headroom above the daily driver for tough problems.",
+      bestFor: 'Hardest reasoning, long-form writing, multi-step agentic flows.',
     },
   ] satisfies ModelEntry[],
 });

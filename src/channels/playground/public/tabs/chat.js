@@ -1,4 +1,5 @@
 import { showDraftBanner } from '../draft-banner.js';
+import { PROVIDER_GROUPS } from '../provider-groups.js';
 
 let sse = null; // single EventSource per agent
 
@@ -92,48 +93,78 @@ function loadModelDropdowns(el, folder) {
       // handler in wireSse — a separate scope) can look up cost fields by
       // modelProvider+model when rendering an agent-mode call entry.
       if (window.__pg) window.__pg.catalog = combined;
-      const allow = (data.allowedModels && data.allowedModels.length > 0)
-        ? new Set(data.allowedModels.map((a) => `${a.provider}/${a.model}`))
-        : null;
-      const visible = allow ? combined.filter((m) => allow.has(`${m.modelProvider}/${m.id}`)) : combined;
+      // Only show models the instructor has checked off in the Models tab.
+      // Previously fell back to "show all" when allowedModels was empty,
+      // which let students pick providers that weren't actually authorised
+      // for chat use. Empty whitelist now means empty dropdown — the chat
+      // log gets a hint banner below to point the user at Models.
+      const allowedSet = new Set((data.allowedModels || []).map((a) => `${a.provider}/${a.model}`));
+      const visible = combined.filter((m) => allowedSet.has(`${m.modelProvider}/${m.id}`));
 
-      // Filter providers by class-controls — owner sees everything;
-      // students see only what the instructor authorized.
+      // Fold catalog entries into the 4 user-facing PROVIDER_GROUPS. The
+      // provider dropdown now shows group displayNames (OpenAI / Anthropic
+      // / Local / Clemson) instead of raw catalog modelProvider names
+      // (openai-codex / anthropic / local / clemson). The model dropdown
+      // dedupes by id within a group so the two mirrored OpenAI catalogs
+      // collapse to one set of gpt-5.x rows.
+      const groupOfModelProvider = (mp) =>
+        PROVIDER_GROUPS.find((g) => (g.memberModelProviders || []).includes(mp));
+
+      // Filter visible-in-tab by class-controls (owner sees everything;
+      // students see only what the instructor authorised) AND by
+      // server-side group-keyed providerAuth (post-C-5).
       const ac = window.__pg && window.__pg.activeClass;
       const isOwner = window.__pg && window.__pg.user && window.__pg.user.role === 'owner';
-      // v2 shape: providers is a map of { allow, provideDefault, allowByo }.
       const providerAllowed = isOwner || !ac
         ? null
-        : (p) => !!(ac.providers && ac.providers[p] && ac.providers[p].allow);
-      // Hide providers the host can't authenticate (no API key / OAuth, or
-      // the local server is offline) — selecting one would only produce a
-      // failed call. Applies to everyone, owner included. A provider absent
-      // from the map stays visible (defensive: don't hide on partial data).
+        : (specId) => !!(ac.providers && ac.providers[specId] && ac.providers[specId].allow);
       const providerAuth = data.providerAuth || {};
-      const providers = [...new Set(visible.map((m) => m.modelProvider))].filter(
-        (p) => (!providerAllowed || providerAllowed(p)) && providerAuth[p] !== false,
-      );
-      provSel.innerHTML = '';
-      for (const p of providers) provSel.add(new Option(p, p));
 
-      // Pre-select the currently active modelProvider+model returned by the API,
-      // falling back to the first catalog entries when none is set. Without
-      // this the dropdowns default to whatever happens to be first alphabetically,
-      // misrepresenting agents currently configured for a different provider —
-      // confusing AND a footgun, since clicking elsewhere then `Apply` would
-      // silently rewrite the active model.
+      const groupVisible = PROVIDER_GROUPS.filter((g) => {
+        // Auth gate: providerAuth post-C-5 is keyed by group id.
+        if (providerAuth[g.id] === false) return false;
+        // Class-controls allow gate: pass if ANY member spec is allowed.
+        if (providerAllowed && !g.specIds.some(providerAllowed)) return false;
+        // Group must have at least one visible (allow-listed) model.
+        return visible.some((m) => (g.memberModelProviders || []).includes(m.modelProvider));
+      });
+
+      provSel.innerHTML = '';
+      if (groupVisible.length === 0) {
+        const placeholder = new Option('— no models checked in Models tab —', '');
+        placeholder.disabled = true;
+        placeholder.selected = true;
+        provSel.add(placeholder);
+      } else {
+        for (const g of groupVisible) provSel.add(new Option(g.displayName, g.id));
+      }
+
+      // Pre-select from active model. The server may have written a raw
+      // catalog modelProvider name (codex era) or a group id (post-C-5);
+      // resolve either to the group id used as the dropdown value.
       const active = data.activeModel;
-      if (active && providers.includes(active.modelProvider)) {
-        provSel.value = active.modelProvider;
+      if (active) {
+        const activeGroup =
+          groupVisible.find((g) => g.id === active.modelProvider)
+          || groupVisible.find((g) => (g.memberModelProviders || []).includes(active.modelProvider));
+        if (activeGroup) provSel.value = activeGroup.id;
       }
 
       const renderModels = () => {
         modelSel.innerHTML = '';
-        for (const m of visible.filter((mm) => mm.modelProvider === provSel.value)) {
+        const g = groupVisible.find((gg) => gg.id === provSel.value);
+        if (!g) return;
+        const memberMps = new Set(g.memberModelProviders || []);
+        // Dedupe by model id within the group — mirrors what the Models
+        // tab does after dedupe.
+        const seenIds = new Set();
+        for (const m of visible) {
+          if (!memberMps.has(m.modelProvider)) continue;
+          if (seenIds.has(m.id)) continue;
+          seenIds.add(m.id);
           modelSel.add(new Option(m.displayName || m.id, m.id));
         }
-        if (active && active.modelProvider === provSel.value) {
-          // Use Array.from to test for membership without triggering a change event.
+        if (active) {
           const ids = Array.from(modelSel.options).map((o) => o.value);
           if (ids.includes(active.model)) modelSel.value = active.model;
         }
@@ -244,6 +275,38 @@ function wireSse(el, folder) {
   const trace = el.querySelector('#trace-log');
   // Clear trace empty-state on first event of any kind.
   let traceEmpty = trace.querySelector('.trace-empty');
+
+  // Highest agent-reply seq already rendered. The host's SSE pushes are
+  // fire-and-forget — any reply that lands while the EventSource is in
+  // its reconnect window is gone. On mount AND on every SSE reconnect
+  // we hit /recent to catch up to anything we missed.
+  let lastSeenSeq = 0;
+  const catchUpFromRecent = async () => {
+    try {
+      const r = await fetch(
+        `/api/drafts/${folder}/recent?limit=20&sinceSeq=${lastSeenSeq}`,
+        { credentials: 'same-origin' },
+      );
+      if (!r.ok) return;
+      const { messages } = await r.json();
+      for (const m of messages || []) {
+        if (m.seq <= lastSeenSeq) continue;
+        lastSeenSeq = m.seq;
+        appendAgentReply(log, {
+          content: m.content,
+          provider: m.provider,
+          model: m.model,
+          tokens: m.tokensIn != null && m.tokensOut != null ? { input: m.tokensIn, output: m.tokensOut } : undefined,
+          latencyMs: m.latencyMs,
+        });
+      }
+    } catch {
+      /* network blip — next reconnect will retry */
+    }
+  };
+  // Initial fill — no banner; reconnect-after-blip — silent too.
+  catchUpFromRecent();
+  sse.addEventListener('open', () => { catchUpFromRecent(); });
 
   sse.addEventListener('message', (e) => {
     let data;
@@ -510,24 +573,32 @@ function finalizeTurn(turnEl) {
   const foot = turnEl.querySelector('.trace-turn-foot');
   if (!foot) return;
   const agentCall = turnEl.querySelector('.trace-agent-call');
-  let tokensIn = 0, tokensOut = 0, cost = 0;
+  let tokensIn = 0, tokensOut = 0, cost = 0, latencyMs = 0;
   if (agentCall) {
     tokensIn  = parseFloat(agentCall.dataset.tokensIn  || '0') || 0;
     tokensOut = parseFloat(agentCall.dataset.tokensOut || '0') || 0;
     cost      = parseFloat(agentCall.dataset.cost      || '0') || 0;
+    latencyMs = parseFloat(agentCall.dataset.latencyMs || '0') || 0;
   } else {
-    // pi-event turns — aggregate any cost annotations from pi message_end rows.
+    // pi-event turns — sum cost + latency across every pi message_end bubble.
     for (const li of turnEl.querySelectorAll('[data-cost]')) {
       cost += parseFloat(li.dataset.cost || '0') || 0;
     }
+    for (const li of turnEl.querySelectorAll('[data-latency-ms]')) {
+      latencyMs += parseFloat(li.dataset.latencyMs || '0') || 0;
+    }
   }
-  if (tokensIn === 0 && tokensOut === 0 && cost === 0) {
+  if (tokensIn === 0 && tokensOut === 0 && cost === 0 && latencyMs === 0) {
     foot.textContent = '(no usage)';
     return;
   }
   const parts = [];
   if (tokensIn > 0) parts.push(`${tokensIn} in`);
   if (tokensOut > 0) parts.push(`${tokensOut} out`);
+  if (latencyMs > 0) {
+    const sec = latencyMs / 1000;
+    parts.push(sec < 10 ? `${sec.toFixed(1)}s` : `${Math.round(sec)}s`);
+  }
   if (cost > 0) parts.push(cost < 0.001 ? `$${cost.toFixed(5)}` : `$${cost.toFixed(4)}`);
   foot.textContent = `turn total: ${parts.join(' · ')}`;
 }
@@ -864,6 +935,9 @@ function piHandleMessageStart(trace, event, st) {
   st.messageTextEl = bodyEl;
   st.messagePreviewEl = previewEl;
   st.messageDetails = details;
+  // Wall-clock start for the latency stat in piHandleMessageEnd. Pi
+  // emits message.timestamp; fall back to Date.now() if absent.
+  st.messageStartedAt = (event.message && event.message.timestamp) || Date.now();
   // Reset thinking state for the new message.
   st.thinkingDetails = null;
   st.thinkingBodyEl = null;
@@ -1020,9 +1094,31 @@ function piHandleToolcallEnd(trace, ame, st) {
  * Usage fields: input, output, cacheRead, cacheWrite, cost.total.
  */
 function piHandleMessageEnd(trace, event, st) {
-  // Auto-collapse the assistant body now that streaming is done — the
-  // summary still shows the preview snippet, click to re-expand.
-  if (st.messageDetails) st.messageDetails.open = false;
+  // gpt-5.x quirk: after a tool result comes back, the model often
+  // returns an empty "final_answer" assistant message — just a
+  // textSignature reasoning trace, output ~4 tokens, no visible text,
+  // no tool calls. Rendered raw it looks like "the agent said nothing,"
+  // which makes users think the chat failed. Replace the empty bubble
+  // with a compact note so the trace stays honest without looking
+  // broken.
+  const msg = event.message;
+  const onlyEmptyText =
+    Array.isArray(msg?.content)
+    && msg.content.length > 0
+    && msg.content.every((part) => part.type === 'text' && (!part.text || part.text === ''));
+  if (onlyEmptyText && st.messageBubble) {
+    if (st.messageTextEl) st.messageTextEl.textContent = '';
+    if (st.messagePreviewEl) {
+      st.messagePreviewEl.textContent = '(no further reply — tool result was the answer)';
+      st.messagePreviewEl.style.fontStyle = 'italic';
+      st.messagePreviewEl.style.color = '#888';
+    }
+    if (st.messageDetails) st.messageDetails.open = false;
+  } else if (st.messageDetails) {
+    // Normal turn: auto-collapse the assistant body now that streaming
+    // is done — the summary still shows the preview snippet.
+    st.messageDetails.open = false;
+  }
 
   const usage = event.message && event.message.usage;
   if (!usage || !st.messageBubble) return;
@@ -1032,6 +1128,15 @@ function piHandleMessageEnd(trace, event, st) {
   if (typeof usage.cacheRead === 'number' && usage.cacheRead > 0) parts.push(`${usage.cacheRead} cache-`);
   if (typeof usage.cacheWrite === 'number' && usage.cacheWrite > 0) parts.push(`${usage.cacheWrite} cache+`);
   if (typeof usage.output === 'number') parts.push(`${usage.output} out`);
+  // Latency: message_end timestamp minus message_start timestamp the
+  // wirer stashed on st. Pi-ai emits ms-precision timestamps; if
+  // either side is missing we just drop the stat.
+  const endedAt = (event.message && event.message.timestamp) || Date.now();
+  if (typeof st.messageStartedAt === 'number' && endedAt > st.messageStartedAt) {
+    const sec = (endedAt - st.messageStartedAt) / 1000;
+    parts.push(sec < 10 ? `${sec.toFixed(1)}s` : `${Math.round(sec)}s`);
+    st.messageBubble.dataset.latencyMs = String(endedAt - st.messageStartedAt);
+  }
   if (usage.cost && typeof usage.cost.total === 'number') {
     const c = usage.cost.total;
     parts.push(c < 0.001 ? `$${c.toFixed(5)}` : `$${c.toFixed(4)}`);

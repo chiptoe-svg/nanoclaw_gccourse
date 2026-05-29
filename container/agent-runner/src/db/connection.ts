@@ -20,9 +20,12 @@
 import { Database } from 'bun:sqlite';
 import fs from 'fs';
 
-const DEFAULT_INBOUND_PATH = '/workspace/inbound.db';
-const DEFAULT_OUTBOUND_PATH = '/workspace/outbound.db';
-const DEFAULT_HEARTBEAT_PATH = '/workspace/.heartbeat';
+// Defaults match the container's mount layout; the SESSION_* env-var
+// overrides exist for off-container callers (e.g., the host-side
+// pi-mcp-bridge test that spawns the MCP server pointed at a tmpdir).
+const DEFAULT_INBOUND_PATH = process.env.SESSION_INBOUND_DB_PATH ?? '/workspace/inbound.db';
+const DEFAULT_OUTBOUND_PATH = process.env.SESSION_OUTBOUND_DB_PATH ?? '/workspace/outbound.db';
+const DEFAULT_HEARTBEAT_PATH = process.env.SESSION_HEARTBEAT_PATH ?? '/workspace/.heartbeat';
 
 let _inbound: Database | null = null;
 let _outbound: Database | null = null;

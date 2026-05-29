@@ -96,6 +96,9 @@ import { handleAddStudent, handleGetTunnel, handleStopTunnel } from './api/stude
 import { handleDirectChat } from './api/direct-chat.js';
 import { handleGetStudentDetail, handleGetStudentsUsage, handleGetUsage } from './api/usage.js';
 import { isOwner } from '../../modules/permissions/db/user-roles.js';
+import { canAccessAgentGroup } from '../../modules/permissions/access.js';
+import { handleGetSessionPayloads } from './api/payloads.js';
+import { handleGetRecent } from './api/recent.js';
 import { handleGetEntry, handleListLibrary, handleSaveMyEntry } from './api/library.js';
 import {
   handleGetMyAgent,
@@ -349,10 +352,12 @@ export async function route(
   // registered provider (class policy + personal creds + reachability).
   if (method === 'GET' && url.pathname === '/api/me/models-tab-state') {
     const agentGroupId = url.searchParams.get('agentGroupId') ?? '';
+    const refreshSpec = url.searchParams.get('refresh') || undefined;
     const r = await handleGetModelsTabState({
       userId: session.userId ?? '',
       agentGroupId,
       classId: DEFAULT_CLASS_ID,
+      refreshSpec,
     });
     return send(res, r.status, r.body);
   }
@@ -391,6 +396,26 @@ export async function route(
   if (method === 'POST' && url.pathname === '/api/me/telegram/pair-code') {
     const { handleIssuePairCode } = await import('./api/telegram-pair.js');
     const r = handleIssuePairCode(session);
+    return send(res, r.status, r.body);
+  }
+
+  // GET /api/sessions/:sessionId/payloads?agentGroupId=...&limit=N&after=seq
+  if (method === 'GET' && url.pathname.startsWith('/api/sessions/') && url.pathname.endsWith('/payloads')) {
+    const sessionId = url.pathname.slice('/api/sessions/'.length, -'/payloads'.length);
+    const agentGroupId = url.searchParams.get('agentGroupId') ?? '';
+    const rawLimit = Number(url.searchParams.get('limit') ?? '20');
+    const rawAfter = Number(url.searchParams.get('after') ?? '0');
+    const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 200) : 20;
+    const afterSeq = Number.isFinite(rawAfter) && rawAfter >= 0 ? rawAfter : 0;
+    const userId = session.userId ?? '';
+    const r = await handleGetSessionPayloads({
+      baseDir: path.join(process.cwd(), 'data', 'proxy-payloads'),
+      agentGroupId,
+      sessionId,
+      limit,
+      afterSeq,
+      canAccess: (ag) => canAccessAgentGroup(userId, ag).allowed,
+    });
     return send(res, r.status, r.body);
   }
 
@@ -561,7 +586,7 @@ export async function route(
   const modelsMatch = url.pathname.match(/^\/api\/drafts\/([A-Za-z0-9_-]+)\/models$/);
   if (method === 'GET' && modelsMatch) {
     if (!canReadDraft(modelsMatch[1]!, session.userId)) return send(res, 403, { error: 'Forbidden' });
-    const r = await handleGetModels(modelsMatch[1]!);
+    const r = await handleGetModels(modelsMatch[1]!, session.userId ?? '');
     return send(res, r.status, r.body);
   }
   if (method === 'PUT' && modelsMatch) {
@@ -584,7 +609,7 @@ export async function route(
       if (!decision.allow) return send(res, 403, { error: decision.reason || 'Forbidden' });
     }
     const body = await readJsonBody(req);
-    const r = await handlePutActiveModel(draftFolder, body);
+    const r = await handlePutActiveModel(draftFolder, session.userId ?? '', body);
     return send(res, r.status, r.body);
   }
 
@@ -809,6 +834,20 @@ export async function route(
       return;
     }
     return send(res, result.status, { error: result.error });
+  }
+
+  // GET /api/drafts/:folder/recent — last N chat-kind messages across this
+  // agent group's active sessions. Used by chat.js on mount and after an
+  // SSE reconnect so a dropped EventSource window doesn't permanently
+  // hide the agent's reply.
+  const recentMatch = url.pathname.match(/^\/api\/drafts\/([A-Za-z0-9_-]+)\/recent$/);
+  if (method === 'GET' && recentMatch) {
+    const draftFolder = recentMatch[1]!;
+    if (!canReadDraft(draftFolder, session.userId)) return send(res, 403, { error: 'Forbidden' });
+    const limit = Number(url.searchParams.get('limit') ?? '20');
+    const sinceSeq = Number(url.searchParams.get('sinceSeq') ?? '0');
+    const r = handleGetRecent(draftFolder, { limit, sinceSeq });
+    return send(res, r.status, r.body);
   }
 
   // GET /api/drafts/:folder/stream — Server-Sent Events for outbound messages.

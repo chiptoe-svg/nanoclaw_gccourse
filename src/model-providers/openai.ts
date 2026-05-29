@@ -18,14 +18,19 @@
  * the proxy and `/model` discovery.
  */
 import { readEnvFile } from '../env.js';
+import { LEGACY_CODEX_IDS, OPENAI_CATALOG } from '../providers/openai-catalog.js';
 import type { AuthHeader, ModelHint, ModelProviderAdapter, ParsedModel } from './types.js';
 
 // Notes sourced verbatim from https://developers.openai.com/codex/models
 // (OpenAI's canonical codex model documentation).
 const NOTES: Record<string, string> = {
-  '5.5': 'default — newest frontier; complex coding, research, knowledge work',
-  '5.4': 'flagship; enhanced reasoning + tool use',
+  '5.5pro': 'frontier-max; longer thinking budgets, premium tier',
+  '5.5': 'frontier; complex reasoning + coding',
+  '5.4': 'default — balanced quality/cost; daily driver',
   '5.4mini': 'fast/efficient; responsive coding, subagents',
+  '5.4nano': 'ultra-cheap; penny-per-turn subagents, classification',
+  // Legacy aliases for ids that left the curated catalog but stay
+  // discoverable via LEGACY_CODEX_IDS (see openai-catalog.ts).
   '5.3codex': 'industry-leading coding model for complex software engineering',
   '5.3codex-spark': 'research preview, text-only; ChatGPT Pro only',
   '5.2': 'previous-generation general-purpose',
@@ -46,22 +51,27 @@ const NOTES: Record<string, string> = {
  * metadata for it: add a corresponding BUILTIN_ENTRIES entry in
  * src/model-catalog.ts, or per-install via config/model-catalog-local.json.
  */
-const CODEX_WHITELIST = new Set<string>([
-  'gpt-5.5',
-  'gpt-5.4',
-  'gpt-5.4-mini',
-  'gpt-5.3-codex',
-  'gpt-5.3-codex-spark',
-  'gpt-5.2',
-]);
+// Whitelist derived from the shared OPENAI_CATALOG so adding a new
+// curated model becomes a one-file edit. LEGACY_CODEX_IDS lists ids
+// that have left the curated catalog but should still pass the gate
+// — existing container_configs.model_provider rows that reference
+// them keep dispatching through codex without "unrecognised model"
+// errors. Add to LEGACY_CODEX_IDS when retiring a model; remove when
+// no DB row references it.
+const CODEX_WHITELIST = new Set<string>([...OPENAI_CATALOG.map((m) => m.id), ...LEGACY_CODEX_IDS]);
 
-const STATIC_FALLBACK: ModelHint[] = [
-  { id: 'gpt-5.5', alias: '5.5', note: NOTES['5.5'] },
-  { id: 'gpt-5.4', alias: '5.4', note: NOTES['5.4'] },
-  { id: 'gpt-5.4-mini', alias: '5.4mini', note: NOTES['5.4mini'] },
-  { id: 'gpt-5.3-codex', alias: '5.3codex', note: NOTES['5.3codex'] },
-  { id: 'gpt-5.2', alias: '5.2', note: NOTES['5.2'] },
-];
+// Discovery fallback when /v1/models can't be reached. Alias drops the
+// gpt- prefix AND collapses the dash between version and variant
+// (`gpt-5.4-mini` → `5.4mini`) to match parseId's alias output, which
+// the Telegram /model picker matches against.
+function aliasOf(id: string): string {
+  return id.replace(/^gpt-/, '').replace(/(\d)-([a-z])/g, '$1$2');
+}
+const STATIC_FALLBACK: ModelHint[] = OPENAI_CATALOG.map((m) => ({
+  id: m.id,
+  alias: aliasOf(m.id),
+  note: NOTES[aliasOf(m.id)] ?? '',
+}));
 
 function getAuth(): AuthHeader | null {
   const env = readEnvFile(['OPENAI_API_KEY']);
