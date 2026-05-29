@@ -278,6 +278,88 @@ html, body {
   pointer-events: auto;
 }
 
+/* Cred dialog — centered modal card with backdrop. Used by both the
+   student LLM Providers card and the instructor view. The overlay
+   handles the click-outside-to-close via cred-dialog.js; the card
+   floats above. Without these rules the dialog renders unstyled and
+   chip-click appears to do nothing. */
+.cred-modal-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 60px 20px 20px;
+  background: rgba(20, 22, 30, 0.45);
+  overflow-y: auto;
+}
+.cred-modal {
+  background: #ffffff;
+  border-radius: 10px;
+  padding: 22px 24px 18px;
+  width: min(560px, 100%);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.22);
+  max-height: 80vh;
+  overflow-y: auto;
+}
+.cred-modal h3 {
+  margin: 0 0 12px;
+  font-size: 16px;
+  color: #1c1f24;
+}
+.cred-modal-body { margin: 4px 0 14px; font-size: 13px; color: #333; }
+.cred-modal-body p { margin: 8px 0; line-height: 1.4; }
+.cred-modal-body .muted { color: #777; }
+.cred-modal-close { margin-top: 4px; }
+
+/* Mixed-variant tab sections (Subscription, API key) — each is its own
+   block separated by a divider so the dialog reads as two distinct
+   panels. */
+.cred-modal [data-tab] {
+  margin: 14px 0 18px;
+  padding-top: 14px;
+  border-top: 1px solid #ececec;
+}
+.cred-modal [data-tab]:first-of-type { border-top: 0; padding-top: 0; margin-top: 4px; }
+.cred-modal h4 { margin: 0 0 6px; font-size: 14px; font-weight: 600; color: #1c1f24; }
+
+.cred-modal .home-actions { display: flex; gap: 10px; margin: 8px 0; flex-wrap: wrap; align-items: center; }
+.cred-modal .home-actions .btn { margin: 0; }
+
+.cred-modal .cred-active-method { margin-bottom: 4px; }
+.cred-modal .cred-active-method fieldset { border: 1px solid #dbe1e8; border-radius: 6px; padding: 8px 12px 10px; margin: 4px 0 0; }
+.cred-modal .cred-active-method legend { padding: 0 6px; font-size: 12px; color: #666; }
+.cred-modal .cred-active-method label { display: inline-flex; align-items: center; gap: 6px; margin-right: 18px; font-size: 13px; }
+
+/* OAuth paste-back form (also used outside the modal, hence the
+   double-scope so it picks up modal-tighter spacing without breaking
+   anywhere else). */
+.cred-modal .paste-open-link { margin: 10px 0 8px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cred-modal .paste-open-link a { text-decoration: none; }
+.cred-modal .paste-instructions { background: #f6f8fa; border-radius: 6px; padding: 10px 12px; font-size: 12px; line-height: 1.5; color: #3a3f45; margin: 10px 0 8px; }
+.cred-modal .paste-instructions > div { margin-bottom: 3px; }
+.cred-modal .paste-instructions > div:last-child { margin-bottom: 0; }
+.cred-modal .paste-code {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 9px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  border: 1px solid #cfd5dc;
+  border-radius: 4px;
+  margin: 6px 0 10px;
+}
+.cred-modal input[type="text"]:not(.paste-code) {
+  box-sizing: border-box;
+  padding: 6px 9px;
+  font-size: 13px;
+  border: 1px solid #cfd5dc;
+  border-radius: 4px;
+  min-width: 240px;
+}
+.cred-modal .paste-err { color: #c8482a; font-size: 12px; margin: 8px 0 0; }
+.cred-modal label { display: inline-block; }
+
 /* ── Toasts ──────────────────────────────────────────────────────────── */
 
 #toasts {
@@ -977,6 +1059,53 @@ select.model-changed {
 .model-section-status.status-offline { color: #8a4b00; background: #fff3e0; }
 .model-card.active { box-shadow: 0 0 0 2px #1a7a1a; }
 
+/* Card head: model name on the left, in-chat toggle on the right. */
+.model-card .model-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.model-card .model-head strong { font-size: 13px; }
+
+/* Toggle button — explicit add/remove from chat dropdown. */
+.model-toggle {
+  background: #ffffff;
+  color: #4a4a4a;
+  border: 1px solid #cfd5dc;
+  border-radius: 4px;
+  padding: 3px 9px;
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.model-toggle:hover { background: #f1faf3; color: #1f5e26; border-color: #9bc6a0; }
+.model-toggle.is-allowed { background: #2a8b34; color: #ffffff; border-color: #2a8b34; }
+.model-toggle.is-allowed:hover { background: #226e2a; border-color: #226e2a; }
+.model-toggle:disabled { opacity: 0.4; cursor: not-allowed; background: #f4f4f4; }
+.model-toggle:disabled:hover { background: #f4f4f4; color: #4a4a4a; border-color: #cfd5dc; }
+
+/* Restored richer info rows. */
+.model-card .model-bestfor { font-size: 11px; color: #444; margin-top: 4px; line-height: 1.4; }
+.model-card .model-modalities { font-size: 10px; color: #777; margin-top: 4px; text-transform: lowercase; letter-spacing: 0.2px; }
+.model-card .model-localspecs { font-size: 10px; color: #777; margin-top: 2px; }
+
+/* Probe-failure message rendered inline at the bottom of the card when
+   the pre-add probe rejects. Cleared on the next toggle attempt. */
+.model-card .model-card-error {
+  margin-top: 8px;
+  padding: 6px 8px;
+  background: #fdecea;
+  border: 1px solid #f5b7b1;
+  color: #922b21;
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
 /* ── Models tab v2 — per-provider section status dots ────────────────── */
 .status-dot--personal-oauth,
 .status-dot--personal-key,
@@ -993,10 +1122,79 @@ select.model-changed {
 .cc-providers-table { width: 100%; border-collapse: collapse; font-size: 12px; margin: 4px 0; }
 .cc-providers-table th, .cc-providers-table td { padding: 4px 8px; border-bottom: 1px solid #eee; text-align: left; }
 .cc-providers-table th { color: #555; font-weight: 600; font-size: 11px; }
+/* Provided checkbox disabled because the owner hasn't connected a
+   credential for this group yet — tooltip on the input itself points
+   the instructor at the LLM Providers card. */
+.cc-providers-table tr.cc-row-provided-blocked td:nth-child(3) input[type="checkbox"] {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
 .provider-row { padding: 8px 0; border-bottom: 1px solid #eee; }
 .provider-row:last-child { border-bottom: none; }
 .provider-active { font-size: 12px; color: #555; margin-top: 4px; }
 .provider-active label { margin-right: 12px; }
+/* Instructor view — 4-column grid: mark / name / methods (chips or
+   status pill) / gear icon. Chips are display-only state indicators;
+   the small radio inside each picks the class-pool default method.
+   The gear opens the cred dialog (connect / paste / disconnect /
+   manage). */
+.provider-row[data-group] {
+  display: grid;
+  grid-template-columns: 16px 110px 1fr auto;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 0;
+  border-bottom: 1px solid #eee;
+}
+.provider-row[data-group]:last-child { border-bottom: none; }
+.provider-row[data-group] .provider-mark { color: #d3d3d3; font-size: 14px; line-height: 1; text-align: center; }
+.provider-row[data-group].is-connected .provider-mark { color: #2a8b34; }
+.provider-row[data-group] .provider-name { white-space: nowrap; }
+.provider-row[data-group] .provider-methods { display: flex; gap: 8px; flex-wrap: wrap; justify-self: end; }
+
+.provider-method {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px 3px 6px;
+  font-size: 12px;
+  border-radius: 4px;
+  border: 1px solid #d8d8d8;
+  background: #fafafa;
+  color: #999;
+  user-select: none;
+  white-space: nowrap;
+}
+.provider-method.is-connected { background: #ffffff; color: #1d3b1d; border-color: #9bc6a0; }
+.provider-method.is-active { border-color: #2a8b34; box-shadow: inset 0 0 0 1px #2a8b34; }
+.provider-method.is-active .provider-method-text { font-weight: 600; color: #1f5e26; }
+.provider-method .provider-radio { margin: 0; cursor: pointer; }
+.provider-method .provider-radio:disabled { cursor: not-allowed; }
+.provider-method-text { padding: 1px 2px; }
+
+/* Status pill for non-mixed groups (Local, Clemson) — no radio, no
+   chip, just text matching the same visual rhythm. */
+.provider-row[data-group] .provider-status {
+  font-size: 12px;
+  color: #999;
+  justify-self: end;
+  white-space: nowrap;
+}
+.provider-row[data-group] .provider-status.is-connected { color: #1d3b1d; }
+
+.provider-gear {
+  background: transparent;
+  border: 1px solid transparent;
+  color: #888;
+  font-size: 24px;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.provider-gear:hover { color: #2a8b34; background: #f1faf3; border-color: #cfe6d3; }
+.provider-gear:focus-visible { outline: 2px solid #4b82e8; outline-offset: 2px; }
 .provider-paste-form { margin-top: 8px; padding: 8px; background: #f8fafe; border: 1px solid #d6e2f5; border-radius: 6px; }
 .provider-paste-form .paste-open-link { margin-bottom: 10px; display: flex; align-items: center; flex-wrap: wrap; }
 .provider-paste-form .paste-open-link a { text-decoration: none; }

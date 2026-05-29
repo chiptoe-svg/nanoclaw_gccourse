@@ -1,4 +1,5 @@
 import { openCredDialog } from '../components/cred-dialog.js';
+import { PROVIDER_GROUPS } from '../provider-groups.js';
 
 export function mountHome(el) {
   const { agent, user } = window.__pg || { agent: { name: '?', folder: '?' }, user: { id: '?' } };
@@ -467,33 +468,44 @@ function renderClassControlsForm(body, cfg) {
     <label class="cc-check"><input type="checkbox" data-cc-tab="${t}" ${cls.tabsVisibleToStudents.includes(t) ? 'checked' : ''}> ${t}</label>
   `).join('');
   // ── classroom-provider-auth:class-controls-providers START ────────────
+  // Group toggles use AND-on-read / broadcast-on-write across underlying
+  // spec ids — see plans/class-controls-provider-grouping.md.
   const policies = cls.providers || {};
   const unconfigured = !cls.providers || Object.keys(cls.providers).length === 0;
   const unconfiguredBanner = unconfigured
     ? `<div class="cc-banner-warn">⚠ Class mode not yet configured — pick provider policies below, then Save.</div>`
     : '';
-  const providerRows = PROVIDERS.concat([{ id: 'local', displayName: 'Local' }])
-    .map((p) => {
-      const pol = policies[p.id] || { allow: false, provideDefault: false, allowByo: false };
-      return `
-        <tr>
-          <td>${escapeHtml(p.displayName)}</td>
-          <td><input type="checkbox" data-cc-provider-allow="${p.id}" ${pol.allow ? 'checked' : ''}></td>
-          <td><input type="checkbox" data-cc-provider-default="${p.id}" ${pol.provideDefault ? 'checked' : ''}></td>
-          <td><input type="checkbox" data-cc-provider-byo="${p.id}" ${pol.allowByo ? 'checked' : ''}></td>
+  const groupFlag = (group, field) =>
+    group.specIds.length > 0 &&
+    group.specIds.every((sid) => !!(policies[sid] && policies[sid][field]));
+  // providedReady is shipped on the GET response — true when the owner
+  // has a usable credential for at least one member spec (sibling
+  // fallback included). Used to disable the Provided checkbox so the
+  // instructor can't accidentally promise students access to a provider
+  // whose class-pool key isn't actually connected.
+  const providedReady = cfg.providedReady || {};
+  const groupProvidedReady = (group) => group.specIds.some((sid) => providedReady[sid]);
+  const providerRows = PROVIDER_GROUPS.map((g) => {
+    const ready = groupProvidedReady(g);
+    const provided = groupFlag(g, 'provideDefault');
+    const providedCell = ready
+      ? `<input type="checkbox" data-cc-group-provided="${g.id}" ${provided ? 'checked' : ''}>`
+      : `<input type="checkbox" data-cc-group-provided="${g.id}" disabled ${provided ? 'checked' : ''} title="Connect a ${escapeHtml(g.displayName)} credential in the LLM Providers card first">`;
+    return `
+        <tr ${ready ? '' : 'class="cc-row-provided-blocked"'}>
+          <td>${escapeHtml(g.displayName)}</td>
+          <td><input type="checkbox" data-cc-group-visible="${g.id}" ${groupFlag(g, 'allow') ? 'checked' : ''}></td>
+          <td>${providedCell}</td>
+          <td><input type="checkbox" data-cc-group-byo="${g.id}" ${groupFlag(g, 'allowByo') ? 'checked' : ''}></td>
         </tr>`;
-    })
-    .join('');
+  }).join('');
   const providersBlock = `
     <table class="cc-providers-table">
-      <thead><tr><th>Provider</th><th>Allow?</th><th>Provide default?</th><th>Let students BYO?</th></tr></thead>
+      <thead><tr><th>Provider</th><th>Visible</th><th>Provided</th><th>Let students auth themselves</th></tr></thead>
       <tbody>${providerRows}</tbody>
     </table>
   `;
   // ── classroom-provider-auth:class-controls-providers END ──────────────
-  const authChecks = ALL_AUTH.map((a) => `
-    <label class="cc-check"><input type="checkbox" data-cc-auth="${a}" ${cls.authModesAvailable.includes(a) ? 'checked' : ''}> ${escapeHtml(AUTH_LABEL[a])}</label>
-  `).join('');
 
   body.innerHTML = `
     ${unconfiguredBanner}
@@ -505,30 +517,60 @@ function renderClassControlsForm(body, cfg) {
       <h3>Providers available</h3>
       ${providersBlock}
     </div>
-    <div class="cc-group">
-      <h3>Auth modes available</h3>
-      <div class="cc-row">${authChecks}</div>
-    </div>
     <div class="home-actions">
-      <button class="btn btn-primary" id="cc-save">Save class controls</button>
+      <button class="btn btn-primary" id="cc-save" disabled>Apply</button>
       <span class="muted" id="cc-status"></span>
     </div>
   `;
 
-  body.querySelector('#cc-save').addEventListener('click', async () => {
-    const providers = {};
-    for (const p of PROVIDERS.concat([{ id: 'local' }])) {
-      providers[p.id] = {
-        allow:          body.querySelector(`[data-cc-provider-allow="${p.id}"]`)?.checked || false,
-        provideDefault: body.querySelector(`[data-cc-provider-default="${p.id}"]`)?.checked || false,
-        allowByo:       body.querySelector(`[data-cc-provider-byo="${p.id}"]`)?.checked || false,
-      };
+  // Dirty tracking: snapshot the rendered form's checked state, then on
+  // any change compare and enable/disable the Apply button. Recapture
+  // after a successful save so the button greys out again.
+  const snapshotForm = () => {
+    const snap = {};
+    body.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+      const key = cb.dataset.ccTab
+        ? `tab:${cb.dataset.ccTab}`
+        : cb.dataset.ccGroupVisible
+          ? `vis:${cb.dataset.ccGroupVisible}`
+          : cb.dataset.ccGroupProvided
+            ? `prov:${cb.dataset.ccGroupProvided}`
+            : cb.dataset.ccGroupByo
+              ? `byo:${cb.dataset.ccGroupByo}`
+              : null;
+      if (key) snap[key] = cb.checked;
+    });
+    return snap;
+  };
+  let initialSnap = snapshotForm();
+  const applyBtn = body.querySelector('#cc-save');
+  const refreshApplyState = () => {
+    const current = snapshotForm();
+    const dirty = Object.keys(current).some((k) => current[k] !== initialSnap[k]);
+    applyBtn.disabled = !dirty;
+  };
+  body.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+    cb.addEventListener('change', refreshApplyState);
+  });
+
+  applyBtn.addEventListener('click', async () => {
+    // Preserve unknown-spec entries (e.g. future specs registered on the
+    // host but not yet in PROVIDER_GROUPS) so a UI save doesn't clobber
+    // them. Then broadcast each group toggle to every underlying spec id.
+    const providers = { ...policies };
+    for (const g of PROVIDER_GROUPS) {
+      const visible = body.querySelector(`[data-cc-group-visible="${g.id}"]`)?.checked || false;
+      const provided = body.querySelector(`[data-cc-group-provided="${g.id}"]`)?.checked || false;
+      const byo = body.querySelector(`[data-cc-group-byo="${g.id}"]`)?.checked || false;
+      for (const sid of g.specIds) {
+        providers[sid] = { allow: visible, provideDefault: provided, allowByo: byo };
+      }
     }
     const next = {
       classes: {
         default: {
           tabsVisibleToStudents: [...body.querySelectorAll('[data-cc-tab]')].filter((i) => i.checked).map((i) => i.dataset.ccTab),
-          authModesAvailable:    [...body.querySelectorAll('[data-cc-auth]')].filter((i) => i.checked).map((i) => i.dataset.ccAuth),
+          authModesAvailable:    cls.authModesAvailable || [],
           providers,
         },
       },
@@ -547,9 +589,13 @@ function renderClassControlsForm(body, cfg) {
         status.textContent = `Save failed: ${err.error || res.status}`;
         return;
       }
-      status.textContent = 'Saved. Students will see the new settings on their next page load.';
+      status.textContent = 'Applied. Students will see the new settings on their next page load.';
+      // Reset the dirty baseline so the button greys out again until
+      // the next edit.
+      initialSnap = snapshotForm();
+      refreshApplyState();
     } catch (err) {
-      status.textContent = `Save failed: ${String(err)}`;
+      status.textContent = `Apply failed: ${String(err)}`;
     }
   });
 }
@@ -738,6 +784,11 @@ function escapeHtml(s) {
 // Home card the current agent's id works.
 async function renderProvidersCard(body) {
   if (!body) return;
+  const user = window.__pg && window.__pg.user;
+  const isInstructor = user && (user.role === 'owner' || user.role === 'ta');
+  if (isInstructor) {
+    return renderInstructorProvidersCard(body);
+  }
   try {
     const agentGroupId = (window.currentAgent && window.currentAgent.id) || '';
     const res = await fetch(
@@ -756,6 +807,156 @@ async function renderProvidersCard(body) {
   } catch (err) {
     body.innerHTML = `<p class="muted">Couldn't load providers: ${escapeHtml(String(err))}</p>`;
   }
+}
+
+// ── Instructor LLM Providers card ────────────────────────────────────────
+// One row per user-facing PROVIDER_GROUPS entry. Each row:
+//   - status pill ("● Set (subscription)" / "○ Not connected" / …)
+//   - inline "subscription | API key" radio for mixed groups (OpenAI,
+//     Anthropic); writes to canonicalSpec.creds.active which the C-1
+//     class-pool resolver reads
+//   - one button per row (Connect / Manage / Settings) that opens the
+//     existing cred dialog on the canonical spec
+// Policy (Visible / Provided / Let students auth themselves) is handled
+// on the Class Controls card — credential management and policy are
+// intentionally split across the two cards.
+async function renderInstructorProvidersCard(body) {
+  try {
+    const agentGroupId = (window.currentAgent && window.currentAgent.id) || '';
+    const res = await fetch(
+      `/api/me/models-tab-state?agentGroupId=${encodeURIComponent(agentGroupId)}`,
+      { credentials: 'same-origin' },
+    );
+    const data = await res.json();
+    const specsById = {};
+    for (const p of data.providers || []) specsById[p.id] = p;
+
+    body.innerHTML = PROVIDER_GROUPS.map((group) => renderInstructorGroupRow(group, specsById))
+      .filter(Boolean)
+      .join('');
+    wireInstructorProvidersCard(body, specsById);
+  } catch (err) {
+    body.innerHTML = `<p class="muted">Couldn't load providers: ${escapeHtml(String(err))}</p>`;
+  }
+}
+
+function renderInstructorGroupRow(group, specsById) {
+  const canonical = specsById[group.canonicalSpecId];
+  if (!canonical) {
+    return `<div class="provider-row muted">${escapeHtml(group.displayName)} — spec not registered</div>`;
+  }
+  // Aggregate across the group's specs so the OpenAI row reflects state
+  // for BOTH codex and openai-platform creds (per-spec storage; UI view
+  // of "do we have an OpenAI API key anywhere" is the union).
+  const hasAnyOAuth = group.specIds.some((sid) => specsById[sid]?.creds?.hasOAuth);
+  const hasAnyApiKey = group.specIds.some((sid) => specsById[sid]?.creds?.hasApiKey);
+  const anyConnected = hasAnyOAuth || hasAnyApiKey;
+  const active = canonical.creds.active;
+  const mark = anyConnected ? '●' : '○';
+
+  // Chips are display-only state indicators now. For mixed groups (OpenAI,
+  // Anthropic) each chip shows connection state + a radio for choosing
+  // the class-pool default. For non-mixed groups, a single "Configured" /
+  // "Not connected" status label. Opening the cred dialog (connect /
+  // manage / disconnect / paste) lives on a separate settings gear icon
+  // on the right side of the row so the chip doesn't try to do double duty.
+  const methodChip = (label, method, connected) => {
+    const isActive = active === method && connected;
+    const chipClasses = ['provider-method', connected ? 'is-connected' : '', isActive ? 'is-active' : '']
+      .filter(Boolean)
+      .join(' ');
+    const radioTooltip = connected ? 'Use this credential for class-pool calls' : 'Connect this method first';
+    return `
+      <span class="${chipClasses}" data-method="${method}">
+        <input type="radio" class="provider-radio" name="active-${group.id}" value="${method}" ${isActive ? 'checked' : ''} ${connected ? '' : 'disabled'} title="${escapeHtml(radioTooltip)}">
+        <span class="provider-method-text">${escapeHtml(label)}</span>
+      </span>`;
+  };
+
+  let methodsHtml;
+  if (group.hasMixed) {
+    methodsHtml = `
+      ${methodChip('Subscription', 'oauth', hasAnyOAuth)}
+      ${methodChip('API key', 'apiKey', hasAnyApiKey)}`;
+  } else {
+    // Single-method groups: status pill, no radio (no choice to make).
+    const statusLabel =
+      canonical.credentialFileShape === 'none'
+        ? anyConnected
+          ? 'Configured'
+          : 'Not configured'
+        : anyConnected
+          ? 'Connected'
+          : 'Not connected';
+    methodsHtml = `<span class="provider-status ${anyConnected ? 'is-connected' : ''}">${escapeHtml(statusLabel)}</span>`;
+  }
+
+  // Settings gear opens the cred dialog. Same affordance for every row,
+  // independent of whether the group is mixed or single-method.
+  const gearTooltip = anyConnected ? `Manage ${group.displayName} credential` : `Set up ${group.displayName}`;
+  const gearHtml = `<button class="provider-gear" type="button" title="${escapeHtml(gearTooltip)}" aria-label="${escapeHtml(gearTooltip)}">⚙</button>`;
+
+  return `
+    <div class="provider-row ${anyConnected ? 'is-connected' : ''}" data-group="${group.id}">
+      <span class="provider-mark">${mark}</span>
+      <strong class="provider-name">${escapeHtml(group.displayName)}</strong>
+      <span class="provider-methods">${methodsHtml}</span>
+      ${gearHtml}
+    </div>`;
+}
+
+function wireInstructorProvidersCard(body, specsById) {
+  body.querySelectorAll('.provider-row[data-group]').forEach((rowEl) => {
+    const groupId = rowEl.dataset.group;
+    const group = PROVIDER_GROUPS.find((g) => g.id === groupId);
+    if (!group) return;
+    const canonical = specsById[group.canonicalSpecId];
+    if (!canonical) return;
+
+    // Click any method chip → open the cred dialog on the canonical spec.
+    // The dialog's mixed variant exposes Connect-subscription + Paste-API-
+    // key + active-method switching + disconnect all in one place; the
+    // 'none' variant handles OMLX reachability / Clemson settings. Enter
+    // and Space activate too (chips have role=button + tabindex=0).
+    const openDialog = () =>
+      openCredDialog({
+        providerId: canonical.id,
+        providerSpec: {
+          id: canonical.id,
+          displayName: group.displayName,
+          credentialFileShape: canonical.credentialFileShape,
+          apiKey: canonical.apiKeyPlaceholder ? { placeholder: canonical.apiKeyPlaceholder } : undefined,
+        },
+        currentCredState: {
+          hasOAuth: canonical.creds.hasOAuth,
+          hasApiKey: canonical.creds.hasApiKey,
+          activeMethod: canonical.creds.active,
+          accountEmail: canonical.creds.accountEmail || '',
+        },
+        onSaved: () => renderInstructorProvidersCard(body),
+      });
+
+    // Gear icon → open cred dialog (connect / manage / disconnect).
+    const gear = rowEl.querySelector('.provider-gear');
+    if (gear) {
+      gear.addEventListener('click', openDialog);
+    }
+
+    // Active-method radio (mixed groups only) → POST set-active.
+    rowEl.querySelectorAll('input.provider-radio').forEach((input) => {
+      input.addEventListener('change', async () => {
+        if (input.disabled) return;
+        const r = await fetch(`/api/me/providers/${canonical.id}/active`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ active: input.value }),
+        });
+        if (!r.ok) alert(`Couldn't switch active method for ${group.displayName} (${r.status}).`);
+        renderInstructorProvidersCard(body);
+      });
+    });
+  });
 }
 
 // p is one entry from /api/me/models-tab-state.providers, with shape:

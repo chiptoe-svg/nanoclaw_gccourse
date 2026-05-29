@@ -270,7 +270,13 @@ export class PiProvider implements AgentProvider {
       return err.code === 'session';
     }
     const msg = err instanceof Error ? err.message : String(err);
-    return /session.*not found|invalid continuation|ENOENT|not[_ -]?found/i.test(msg);
+    // "Duplicate item found with id ..." is what OpenAI's Responses API
+    // returns when chatgpt.com receives a request whose `input` items
+    // collide on id — usually a stale anthropic-shaped continuation
+    // replayed into the codex backend. Treat it as a session-format
+    // mismatch so the poll-loop drops the continuation and retries
+    // with a fresh session.
+    return /session.*not found|invalid continuation|ENOENT|not[_ -]?found|duplicate item found/i.test(msg);
   }
 
   query(input: QueryInput): AgentQuery {

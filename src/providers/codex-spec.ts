@@ -1,5 +1,6 @@
 import { registerProvider } from './auth-registry.js';
 import type { ModelEntry } from '../model-catalog.js';
+import { OPENAI_CATALOG } from './openai-catalog.js';
 
 // Values sourced from docs/providers/oauth-endpoints.md (Codex v0.124.0).
 // Re-verify after major @openai/codex version bumps.
@@ -47,73 +48,9 @@ registerProvider({
   // Per-1M tokens → per-1k (divide by 1000). Update when OpenAI ships new
   // codex models or revises pricing — the auto-refresh task on the
   // post-class punch list will eventually keep this in sync automatically.
-  catalogModels: [
-    {
-      id: 'gpt-5.5',
-      modelProvider: 'openai-codex',
-      displayName: 'gpt-5.5',
-      origin: 'cloud',
-      costPer1kInUsd: 0.005,
-      costPer1kOutUsd: 0.03,
-      costPer1kCachedInUsd: 0.0005,
-      modalities: ['text', 'image'],
-      chips: ['☁ OpenAI', '🔝 frontier'],
-      notes: "OpenAI's newest frontier codex model — complex coding, computer use, knowledge work, research.",
-      bestFor: 'Hardest reasoning + multi-step coding tasks.',
-      default: true,
-    },
-    {
-      id: 'gpt-5.4',
-      modelProvider: 'openai-codex',
-      displayName: 'gpt-5.4',
-      origin: 'cloud',
-      costPer1kInUsd: 0.0025,
-      costPer1kOutUsd: 0.015,
-      costPer1kCachedInUsd: 0.00025,
-      modalities: ['text', 'image'],
-      chips: ['☁ OpenAI', '$$ pricier'],
-      notes: 'Flagship — GPT-5.3-Codex coding capabilities + stronger reasoning, tool use, agentic workflows.',
-      bestFor: 'Professional work blending coding with broader agentic flows.',
-    },
-    {
-      id: 'gpt-5.4-mini',
-      modelProvider: 'openai-codex',
-      displayName: 'gpt-5.4-mini',
-      origin: 'cloud',
-      costPer1kInUsd: 0.00075,
-      costPer1kOutUsd: 0.0045,
-      costPer1kCachedInUsd: 0.000075,
-      modalities: ['text', 'image'],
-      chips: ['☁ OpenAI', '⚡ fast', '$ cheap'],
-      notes: 'Fast, efficient mini model for responsive coding tasks and subagents.',
-      bestFor: 'Short tasks, classification, subagents — when latency matters more than depth.',
-    },
-    {
-      id: 'gpt-5.3-codex',
-      modelProvider: 'openai-codex',
-      displayName: 'gpt-5.3-codex',
-      origin: 'cloud',
-      costPer1kInUsd: 0.00175,
-      costPer1kOutUsd: 0.014,
-      costPer1kCachedInUsd: 0.000175,
-      modalities: ['text', 'image'],
-      chips: ['☁ OpenAI', '💻 code'],
-      notes: 'Industry-leading coding model — its coding capabilities also power GPT-5.4.',
-      bestFor: 'Complex software engineering when you want the pure code-tuned model.',
-    },
-    {
-      id: 'gpt-5.2',
-      modelProvider: 'openai-codex',
-      displayName: 'gpt-5.2',
-      origin: 'cloud',
-      // Pricing not on current pricing page (older general-purpose model);
-      // omit rather than guess. The aggregator falls back to $0 cost which
-      // is wrong but conservative — surface a warning if you start charging
-      // students for 5.2 usage.
-      modalities: ['text', 'image'],
-      chips: ['☁ OpenAI', '⏮ previous gen'],
-      notes: 'Previous general-purpose codex model — hard debugging tasks needing deeper deliberation.',
-      bestFor: 'Long-thinking debugging when newer models feel rushed.',
-    },
-  ] satisfies ModelEntry[],
+  // Catalog comes from the shared OPENAI_CATALOG — same lineup as
+  // openai-platform-spec.ts. Tagged with the codex modelProvider name
+  // since that's what container_configs.model_provider stores when an
+  // agent routes through the ChatGPT subscription OAuth path.
+  catalogModels: OPENAI_CATALOG.map((m) => ({ ...m, modelProvider: 'openai-codex' })) satisfies ModelEntry[],
 });

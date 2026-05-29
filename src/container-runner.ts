@@ -153,6 +153,7 @@ async function spawnContainer(session: Session): Promise<void> {
     provider,
     contribution,
     agentIdentifier,
+    session.id,
   );
 
   log.info('Spawning container', { sessionId: session.id, agentGroup: agentGroup.name, containerName });
@@ -523,6 +524,7 @@ async function buildContainerArgs(
   provider: string,
   providerContribution: ProviderContainerContribution,
   agentIdentifier?: string,
+  sessionId?: string,
 ): Promise<string[]> {
   const args: string[] = ['run', '--rm', '--name', containerName, '--label', CONTAINER_INSTALL_LABEL];
 
@@ -557,6 +559,15 @@ async function buildContainerArgs(
   // requests gracefully fall back to instructor / class-default
   // credentials at the proxy.
   args.push('-e', `X_NANOCLAW_AGENT_GROUP=${agentGroup.id}`);
+
+  // Per-call session attribution for the credential proxy's payload log.
+  // The container's proxy-fetch wrapper injects this as
+  // `X-NanoClaw-Session-Id` on every outbound request to the proxy.
+  // Missing-header requests fall back to the agent-group's
+  // `unattributed.db` store; harmless.
+  if (sessionId) {
+    args.push('-e', `X_NANOCLAW_SESSION_ID=${sessionId}`);
+  }
 
   const authMode = detectAuthMode();
   if (authMode === 'api-key') {

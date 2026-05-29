@@ -15,6 +15,8 @@ import fs from 'fs';
 import path from 'path';
 
 import { PROJECT_ROOT } from '../../../config.js';
+import { listProviderSpecs } from '../../../providers/auth-registry.js';
+import { ownerHasCredsForSpec } from '../../../owner-creds-ready.js';
 import type { ApiResult } from './me.js';
 
 const CONFIG_PATH = path.join(PROJECT_ROOT, 'config', 'class-controls.json');
@@ -108,8 +110,24 @@ export function writeClassControls(cc: ClassControls): void {
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(cc, null, 2) + '\n');
 }
 
-export function handleGetClassControls(): ApiResult<ClassControls> {
-  return { status: 200, body: readClassControls() };
+/**
+ * GET response carries the existing policy shape PLUS a `providedReady`
+ * map: spec id → boolean. true = the instructor (owner) has a usable
+ * credential for that spec (or a sibling, per the resolver's fallback
+ * rule). false = the "Provided" checkbox should be disabled and a
+ * tooltip should point the instructor at the LLM Providers card.
+ */
+export interface ClassControlsResponse extends ClassControls {
+  providedReady: Record<string, boolean>;
+}
+
+export function handleGetClassControls(): ApiResult<ClassControlsResponse> {
+  const cc = readClassControls();
+  const providedReady: Record<string, boolean> = {};
+  for (const spec of listProviderSpecs()) {
+    providedReady[spec.id] = ownerHasCredsForSpec(spec.id);
+  }
+  return { status: 200, body: { ...cc, providedReady } };
 }
 
 export function handlePutClassControls(body: Partial<ClassControls>): ApiResult<ClassControls> {
