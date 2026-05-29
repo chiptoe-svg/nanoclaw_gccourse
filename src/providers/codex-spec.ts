@@ -1,5 +1,6 @@
 import { registerProvider } from './auth-registry.js';
 import type { ModelEntry } from '../model-catalog.js';
+import { OPENAI_CATALOG } from './openai-catalog.js';
 
 // Values sourced from docs/providers/oauth-endpoints.md (Codex v0.124.0).
 // Re-verify after major @openai/codex version bumps.
@@ -47,76 +48,9 @@ registerProvider({
   // Per-1M tokens → per-1k (divide by 1000). Update when OpenAI ships new
   // codex models or revises pricing — the auto-refresh task on the
   // post-class punch list will eventually keep this in sync automatically.
-  // Tier ladder per the 2026-05-28 review (Option B): frontier-max →
-  // frontier → daily driver (default ★) → fast/cheap → ultra-cheap nano.
-  // Same lineup mirrored in openai-platform-spec.ts — when updating one,
-  // update the other.
-  catalogModels: [
-    {
-      id: 'gpt-5.5-pro',
-      modelProvider: 'openai-codex',
-      displayName: 'gpt-5.5-pro',
-      origin: 'cloud',
-      // Pricing not on OpenAI's published page yet — omit rather than guess.
-      // The cost aggregator falls back to 0 which is wrong but conservative;
-      // surface a warning if billable -pro usage appears in usage reports.
-      modalities: ['text', 'image'],
-      chips: ['☁ OpenAI', '🔝 frontier', '$$$ premium'],
-      notes:
-        'Frontier-max tier — extends gpt-5.5 with stronger reasoning and longer thinking budgets. May be subscription-tier-gated on ChatGPT EDU/Plus.',
-      bestFor: 'Hardest reasoning, complex multi-step planning, research.',
-    },
-    {
-      id: 'gpt-5.5',
-      modelProvider: 'openai-codex',
-      displayName: 'gpt-5.5',
-      origin: 'cloud',
-      costPer1kInUsd: 0.005,
-      costPer1kOutUsd: 0.03,
-      costPer1kCachedInUsd: 0.0005,
-      modalities: ['text', 'image'],
-      chips: ['☁ OpenAI', '🔝 frontier'],
-      notes:
-        "OpenAI's frontier model — complex coding, computer use, knowledge work. Headroom above the daily driver for tough problems.",
-      bestFor: 'Hard reasoning + multi-step coding when 5.4 isn’t enough.',
-    },
-    {
-      id: 'gpt-5.4',
-      modelProvider: 'openai-codex',
-      displayName: 'gpt-5.4',
-      origin: 'cloud',
-      costPer1kInUsd: 0.0025,
-      costPer1kOutUsd: 0.015,
-      costPer1kCachedInUsd: 0.00025,
-      modalities: ['text', 'image'],
-      chips: ['☁ OpenAI', '⚖ balanced'],
-      notes: 'Daily driver — balanced quality + cost. Recommended default for most class work.',
-      bestFor: 'Professional work blending coding with broader agentic flows.',
-      default: true,
-    },
-    {
-      id: 'gpt-5.4-mini',
-      modelProvider: 'openai-codex',
-      displayName: 'gpt-5.4-mini',
-      origin: 'cloud',
-      costPer1kInUsd: 0.00075,
-      costPer1kOutUsd: 0.0045,
-      costPer1kCachedInUsd: 0.000075,
-      modalities: ['text', 'image'],
-      chips: ['☁ OpenAI', '⚡ fast', '$ cheap'],
-      notes: 'Fast, efficient mini for responsive tasks and subagents.',
-      bestFor: 'Short tasks, classification, subagents — when latency matters more than depth.',
-    },
-    {
-      id: 'gpt-5.4-nano',
-      modelProvider: 'openai-codex',
-      displayName: 'gpt-5.4-nano',
-      origin: 'cloud',
-      // Pricing not on OpenAI's published page yet — omit rather than guess.
-      modalities: ['text', 'image'],
-      chips: ['☁ OpenAI', '⚡ ultra-fast', '$ cheapest'],
-      notes: 'Smallest 5.4-family variant — cheapest and fastest, lighter capability.',
-      bestFor: 'Penny-per-turn subagents, classification, lookups.',
-    },
-  ] satisfies ModelEntry[],
+  // Catalog comes from the shared OPENAI_CATALOG — same lineup as
+  // openai-platform-spec.ts. Tagged with the codex modelProvider name
+  // since that's what container_configs.model_provider stores when an
+  // agent routes through the ChatGPT subscription OAuth path.
+  catalogModels: OPENAI_CATALOG.map((m) => ({ ...m, modelProvider: 'openai-codex' })) satisfies ModelEntry[],
 });

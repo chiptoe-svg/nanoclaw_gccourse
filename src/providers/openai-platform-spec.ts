@@ -1,5 +1,6 @@
 import type { ModelEntry } from '../model-catalog.js';
 import { registerProvider } from './auth-registry.js';
+import { OPENAI_CATALOG } from './openai-catalog.js';
 
 registerProvider({
   id: 'openai-platform',
@@ -21,70 +22,9 @@ registerProvider({
   // If a model ID returns 404 when invoked via api.openai.com (i.e. the
   // empirical assumption is wrong for that specific model), drop it from
   // this catalog and surface the gap in state.md.
-  // Tier ladder per the 2026-05-28 review (Option B); mirrors codex-spec.ts.
-  catalogModels: [
-    {
-      id: 'gpt-5.5-pro',
-      modelProvider: 'openai-platform',
-      displayName: 'gpt-5.5-pro',
-      origin: 'cloud',
-      modalities: ['text', 'image'],
-      chips: ['☁ OpenAI', '🔝 frontier', '$$$ premium'],
-      notes:
-        'Frontier-max tier — extends gpt-5.5 with stronger reasoning and longer thinking budgets. Pricing not on the published page; omit rather than guess.',
-      bestFor: 'Hardest reasoning, complex multi-step planning, research.',
-    },
-    {
-      id: 'gpt-5.5',
-      modelProvider: 'openai-platform',
-      displayName: 'gpt-5.5',
-      origin: 'cloud',
-      costPer1kInUsd: 0.005,
-      costPer1kOutUsd: 0.03,
-      costPer1kCachedInUsd: 0.0005,
-      modalities: ['text', 'image'],
-      chips: ['☁ OpenAI', '🔝 frontier'],
-      notes:
-        "OpenAI's frontier model — complex coding, computer use, knowledge work. Headroom above the daily driver for tough problems.",
-      bestFor: 'Hard reasoning + multi-step coding when 5.4 isn’t enough.',
-    },
-    {
-      id: 'gpt-5.4',
-      modelProvider: 'openai-platform',
-      displayName: 'gpt-5.4',
-      origin: 'cloud',
-      costPer1kInUsd: 0.0025,
-      costPer1kOutUsd: 0.015,
-      costPer1kCachedInUsd: 0.00025,
-      modalities: ['text', 'image'],
-      chips: ['☁ OpenAI', '⚖ balanced'],
-      notes: 'Daily driver — balanced quality + cost. Recommended default for most class work.',
-      bestFor: 'Professional work blending coding with broader agentic flows.',
-      default: true,
-    },
-    {
-      id: 'gpt-5.4-mini',
-      modelProvider: 'openai-platform',
-      displayName: 'gpt-5.4-mini',
-      origin: 'cloud',
-      costPer1kInUsd: 0.00075,
-      costPer1kOutUsd: 0.0045,
-      costPer1kCachedInUsd: 0.000075,
-      modalities: ['text', 'image'],
-      chips: ['☁ OpenAI', '⚡ fast', '$ cheap'],
-      notes: 'Fast, efficient mini for responsive tasks and subagents.',
-      bestFor: 'Short tasks, classification, subagents — when latency matters more than depth.',
-    },
-    {
-      id: 'gpt-5.4-nano',
-      modelProvider: 'openai-platform',
-      displayName: 'gpt-5.4-nano',
-      origin: 'cloud',
-      modalities: ['text', 'image'],
-      chips: ['☁ OpenAI', '⚡ ultra-fast', '$ cheapest'],
-      notes:
-        'Smallest 5.4-family variant — cheapest and fastest, lighter capability. Pricing not on the published page; omit rather than guess.',
-      bestFor: 'Penny-per-turn subagents, classification, lookups.',
-    },
-  ] satisfies ModelEntry[],
+  // Catalog comes from the shared OPENAI_CATALOG — same lineup as
+  // codex-spec.ts. Tagged with the openai-platform modelProvider name
+  // since that's what container_configs.model_provider stores when an
+  // agent routes through the Platform API key path.
+  catalogModels: OPENAI_CATALOG.map((m) => ({ ...m, modelProvider: 'openai-platform' })) satisfies ModelEntry[],
 });

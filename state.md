@@ -105,17 +105,17 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `main`
-- **Last tag:** `phase-c-complete-2026-05-28` (0 commits ahead)
+- **Last tag:** `phase-c-complete-2026-05-28` (1 commits ahead)
 
 ### Working tree
 
 ```
-## main...origin/main
+## main...origin/main [ahead 1]
  M config/playground-seats.json
+M  src/model-providers/openai.test.ts
 M  src/model-providers/openai.ts
-M  src/providers/codex-spec.test.ts
 M  src/providers/codex-spec.ts
-M  src/providers/openai-platform-spec.test.ts
+A  src/providers/openai-catalog.ts
 M  src/providers/openai-platform-spec.ts
 ?? .codegraph/
 ```
@@ -123,6 +123,7 @@ M  src/providers/openai-platform-spec.ts
 ### Recent commits (last 15)
 
 ```
+159cefc catalog(openai): retire 5.3-codex + 5.2; add 5.5-pro + 5.4-nano; move default to 5.4
 27c1de5 feat(playground/chat): /recent endpoint backfills dropped-SSE messages
 3434c91 feat(models-tab): live discovery for Anthropic + OpenAI sections
 7d8ada8 feat(hf-metadata): fetch contextSize from repo config.json (incl. nested text_config)
@@ -137,9 +138,8 @@ be704d4 fix(pi): per-modelProvider continuation + duplicate-item recovery + Mode
 a3cda47 fix(direct-chat): accept catalog modelProvider names (openai-codex, anthropic, ...)
 77e1bd8 fix(playground/models): recognize both namespaces in whitelist + write to catalog name
 2795cba fix(playground/chat): providerAuth keyed by modelProvider not spec id
-0f64b40 feat(models-tab): live-augment OMLX catalog from server + add claude-opus-4-7
 ```
 
 ### Last refresh
 
-2026-05-29T00:23:10Z
+2026-05-29T02:34:52Z
