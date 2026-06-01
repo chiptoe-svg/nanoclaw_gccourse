@@ -114,21 +114,27 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `main`
-- **Last tag:** `phase-c-complete-2026-05-28` (5 commits ahead)
+- **Last tag:** `phase-c-complete-2026-05-28` (6 commits ahead)
 
 ### Working tree
 
 ```
 ## main...origin/main
-A  src/codex-auth-json.test.ts
-A  src/codex-auth-json.ts
-M  src/providers/pi.ts
+M  src/channels/adapter.ts
+M  src/channels/playground/adapter.ts
+M  src/channels/playground/api-routes.ts
+M  src/channels/playground/api/recent.ts
+M  src/channels/playground/public/style.css
+M  src/channels/playground/public/tabs/chat.js
+M  src/delivery.ts
+M  src/index.ts
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+be16b43 feat(pi/codex): per-student auth.json on the agent path
 e0a8f58 docs(state): decision-log entries for the 2026-05-28/29 arc
 6ecf75a catalog(anthropic): align tier chips/notes with the OpenAI 5-tier voice
 7668e30 chore(playground-seats): add Pi Test seat as owner
@@ -143,9 +149,8 @@ fe7497f feat(models-tab): enrich discovered local + clemson models from HuggingF
 1010fca feat(models-tab): live Clemson discovery + per-card ✕ hide + refresh clears hides
 a0da6e7 feat(playground/chat): latency in pi message-end stats + turn totals
 32ea930 fix(playground/chat): collapse empty post-tool gpt-5.x turn into a note
-3657abe feat(playground/models): pre-add probe — fail fast with the upstream's error
 ```
 
 ### Last refresh
 
-2026-05-29T17:16:52Z
+2026-06-01T13:52:24Z
