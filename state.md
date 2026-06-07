@@ -115,21 +115,23 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `main`
-- **Last tag:** `phase-c-complete-2026-05-28` (11 commits ahead)
+- **Last tag:** `phase-c-complete-2026-05-28` (12 commits ahead)
 
 ### Working tree
 
 ```
-## main...origin/main [ahead 1]
+## main...origin/main
  M .claude/scheduled_tasks.lock
-A  docs/how-it-works.html
-A  plans/trunk-classroom-extraction.md
+M  docs/how-it-works.html
+A  plans/controlled-access-core.md
+D  plans/trunk-classroom-extraction.md
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+d387304 docs: behind-the-scenes architecture HTML + trunk-extraction plan
 bd823d2 harden(playground+proxy): pre-launch security & stability fixes
 936eef3 docs(spec): ingestion & retrieval pipeline explorer (knobs on Sources/Retrieval)
 cda5d5d ops(omlx): upgrade 0.3.8 → 0.4.0 (smoke-verified)
@@ -144,9 +146,8 @@ d169b4c refactor(openai): shared OPENAI_CATALOG; derive CODEX_WHITELIST from it
 27c1de5 feat(playground/chat): /recent endpoint backfills dropped-SSE messages
 3434c91 feat(models-tab): live discovery for Anthropic + OpenAI sections
 7d8ada8 feat(hf-metadata): fetch contextSize from repo config.json (incl. nested text_config)
-ff4105b feat(chat-tab): provider dropdown reads PROVIDER_GROUPS; server resolves group on PUT (Phase C-5)
 ```
 
 ### Last refresh
 
-2026-06-07T13:05:52Z
+2026-06-07T13:21:24Z

@@ -197,7 +197,7 @@
   <div class="box"><h4>channels branch</h4>Discord, Slack, Telegram, WhatsApp, Teams, Linear, GitHub, iMessage, … — installed via <code>/add-&lt;channel&gt;</code>.</div>
   <div class="box"><h4>providers branch</h4>Non-default agent providers (e.g. OpenCode) — installed via <code>/add-opencode</code>.</div>
 </div>
-<div class="warn">Known debt: classroom / Google-Workspace / student-auth code currently lives in trunk instead of on a branch (~40 files). Tracked for post-term extraction in <code>plans/trunk-classroom-extraction.md</code>. It works today; it's a hygiene issue, not a bug.</div>
+<div class="warn">Known debt + planned re-architecture: the "classroom" code (~40 files) is really a general <strong>controlled-access agent layer</strong> (per-user provisioning, end-user onboarding/auth, BYO + pooled credentials, member policy) plus a thin teaching veneer plus a Google integration. With three real consumers (classroom, department agents, an agent-optimization class) it's being extracted as a reusable core + per-profile skills. Plan: <code>plans/controlled-access-core.md</code>. It works today; this is post-term hygiene, not a bug.</div>
 
 <h2 id="knowledge">8 · Knowledge &amp; retrieval (RAG)</h2>
 <p>Documents are ingested into per-corpus indexes the agent can search at conversation time.</p>
