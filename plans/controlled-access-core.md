@@ -45,6 +45,40 @@ top.
   credentials, admin-pooled creds + member policy. The whole layer is common;
   only veneer + integrations differ.
 
+## Phase 0 findings — requirements across all three consumers (2026-06-07)
+
+Gathered with the owner. This is the gate output: the layer interface is now
+validated against department-agents and the agent-opt class, not classroom alone.
+
+| Hook | Classroom | Department | Agent-opt class | Verdict |
+|---|---|---|---|---|
+| Provisioning | 1 member → 1 agent | both 1→1 personal **and** many→1 shared | 1 member → **N variants** | must support 1:1, N:1, 1:N |
+| Onboarding/auth | PIN / passcode / magic-link | admin-adds-manually | self-service (class) | needs self-service **+** admin-provisioned modes; **no SSO yet** |
+| Credential resolver | pool + BYO | pool + BYO | pool + BYO | identical contract — genuinely common, unchanged |
+| Capability/policy | persona-only | shared agents read-mostly for members | **full agent/variant CRUD** | policy must span persona-only → full CRUD |
+| Benchmarks / eval | teaching aside | — | **central** | shared capability, **not** a classroom veneer |
+
+**Two corrections to the earlier framing:**
+
+1. **Provisioning is the stress point — and it maps onto existing primitives.**
+   The hook must NOT assume "one person = one agent." It must express three
+   relationships: 1 member→1 agent (personal), many members→1 agent (shared
+   functional agents), and 1 member→N agents (optimization variants). Trunk
+   already models members ↔ agent groups as **many-to-many**
+   (`agent_group_members` + the isolation model), so this is orchestration of
+   existing primitives, not a new data model. The hook needs two verbs —
+   `provisionAgent(member, spec)` and `grantAccess(member, agentGroup)` — instead
+   of the hardcoded `student_NN` 1:1 assumption baked into
+   `class-student-provision` today.
+
+2. **Benchmarks/eval belongs in the layer, not the classroom profile.** It was
+   misfiled as a teaching veneer. Both classroom and agent-opt use it; agent-opt
+   makes it central (comparing variants against a benchmark). Move it into the
+   controlled-access layer (or a shared `eval` sub-module the layer exposes).
+
+**Non-needs (don't build):** no SSO/SAML for any of the three yet; no
+shared-runtime multi-tenancy (separate installs); no fourth-consumer knobs.
+
 ## Target architecture (four tiers)
 
 ```
@@ -53,15 +87,19 @@ trunk (main)            agent infra + permission primitives (already here):
                         user_roles / members / command-gate / canAccessAgentGroup
 
 controlled-access       NEW reusable core (own branch, installed by skill):
-  layer                 - per-user agent provisioning + wiring
-                        - end-user onboarding/auth (tokens, PINs, passcodes)
+  layer                 - agent provisioning (1:1, N:1, 1:N) + access grants
+                        - onboarding/auth: self-service (tokens/PINs/passcodes)
+                          AND admin-provisioned modes
                         - per-user BYO creds + admin pool + resolver
-                        - member capability/policy (visible tabs, allowed actions)
+                        - member capability/policy (persona-only → full CRUD)
+                        - benchmarks / eval (shared by classroom + agent-opt)
                         renamed off teaching vocabulary
 
-profiles (thin)         classroom         → teaching vocab + roster/enrollment + benchmarks
-                        department-agents  → org naming/onboarding (reqs TBD)
-                        agent-opt-class    → eval/optimization focus (reqs TBD)
+profiles (thin)         classroom         → teaching vocab + roster/enrollment
+                        department-agents  → admin provisioning of shared +
+                                             personal agents; org naming
+                        agent-opt-class    → variant management + eval-centric
+                                             curriculum on the shared benchmark layer
 
 integrations            /add-gws (Google Workspace), channels — orthogonal skills
 ```
@@ -106,30 +144,38 @@ Mirror the existing `studentCredsHook` extension-point pattern. Trunk and the
 layer expose registries/hooks the next tier registers against; nothing is
 hardcoded into a lower tier:
 
-- **provisioning hook** — how a profile maps "a person" to an agent group +
-  wiring (classroom: roster row; department: org unit; agent-opt: signup).
-- **onboarding/auth registry** — pluggable login methods (PIN, passcode,
-  magic-link, future SSO for department).
+- **provisioning hook** — two verbs, not a 1:1 assumption (per Phase 0):
+  `provisionAgent(member, spec)` (1:1 personal, or 1:N variants) and
+  `grantAccess(member, agentGroup)` (many:1 shared agents). Profiles compose
+  them: classroom = provision-one-per-roster-row; department = grant-access to
+  shared agents + optional provision-personal; agent-opt = provision-N-variants.
+- **onboarding/auth registry** — pluggable login methods in two modes:
+  self-service (PIN, passcode, magic-link) and admin-provisioned (admin adds the
+  member; member still authenticates via magic-link). No SSO yet — don't build it.
 - **credential resolver** — already exists (`resolveStudentCreds`): per-user →
-  pool → deny. Generalize the naming; keep the contract.
-- **capability/policy provider** — what members may see/do (the `class-controls`
-  policy, generalized).
+  pool → deny. Phase 0 confirmed the contract is identical for all three; just
+  generalize the naming.
+- **capability/policy provider** — what members may see/do, spanning
+  persona-only (classroom) through full agent/variant CRUD (agent-opt). The
+  `class-controls` policy, generalized to a wider range.
+- **eval/benchmark capability** — shared by classroom and agent-opt (Phase 0
+  reclassification); lives in the layer, exposed to profiles that want it.
 - **container env contributor** — replaces `container-runner`'s direct import of
   `class-container-env` (the one core→feature coupling to sever).
 
 ## Phases
 
-0. **Requirements pass across all three consumers (GATE).** Document what
-   department-agents and the agent-opt class need from each interface — not just
-   classroom. If their needs diverge enough to fracture an interface, redesign
-   that interface before moving code. *Do not design the layer against the
-   classroom shape alone.*
+0. **Requirements pass across all three consumers (GATE).** ✅ DONE 2026-06-07 —
+   see "Phase 0 findings" above. Outcome: interfaces hold; two corrections
+   (provisioning needs 1:1/N:1/1:N; benchmarks move into the layer). No
+   interface fractured badly enough to block — proceed when the term ends.
 1. **Rename + re-layer in place on `main`.** Apply the vocabulary rename
    (+ DB compatibility migration), introduce the layer's hooks, sever the
    `container-runner` coupling. Behavior identical; lands on `main` first.
 2. **Extract the controlled-access layer** to its branch + `/add-controlled-access`.
 3. **Carve the classroom profile** into `/add-classroom` (teaching veneer +
-   roster/enrollment + benchmarks); move GWS into `/add-gws`.
+   roster/enrollment); benchmarks/eval stays in the layer (Phase 0); move GWS
+   into `/add-gws`.
 4. **Stand up the two new profiles** (`/add-department`, `/add-agent-opt`) — these
    are the real proof the abstraction is right. If a profile can't be expressed
    cleanly on the layer, the boundary is wrong → back to Phase 0 for that seam.

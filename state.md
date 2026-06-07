@@ -115,22 +115,21 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `main`
-- **Last tag:** `phase-c-complete-2026-05-28` (12 commits ahead)
+- **Last tag:** `phase-c-complete-2026-05-28` (13 commits ahead)
 
 ### Working tree
 
 ```
 ## main...origin/main
  M .claude/scheduled_tasks.lock
-M  docs/how-it-works.html
-A  plans/controlled-access-core.md
-D  plans/trunk-classroom-extraction.md
+M  plans/controlled-access-core.md
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+9b20fdd docs(plan): reframe classroom extraction as controlled-access core
 d387304 docs: behind-the-scenes architecture HTML + trunk-extraction plan
 bd823d2 harden(playground+proxy): pre-launch security & stability fixes
 936eef3 docs(spec): ingestion & retrieval pipeline explorer (knobs on Sources/Retrieval)
@@ -145,9 +144,8 @@ d169b4c refactor(openai): shared OPENAI_CATALOG; derive CODEX_WHITELIST from it
 159cefc catalog(openai): retire 5.3-codex + 5.2; add 5.5-pro + 5.4-nano; move default to 5.4
 27c1de5 feat(playground/chat): /recent endpoint backfills dropped-SSE messages
 3434c91 feat(models-tab): live discovery for Anthropic + OpenAI sections
-7d8ada8 feat(hf-metadata): fetch contextSize from repo config.json (incl. nested text_config)
 ```
 
 ### Last refresh
 
-2026-06-07T13:21:24Z
+2026-06-07T13:48:30Z
