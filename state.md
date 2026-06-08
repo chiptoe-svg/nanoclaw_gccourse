@@ -120,20 +120,27 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `main`
-- **Last tag:** `phase-c-complete-2026-05-28` (17 commits ahead)
+- **Last tag:** `phase-c-complete-2026-05-28` (18 commits ahead)
 
 ### Working tree
 
 ```
-## main...origin/main
+## main...origin/main [ahead 1]
  M .claude/scheduled_tasks.lock
-M  plans/controlled-access-core.md
+D  plans/controlled-access-core.md
+A  plans/group-agent-platform.md
+M  src/index.ts
+A  src/scenarios/classroom/index.ts
+R  src/class-pair-instructor.ts -> src/scenarios/classroom/pair-instructor.ts
+R  src/class-pair-ta.ts -> src/scenarios/classroom/pair-ta.ts
+A  src/scenarios/index.ts
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+980091d docs(plan): Phase 2 partition manifest — classify every file L/P/G/T
 91ece76 fix(controlled-access): make provider-creds dir migration merge-based
 9dd7feb refactor(controlled-access): rename credential/auth layer student→user (Phase 1, slice 1)
 9d90083 docs: record trunk+branch decision + classroom pilot status
@@ -148,9 +155,8 @@ cda5d5d ops(omlx): upgrade 0.3.8 → 0.4.0 (smoke-verified)
 be16b43 feat(pi/codex): per-student auth.json on the agent path
 e0a8f58 docs(state): decision-log entries for the 2026-05-28/29 arc
 6ecf75a catalog(anthropic): align tier chips/notes with the OpenAI 5-tier voice
-7668e30 chore(playground-seats): add Pi Test seat as owner
 ```
 
 ### Last refresh
 
-2026-06-08T03:26:29Z
+2026-06-08T03:54:46Z

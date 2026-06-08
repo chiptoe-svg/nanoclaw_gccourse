@@ -72,13 +72,14 @@ import './modules/index.js';
 // Each skill appends its own imports here for the registries it
 // registers against (codex auth resolver, container env contributor,
 // playground draft gate, pair consumer, telegram command).
-import './class-pair-greeting.js';
-import './class-pair-instructor.js';
-import './class-pair-ta.js';
-import './class-playground-gate.js';
-import './class-container-env.js';
-import './class-login-tokens.js';
-import './class-telegram-pair.js';
+// Platform pieces the classroom scenario builds on (shared by all scenarios):
+import './class-pair-greeting.js'; // base pairing mechanism
+import './class-playground-gate.js'; // member policy
+import './class-container-env.js'; // member git identity
+import './class-login-tokens.js'; // onboarding
+import './class-telegram-pair.js'; // onboarding
+// Scenario profiles (teaching-specific roles/personas live here, not in trunk):
+import './scenarios/index.js';
 
 // CLI command barrel — populates the `ncl` registry before the CLI server
 // accepts connections.
