@@ -47,12 +47,16 @@ This fork supports two classroom deployment shapes. For most teaching scenarios,
 
 The **per-person classroom** mode (each student authorizes their own Google + LLM provider) is more setup-heavy and lands incrementally — see [plans/master.md](plans/master.md) Phase 2.
 
-### Example course project — Build-Your-Own Photo-Critique Agent
+## Future projects
 
-A worked example of this fork in a real course (Clemson ART/PHOT 3400). In a one-week unit, students don't *use* a critique bot — they **build** their own: they name it, author its persona in the Playground's Persona tab, and toggle skills, then run it on their own photographs for a Socratic critique. The instructor owns the instance and the locked "Class base" floor; each student owns their per-agent persona. A companion module reverse-engineers studio lighting from inspiration images, comparing Adobe Firefly, ChatGPT Images 2.0, and a local IC-Light + ControlNet relighting demo. The instructor evolves the tool itself via Claude Code + GitHub Pull Requests.
+Designs planned for this fork — drafts in review, not yet built.
+
+### Build-Your-Own Photo-Critique Agent (ART/PHOT 3400)
+
+A one-week course unit where students don't *use* a critique bot — they **build** their own: they name it, author its persona in the Playground's Persona tab, and toggle skills, then run it on their own photographs for a Socratic critique. The instructor owns the instance and the locked "Class base" floor; each student owns their per-agent persona. A companion module reverse-engineers studio lighting from inspiration images, comparing Adobe Firefly, ChatGPT Images 2.0, and a local IC-Light + ControlNet relighting demo.
 
 - **Instructional brief (HTML):** [docs/critique-agent/lab-overview.html](docs/critique-agent/lab-overview.html) — instructor-facing overview with interface and lighting-tool mockups ([view rendered](https://htmlpreview.github.io/?https://github.com/chiptoe-svg/nanoclaw_gccourse/blob/main/docs/critique-agent/lab-overview.html)).
-- **Design spec (Markdown):** [docs/critique-agent/design-spec.md](docs/critique-agent/design-spec.md) — full design: the three-layer persona model, skills toggle-and-observe, the instructor-owned improvement workflow, and open questions.
+- **Design spec (Markdown):** [docs/critique-agent/design-spec.md](docs/critique-agent/design-spec.md) — full design: the three-layer persona model, skills toggle-and-observe, the studio-lighting companion, and open questions.
 
 _Status: draft for instructor review._
 

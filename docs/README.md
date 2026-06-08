@@ -13,8 +13,8 @@ The files in this directory are original design documents and developer referenc
 | [docker-sandboxes.md](docker-sandboxes.md) | [Docker Sandboxes](https://docs.nanoclaw.dev/advanced/docker-sandboxes) |
 | [APPLE-CONTAINER-NETWORKING.md](APPLE-CONTAINER-NETWORKING.md) | [Container runtime](https://docs.nanoclaw.dev/advanced/container-runtime) |
 
-## Course projects
+## Future projects
 
 | Project | Description |
 |---|---|
-| [critique-agent/](critique-agent/) | Build-Your-Own Photo-Critique Agent — example course unit (Clemson ART/PHOT 3400). [Brief](critique-agent/lab-overview.html) · [Spec](critique-agent/design-spec.md) |
+| [critique-agent/](critique-agent/) | Build-Your-Own Photo-Critique Agent — planned course unit (Clemson ART/PHOT 3400). [Brief](critique-agent/lab-overview.html) · [Spec](critique-agent/design-spec.md) |
