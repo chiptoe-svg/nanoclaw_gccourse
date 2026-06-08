@@ -122,20 +122,29 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `main`
-- **Last tag:** `phase-c-complete-2026-05-28` (19 commits ahead)
+- **Last tag:** `phase-c-complete-2026-05-28` (20 commits ahead)
 
 ### Working tree
 
 ```
 ## main...origin/main
  M .claude/scheduled_tasks.lock
-M  state.md
+M  scripts/class-skeleton.ts
+M  src/class-student-provision.ts
+M  src/config.ts
+M  src/scenarios/classroom/index.ts
+A  src/scenarios/classroom/personas.ts
+A  src/scenarios/classroom/scenario.ts
+A  src/scenarios/registry.test.ts
+A  src/scenarios/registry.ts
+A  src/scenarios/types.ts
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+960d69a docs(state): record group-agent-platform direction + Phase 1 done + Phase 2 deferred
 dce8da2 refactor(scenarios): group-agent platform + scenario profiles (Phase 1)
 980091d docs(plan): Phase 2 partition manifest — classify every file L/P/G/T
 91ece76 fix(controlled-access): make provider-creds dir migration merge-based
@@ -150,9 +159,8 @@ cda5d5d ops(omlx): upgrade 0.3.8 → 0.4.0 (smoke-verified)
 2433ff8 feat(skills): rag-pdf-ingest — wrap remote markdown-extraction endpoint
 40175a0 feat(playground): render agent-produced file downloads in chat
 be16b43 feat(pi/codex): per-student auth.json on the agent path
-e0a8f58 docs(state): decision-log entries for the 2026-05-28/29 arc
 ```
 
 ### Last refresh
 
-2026-06-08T04:05:10Z
+2026-06-08T16:01:31Z

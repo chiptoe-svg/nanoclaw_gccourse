@@ -9,5 +9,6 @@
 // member policy, base pairing/greeting) is platform code in src/, shared by
 // every scenario. See plans/group-agent-platform.md.
 
+import './scenario.js'; // registers the classroom scenario (roles, personas, greetings)
 import './pair-instructor.js';
 import './pair-ta.js';
