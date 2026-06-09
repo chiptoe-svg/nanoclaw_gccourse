@@ -22,6 +22,7 @@ const TMP = '/tmp/nanoclaw-test-default-participant-api';
 const GROUPS = path.join(TMP, 'groups');
 const OWNER_ID = 'playground:owner';
 const MEMBER_ID = 'playground:member';
+const ADMIN_ID = 'playground:globaladmin';
 
 function ownerSession() {
   return { cookieValue: 'owner-cookie', userId: OWNER_ID, createdAt: 0, lastActivityAt: 0 };
@@ -29,6 +30,10 @@ function ownerSession() {
 
 function nonOwnerSession() {
   return { cookieValue: 'member-cookie', userId: MEMBER_ID, createdAt: 0, lastActivityAt: 0 };
+}
+
+function globalAdminSession() {
+  return { cookieValue: 'admin-cookie', userId: ADMIN_ID, createdAt: 0, lastActivityAt: 0 };
 }
 
 function anonSession() {
@@ -53,6 +58,15 @@ beforeEach(() => {
   grantRole({
     user_id: OWNER_ID,
     role: 'owner',
+    agent_group_id: null,
+    granted_by: null,
+    granted_at: new Date().toISOString(),
+  });
+  // Create global admin user (admin but NOT owner)
+  createUser({ id: ADMIN_ID, kind: 'playground', display_name: null, created_at: new Date().toISOString() });
+  grantRole({
+    user_id: ADMIN_ID,
+    role: 'admin',
     agent_group_id: null,
     granted_by: null,
     granted_at: new Date().toISOString(),
@@ -158,5 +172,25 @@ describe('handleApplyDefaultToAll', () => {
     const body = applyResult.body as { ok: boolean; affected: number };
     expect(body.ok).toBe(true);
     expect(body.affected).toBe(1);
+  });
+});
+
+describe('global admin is owner-only gated on destructive ops', () => {
+  it('returns 403 for global admin on save', async () => {
+    const { handleSaveDefaultParticipant } = await import('./default-participant.js');
+    const result = handleSaveDefaultParticipant(globalAdminSession());
+    expect(result.status).toBe(403);
+  });
+
+  it('returns 403 for global admin on apply-all', async () => {
+    const { handleApplyDefaultToAll } = await import('./default-participant.js');
+    const result = handleApplyDefaultToAll(globalAdminSession(), { confirm: 'APPLY' });
+    expect(result.status).toBe(403);
+  });
+
+  it('returns 200 for global admin on GET (read is allowed)', async () => {
+    const { handleGetDefaultParticipant } = await import('./default-participant.js');
+    const result = handleGetDefaultParticipant(globalAdminSession());
+    expect(result.status).toBe(200);
   });
 });

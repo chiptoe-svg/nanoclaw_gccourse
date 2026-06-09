@@ -63,7 +63,7 @@ export interface SaveDefaultParticipantResponse {
 }
 
 export function handleSaveDefaultParticipant(session: PlaygroundSession): ApiResult<SaveDefaultParticipantResponse> {
-  if (!isOwnerOrAdmin(session.userId)) {
+  if (!session.userId || !isOwner(session.userId)) {
     return { status: 403, body: { error: 'owner role required' } };
   }
   saveDefaultFromTemplate(session.userId!);
@@ -83,7 +83,7 @@ export function handleApplyDefaultToAll(
   session: PlaygroundSession,
   body: { confirm?: unknown },
 ): ApiResult<ApplyDefaultToAllResponse> {
-  if (!isOwnerOrAdmin(session.userId)) {
+  if (!session.userId || !isOwner(session.userId)) {
     return { status: 403, body: { error: 'owner role required' } };
   }
   if (body?.confirm !== 'APPLY') {
