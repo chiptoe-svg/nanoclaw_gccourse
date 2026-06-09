@@ -148,20 +148,21 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `default-participant-template`
-- **Last tag:** `phase-c-complete-2026-05-28` (46 commits ahead)
+- **Last tag:** `phase-c-complete-2026-05-28` (47 commits ahead)
 
 ### Working tree
 
 ```
 ## default-participant-template
-A  src/default-participant.test.ts
-A  src/default-participant.ts
+M  src/default-participant.test.ts
+M  src/default-participant.ts
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+113e42d feat(default): template agent bootstrap + save-as-default
 825548f fix(provision): zero-pad nextFolderForRole to match existing _NN convention
 fb91e89 feat(provision): provisionMember reads default slot; drop owner-agent skill inheritance
 31e267d feat(default): default-participant slot module
@@ -176,9 +177,8 @@ c98197f Merge scenario-contract-wiring: platform consumes the scenario contract 
 88e24e2 docs(plan): scenario-contract wiring execution plan
 74ecafd docs(state): record Phase 2 wiring landed (scenario contract now consumed)
 8e894cd test(scenarios): industryai_seminar pairing proves ACTIVE_SCENARIO drives behavior
-d7503e5 feat(scenarios): provision persona from the active scenario's user role
 ```
 
 ### Last refresh
 
-2026-06-09T14:46:26Z
+2026-06-09T14:50:36Z

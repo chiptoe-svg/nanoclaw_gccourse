@@ -11,11 +11,29 @@ import fs from 'fs';
 import path from 'path';
 import { GROUPS_DIR } from './config.js';
 import type { AgentGroup } from './types.js';
-import { createAgentGroup, getAgentGroupByFolder, setAgentGroupMetadataKey } from './db/agent-groups.js';
-import { createContainerConfig, getContainerConfig } from './db/container-configs.js';
-import { roleProfile } from './scenarios/registry.js';
-import { copyDirRecursive } from './channels/playground/api/agent-library.js';
-import { slotDir, writeSlotConfig, writeSlotMeta, type SlotConfig } from './default-participant-slot.js';
+import {
+  createAgentGroup,
+  getAllAgentGroups,
+  getAgentGroupByFolder,
+  setAgentGroupMetadataKey,
+} from './db/agent-groups.js';
+import {
+  createContainerConfig,
+  ensureContainerConfig,
+  getContainerConfig,
+  updateContainerConfigJson,
+  updateContainerConfigScalars,
+} from './db/container-configs.js';
+import { roleForFolder, roleProfile } from './scenarios/registry.js';
+import { copyDirRecursive, saveEntry } from './channels/playground/api/agent-library.js';
+import {
+  slotDir,
+  readSlotConfig,
+  writeSlotConfig,
+  writeSlotMeta,
+  type SlotConfig,
+} from './default-participant-slot.js';
+import { restartAgentGroupContainers } from './container-restart.js';
 
 export const TEMPLATE_FOLDER = '_default_participant';
 
@@ -97,4 +115,49 @@ export function saveDefaultFromTemplate(savedBy: string): void {
   };
   writeSlotConfig(slotCfg);
   writeSlotMeta(savedBy);
+}
+
+export function applyDefaultToAllParticipants(): { affected: number; restorePoints: string[] } {
+  const slot = slotDir();
+  const sc = readSlotConfig();
+  if (!sc) throw new Error('No default saved — call saveDefaultFromTemplate first');
+
+  const groups = getAllAgentGroups().filter((g) => roleForFolder(g.folder) === 'user');
+  const restorePoints: string[] = [];
+
+  for (const g of groups) {
+    const ts = new Date().toISOString().replace(/[:.]/g, '-');
+    const slug = `pre-default-reset-${ts}-${g.folder}`;
+    saveEntry(g.folder, slug, true); // restore point (incl. persona)
+    restorePoints.push(slug);
+
+    const gdir = path.join(GROUPS_DIR, g.folder);
+    fs.mkdirSync(gdir, { recursive: true });
+    copyFileIfExists(path.join(slot, 'CLAUDE.local.md'), path.join(gdir, 'CLAUDE.local.md'));
+    copyFileIfExists(path.join(slot, 'CLAUDE.md'), path.join(gdir, 'CLAUDE.md'));
+    const customSrc = path.join(slot, 'custom-skills');
+    const customDst = path.join(gdir, 'custom-skills');
+    fs.rmSync(customDst, { recursive: true, force: true });
+    if (fs.existsSync(customSrc)) copyDirRecursive(customSrc, customDst);
+
+    ensureContainerConfig(g.id);
+    updateContainerConfigScalars(g.id, {
+      provider: sc.provider ?? undefined,
+      model: sc.model ?? undefined,
+      model_provider: (sc.model_provider ?? undefined) as string | undefined,
+      effort: sc.effort ?? undefined,
+      assistant_name: sc.assistant_name ?? undefined,
+      max_messages_per_prompt: sc.max_messages_per_prompt ?? undefined,
+    });
+    updateContainerConfigJson(g.id, 'skills', sc.skills);
+    updateContainerConfigJson(g.id, 'mcp_servers', sc.mcp_servers);
+    updateContainerConfigJson(g.id, 'packages_apt', sc.packages_apt);
+    updateContainerConfigJson(g.id, 'packages_npm', sc.packages_npm);
+    updateContainerConfigJson(g.id, 'additional_mounts', sc.additional_mounts);
+    updateContainerConfigJson(g.id, 'env', sc.env);
+    updateContainerConfigJson(g.id, 'allowed_models', sc.allowed_models);
+
+    restartAgentGroupContainers(g.id, 'default-participant-reset');
+  }
+  return { affected: groups.length, restorePoints };
 }

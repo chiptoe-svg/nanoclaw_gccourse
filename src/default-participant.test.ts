@@ -12,10 +12,15 @@ vi.mock('./config.js', async () => {
 });
 
 import { initTestDb, closeDb, runMigrations, getDb } from './db/index.js';
-import { getAgentGroupByFolder } from './db/agent-groups.js';
+import { getAgentGroupByFolder, createAgentGroup } from './db/agent-groups.js';
 import { updateContainerConfigScalars } from './db/container-configs.js';
 import { _resetScenariosForTest, registerScenario } from './scenarios/registry.js';
-import { ensureTemplateAgent, saveDefaultFromTemplate, TEMPLATE_FOLDER } from './default-participant.js';
+import {
+  ensureTemplateAgent,
+  saveDefaultFromTemplate,
+  applyDefaultToAllParticipants,
+  TEMPLATE_FOLDER,
+} from './default-participant.js';
 import { slotExists, readSlotConfig, slotDir } from './default-participant-slot.js';
 
 const TMP = '/tmp/nanoclaw-test-default-participant';
@@ -39,6 +44,30 @@ afterEach(() => {
   _resetScenariosForTest();
   closeDb();
   fs.rmSync(TMP, { recursive: true, force: true });
+});
+
+describe('applyDefaultToAllParticipants', () => {
+  it('applies the default to user-role groups only, backs up + overwrites, returns count', () => {
+    ensureTemplateAgent();
+    fs.writeFileSync(path.join(GROUPS, TEMPLATE_FOLDER, 'CLAUDE.local.md'), '# DEFAULT\n');
+    saveDefaultFromTemplate('owner:test');
+
+    createAgentGroup({ id: 'ag_u1', name: 'A', folder: 'user_01', agent_provider: 'pi', created_at: '2026-01-01' });
+    fs.mkdirSync(path.join(GROUPS, 'user_01'), { recursive: true });
+    fs.writeFileSync(path.join(GROUPS, 'user_01', 'CLAUDE.local.md'), '# MINE\n');
+    createAgentGroup({ id: 'ag_own', name: 'O', folder: 'owner_01', agent_provider: 'pi', created_at: '2026-01-01' });
+
+    const res = applyDefaultToAllParticipants();
+    expect(res.affected).toBe(1); // user_01 only — not owner_01, not the template
+    expect(fs.readFileSync(path.join(GROUPS, 'user_01', 'CLAUDE.local.md'), 'utf8')).toBe('# DEFAULT\n');
+    expect(res.restorePoints).toHaveLength(1);
+    expect(res.restorePoints[0]).toMatch(/^pre-default-reset-/);
+    expect(fs.existsSync(path.join(GROUPS, 'user_01', 'library', res.restorePoints[0]!))).toBe(true);
+  });
+
+  it('throws when no default saved', () => {
+    expect(() => applyDefaultToAllParticipants()).toThrow(/no default/i);
+  });
 });
 
 describe('default participant template', () => {
