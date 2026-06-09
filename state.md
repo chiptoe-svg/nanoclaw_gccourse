@@ -148,20 +148,20 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `default-participant-template`
-- **Last tag:** `phase-c-complete-2026-05-28` (50 commits ahead)
+- **Last tag:** `phase-c-complete-2026-05-28` (51 commits ahead)
 
 ### Working tree
 
 ```
 ## default-participant-template
-M  src/channels/playground/api/default-participant.test.ts
-M  src/channels/playground/api/default-participant.ts
+M  src/channels/playground/public/tabs/home.js
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+2b7757c fix(default): restrict save + apply-all to owner-only (admins can read status only)
 e7efdee feat(default): owner-gated API (status/save/apply-all)
 c4e3bd0 fix(default): write meta for apply-to-all restore points so they're loadable in the library UI
 78a4ca1 feat(default): apply-to-all (backup + overwrite + restart) for user-role groups
@@ -176,9 +176,8 @@ fa0dd0a docs(plan): default participant template implementation plan
 fc94b18 docs(state): point port section at canonical ~/.dev-ports.yaml registry
 1f2d4ad docs(state): webhook moved to 3003; :3020 overlap resolved
 5f4f851 docs(state): document two-install separation + ncl/port footguns
-c98197f Merge scenario-contract-wiring: platform consumes the scenario contract (Phase 2 wiring)
 ```
 
 ### Last refresh
 
-2026-06-09T15:03:11Z
+2026-06-09T15:09:21Z
