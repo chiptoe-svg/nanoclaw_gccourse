@@ -148,19 +148,20 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `main`
-- **Last tag:** `phase-c-complete-2026-05-28` (38 commits ahead)
+- **Last tag:** `phase-c-complete-2026-05-28` (39 commits ahead)
 
 ### Working tree
 
 ```
-## main...origin/main [ahead 2]
-M  state.md
+## main...origin/main [ahead 3]
+A  docs/superpowers/specs/2026-06-09-default-participant-template-design.md
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+fc94b18 docs(state): point port section at canonical ~/.dev-ports.yaml registry
 1f2d4ad docs(state): webhook moved to 3003; :3020 overlap resolved
 5f4f851 docs(state): document two-install separation + ncl/port footguns
 c98197f Merge scenario-contract-wiring: platform consumes the scenario contract (Phase 2 wiring)
@@ -175,9 +176,8 @@ da76693 docs(critique-agent): drop platform clause from lede; number capability 
 1becea9 docs(critique-agent): reframe brief around platform capabilities (tool-first), demote assignment to an applied example
 c0b785f docs(critique-agent): move hardware-feasibility note below the IC-Light interface mockup
 52dc82a feat(scenarios): industryai_seminar profile + ACTIVE_SCENARIO gating
-985ef7d docs(critique-agent): remove personal references; serve brief via GitHub Pages
 ```
 
 ### Last refresh
 
-2026-06-09T11:21:14Z
+2026-06-09T13:05:35Z
