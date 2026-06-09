@@ -3,6 +3,7 @@
 // skips it_admin). Role detection is folder-prefix based — members are
 // provisioned into owner_NN / it_admin_NN / assistant_NN / user_NN folders.
 
+import { getAgentGroupByFolder } from '../../db/agent-groups.js';
 import { registerScenario } from '../registry.js';
 import type { CanonicalRole, Scenario } from '../types.js';
 import { FACILITATOR_PERSONA, IT_ADMIN_PERSONA, ORGANIZER_PERSONA, PARTICIPANT_PERSONA } from './personas.js';
@@ -39,6 +40,8 @@ const seminar: Scenario = {
         `Hi ${name}! Welcome to the seminar. Send /playground any time to customize your agent's style.`,
     },
   },
+  // Seminar has no roster — use the agent group's stored name; null if absent.
+  memberName: (folder): string | null => getAgentGroupByFolder(folder)?.name ?? null,
   roleForFolder: (folder): CanonicalRole | null => {
     if (folder.startsWith('owner_')) return 'owner';
     if (folder.startsWith('it_admin_')) return 'it_admin';
