@@ -40,6 +40,7 @@ DBs, image tags, and bot tokens are isolated — restart/rebuild one does NOT to
 Append-only. Drained by the human, not by `refresh-state`.
 
 - **Wire the platform to the scenario contract (Phase 2 proper).** — DONE 2026-06-09 (branch `scenario-contract-wiring`, commits `7606cf0`..`8e894cd`; plan `docs/superpowers/plans/2026-06-09-scenario-contract-wiring.md`). Generic contract-driven pair consumer + provisioning persona via `roleProfile('user')`; three classroom consumers deleted; `memberName()` added; verified by an `industryai_seminar` integration test. Turned out narrower than the ~30-file estimate — Phase 1 had already moved the pair consumers into the profile.
+- **⚠️ REVERT BEFORE GO-LIVE: playground is in insecure no-auth demo mode (set 2026-06-09).** For pre-launch campus testing, the playground runs with `PLAYGROUND_AUTH_BYPASS=1` + `PLAYGROUND_BIND_HOST=127.0.0.1`, fronted by a `caddy reverse-proxy --from :8088 --to 127.0.0.1:3002` (nohup, NOT durable across reboot) so `http://130.127.162.180:8088/?seat=owner|user_01|user_02|user_03` opens with no login on the Clemson network. This exposes the OWNER (admin) seat with no auth — fine for the breakable pilot, NOT for go-live. **To revert:** `pkill -f 'caddy reverse-proxy --from :8088'`; set `PLAYGROUND_AUTH_BYPASS=0` + `PLAYGROUND_BIND_HOST=0.0.0.0` in `.env`; `launchctl kickstart -k gui/$(id -u)/com.nanoclaw-v2-581fefa4`. The hardening guard (refuses bypass on non-loopback bind) is intact — this routes around it via the proxy, by design per the guard's own message.
 - **Phase 4 (later):** retire the `classroom` sibling branch + `/add-classroom*` skills (superseded by in-tree scenarios).
 - **Default-participant apply-to-all: container-config reversibility gap.** The reversible restore point that apply-to-all writes (`pre-default-reset-*` in each Participant's library) reverts persona/CLAUDE.md/custom-skills but NOT `container_configs` (model/provider/skills) — because the agent-library `loadEntry` restores files to disk while the container re-materializes `container.json` from the DB on spawn, and `loadEntry` never writes back to `container_configs`. This is a PRE-EXISTING library/DB-sync limitation (affects all library loads, not just this feature); the restore-point copy is worded to say only persona/skills are reverted. Fix later by reconciling `container.json` → `container_configs` on library load (or in apply-to-all). Introduced/surfaced by the default-participant template feature (commits `85f69cc`..`b3bbfb0`).
 
@@ -150,12 +151,13 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `main`
-- **Last tag:** `phase-c-complete-2026-05-28` (56 commits ahead)
+- **Last tag:** `phase-c-complete-2026-05-28` (57 commits ahead)
 
 ### Working tree
 
 ```
 ## main...origin/main
+ M config/playground-seats.json
 M  state.md
 ?? .codegraph/
 ```
@@ -163,6 +165,7 @@ M  state.md
 ### Recent commits (last 15)
 
 ```
+51d2ec5 docs(state): default-participant template deployed + live-verified
 209ef62 Merge default-participant-template: owner-defined Participant default + scenario-aware provisioning
 013409f docs(state): record default participant template feature + config-reversibility follow-up
 b3bbfb0 chore(default): honest restore-point copy; drop orphaned readClassConfig; fix stale header
@@ -177,9 +180,8 @@ c4e3bd0 fix(default): write meta for apply-to-all restore points so they're load
 fb91e89 feat(provision): provisionMember reads default slot; drop owner-agent skill inheritance
 31e267d feat(default): default-participant slot module
 3da9b34 feat(provision): scenario-aware nextFolderForRole
-85f69cc feat(scenarios): per-role folderPrefix + onMemberProvisioned hook
 ```
 
 ### Last refresh
 
-2026-06-09T15:37:17Z
+2026-06-09T17:32:13Z
