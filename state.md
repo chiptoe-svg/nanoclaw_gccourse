@@ -151,20 +151,21 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `main`
-- **Last tag:** `phase-c-complete-2026-05-28` (58 commits ahead)
+- **Last tag:** `phase-c-complete-2026-05-28` (59 commits ahead)
 
 ### Working tree
 
 ```
-## main...origin/main [ahead 1]
+## main...origin/main
  M config/playground-seats.json
-M  src/channels/playground/api/direct-chat.ts
+M  src/session-manager.ts
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+8afcafd fix(direct-chat): accept bare 'openai' provider (normalize to codex /openai/v1)
 e1e3f66 docs(state): record temporary no-auth campus demo mode + revert steps
 51d2ec5 docs(state): default-participant template deployed + live-verified
 209ef62 Merge default-participant-template: owner-defined Participant default + scenario-aware provisioning
@@ -179,9 +180,8 @@ c4e3bd0 fix(default): write meta for apply-to-all restore points so they're load
 113e42d feat(default): template agent bootstrap + save-as-default
 825548f fix(provision): zero-pad nextFolderForRole to match existing _NN convention
 fb91e89 feat(provision): provisionMember reads default slot; drop owner-agent skill inheritance
-31e267d feat(default): default-participant slot module
 ```
 
 ### Last refresh
 
-2026-06-09T18:07:00Z
+2026-06-09T18:12:40Z
