@@ -14,9 +14,21 @@ NanoClaw is a self-hosted personal-Claude assistant. The Clemson install (Mac St
 
 ## Current arc
 
-Phase D shipped 2026-05-26 (tag `phase-d-complete-2026-05-26`): pi is now the sole agent harness; claude.ts and codex.ts deleted on both host and container; `container_configs.model_provider` column drives upstream API selection (anthropic / openai-codex / openai / local / …); host migrations 021–023 backfill old data. Live-verified across all 7 kept agents (instructor, ta_01, students 1–3, bench, pi-test).
+**Active arc: the group-agent-platform restructure** (`plans/group-agent-platform.md`) — one codebase, in-tree scenario profiles under `src/scenarios/<name>/`, selected by `ACTIVE_SCENARIO`. Progress:
+- **Phase 1 done** (`dce8da2`): `src/scenarios/` scaffold + registry + classroom profile; teaching-specific pair consumers moved in.
+- **Phase 2 increment 1 done** (`3dcd662`): a **canonical-role scenario contract** (`src/scenarios/types.ts`) — four fixed roles (`owner / it_admin / assistant / user`), each scenario supplies label + permission + persona + greeting + `roleForFolder`. Registry (`registry.ts`) + tests landed. This **un-defers** the Phase 2 that the 2026-06-08 decision log marked deferred (the forcing 2nd scenario arrived — see below).
+- **Second scenario added** (`52dc82a`): `industryai_seminar` profile (Organizer/IT Admin/Facilitator/Participant, all four canonical roles) + `ACTIVE_SCENARIO` env gating. This install's `.env` is set to `ACTIVE_SCENARIO=industryai_seminar`.
 
-**Next named arc is undecided.** Open candidates: per-student pi auth (plan exists at `docs/superpowers/plans/2026-05-17-per-student-provider-auth.md`), upstream PR to pi-ai for the codex-cost gap (now known to be a downstream nanoclaw issue, mostly fixed), or RAG Phase 7 continuation. Currently in **housekeeping mode** — small bug fixes between arcs (recent: messages_out usage backfill, stale-journal recovery at host startup).
+**The key open work (Phase 2 proper):** the contract is **defined and tested but not yet consumed by the platform.** No platform file calls `roleForFolder()` / `roleProfile()` / `getActiveScenario()` — ~30 files still hardcode classroom role detection (`classRoleForFolder` folder-prefixes, `class-pair-greeting`, persona injection, permission grants). So switching `ACTIVE_SCENARIO` does not yet change platform behavior: with `industryai_seminar` active, provisioning/pairing/greeting still behave as classroom. Wiring those behavior paths through the registry is the next step. Build is green; classroom profile delegates to `classRoleForFolder`, so it stays working during the migration. See **Open follow-ups** below.
+
+(Prior completed arc: **Phase D**, tag `phase-d-complete-2026-05-26` — pi is the sole agent harness; claude.ts/codex.ts deleted host+container; `container_configs.model_provider` drives upstream API selection. Recorded in the decision log. Other still-open candidate arcs, not currently active: per-student pi auth `docs/superpowers/plans/2026-05-17-per-student-provider-auth.md`, the pi-ai codex-cost-gap PR, RAG Phase 7.)
+
+## Open follow-ups
+
+Append-only. Drained by the human, not by `refresh-state`.
+
+- **Wire the platform to the scenario contract (Phase 2 proper).** Route every platform consumer of `classRoleForFolder` / `class-pair-greeting` / hardcoded personas through `roleForFolder()` + `roleProfile()` so `ACTIVE_SCENARIO` actually changes role detection, permission level, persona, and greeting. Prove it with an `industryai_seminar` pair end-to-end showing "Organizer"/"Participant" labels. Gate on build + full test suite per step (breakable pilot). A phased execution plan under `docs/superpowers/plans/` is recommended before editing (~30-file blast radius).
+- **Phase 4 (later):** retire the `classroom` sibling branch + `/add-classroom*` skills (superseded by in-tree scenarios).
 
 ## Invariants (don't break)
 
@@ -83,6 +95,7 @@ Pointers, not duplications. Read the relevant one when you're going deep.
 
 Append-only, newest first. One line per decision: *what + 1-line why*. Prune (move to archive) when older than ~6 months.
 
+- **2026-06-08** — **Phase 2 resumed (un-deferred): canonical-role scenario contract shipped** (`3dcd662`) + **second scenario `industryai_seminar` added with `ACTIVE_SCENARIO` gating** (`52dc82a`). Why: the prior same-day entry deferred Phase 2 until a 2nd scenario forced the abstraction against real, different roles — `industryai_seminar` (Organizer/IT Admin/Facilitator/Participant, all four canonical roles) is that forcing function, so the contract (`src/scenarios/types.ts`: fixed `owner/it_admin/assistant/user` roles, each skinned with label+permission+persona+greeting+`roleForFolder`) was defined now rather than against classroom alone. Contract + registry are tested; **platform consumption is deferred to the next step** (no platform file calls `roleForFolder`/`roleProfile` yet — see Current arc + Open follow-ups). Classroom profile delegates to existing `classRoleForFolder` so it stays green.
 - **2026-06-08** — Reframed as a **group-agent platform with in-tree scenario profiles** (one codebase, `src/scenarios/<name>/`, config-selected), superseding the trunk+branch-install model (too much ceremony) and the classroom-app model (too narrow). Phase 1 done (commit `dce8da2`): `src/scenarios/classroom/` scaffolded; teaching-specific pair consumers moved there; platform pieces stay in `src/`. **Phase 2 (abstract role detection + personas out of the platform via a scenario hook) deliberately DEFERRED** — doing it with only classroom as a consumer would design the interface against one scenario (violates Phase 0 finding + YAGNI). Driver: the 2nd scenario (department) will force the abstraction with real, different roles. Plan: `plans/group-agent-platform.md`.
 - **2026-06-08** — Deployment reset to a clean demo (operational, not code): instructor (`dm-with-chiptonkin`) + 3 bare `student_01/02/03` agents on defaults, no roster, no `class:*` users, test agents (ta_01/bench/pi-test) removed. DB backup at `data/v2.db.bak-reset-20260607-212604`. All 3 students reachable via web UI (playground auto-wires on first message; external-channel wirings not required).
 - **2026-06-07** — Classroom status downgraded to PILOT/test (breakable, not live production) until the owner says otherwise; the "do not refactor before term ends" gate is lifted. Why: owner confirmed only pilot users, no real FERPA data — breaking changes are low-risk now.
@@ -121,25 +134,28 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 
 ### Branch
 
-- **Current:** `main`
-- **Last tag:** `phase-c-complete-2026-05-28` (23 commits ahead)
+- **Current:** `scenario-contract-wiring`
+- **Last tag:** `phase-c-complete-2026-05-28` (25 commits ahead)
 
 ### Working tree
 
 ```
-## main...origin/main
-D  .claude/scheduled_tasks.lock
-M  .gitignore
-M  src/scenarios/index.ts
-A  src/scenarios/industryai_seminar/index.ts
-A  src/scenarios/industryai_seminar/personas.ts
-A  src/scenarios/industryai_seminar/scenario.ts
+## scenario-contract-wiring
+M  src/scenarios/classroom/scenario.ts
+M  src/scenarios/industryai_seminar/scenario.ts
+M  src/scenarios/registry.test.ts
+M  src/scenarios/registry.ts
+M  src/scenarios/types.ts
+ M state.md
 ?? .codegraph/
+?? docs/superpowers/plans/2026-06-09-scenario-contract-wiring.md
 ```
 
 ### Recent commits (last 15)
 
 ```
+52dc82a feat(scenarios): industryai_seminar profile + ACTIVE_SCENARIO gating
+985ef7d docs(critique-agent): remove personal references; serve brief via GitHub Pages
 3dcd662 feat(scenarios): canonical-role scenario contract + classroom reference (Phase 2 increment 1)
 1362e95 docs: frame critique-agent as a future project
 5d4042e docs: add Build-Your-Own Photo-Critique Agent course project
@@ -153,10 +169,8 @@ bde2813 docs(plan): Phase 0 findings — validate controlled-access layer vs 3 c
 9b20fdd docs(plan): reframe classroom extraction as controlled-access core
 d387304 docs: behind-the-scenes architecture HTML + trunk-extraction plan
 bd823d2 harden(playground+proxy): pre-launch security & stability fixes
-936eef3 docs(spec): ingestion & retrieval pipeline explorer (knobs on Sources/Retrieval)
-cda5d5d ops(omlx): upgrade 0.3.8 → 0.4.0 (smoke-verified)
 ```
 
 ### Last refresh
 
-2026-06-08T16:22:22Z
+2026-06-09T03:48:38Z
