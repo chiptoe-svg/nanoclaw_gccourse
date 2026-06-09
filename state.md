@@ -151,20 +151,21 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `main`
-- **Last tag:** `phase-c-complete-2026-05-28` (60 commits ahead)
+- **Last tag:** `phase-c-complete-2026-05-28` (61 commits ahead)
 
 ### Working tree
 
 ```
 ## main...origin/main
  M config/playground-seats.json
-M  src/channels/playground/public/tabs/chat.js
+M  src/container-runner.ts
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+2479fd1 fix(playground): auto-sync agent model to dropdown selection when stored model is invalid/hidden
 2c7f587 fix(session): re-scaffold missing session dir on write (stale rows after data reset)
 8afcafd fix(direct-chat): accept bare 'openai' provider (normalize to codex /openai/v1)
 e1e3f66 docs(state): record temporary no-auth campus demo mode + revert steps
@@ -179,9 +180,8 @@ e7efdee feat(default): owner-gated API (status/save/apply-all)
 c4e3bd0 fix(default): write meta for apply-to-all restore points so they're loadable in the library UI
 78a4ca1 feat(default): apply-to-all (backup + overwrite + restart) for user-role groups
 113e42d feat(default): template agent bootstrap + save-as-default
-825548f fix(provision): zero-pad nextFolderForRole to match existing _NN convention
 ```
 
 ### Last refresh
 
-2026-06-09T19:51:14Z
+2026-06-09T20:00:58Z
