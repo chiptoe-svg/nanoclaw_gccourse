@@ -187,18 +187,6 @@ function readClassConfig(): Record<string, unknown> {
   }
 }
 
-/** Append a student to `class-config.json`'s `students[]` if not already listed. */
-function appendStudentToClassConfig(student: { name: string; folder: string }): void {
-  const p = path.join(DATA_DIR, 'class-config.json');
-  const cfg = readClassConfig();
-  const students = Array.isArray(cfg.students) ? (cfg.students as Array<{ folder?: string }>) : [];
-  if (students.some((s) => s.folder === student.folder)) return;
-  students.push(student);
-  cfg.students = students;
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-  fs.writeFileSync(p, JSON.stringify(cfg, null, 2));
-}
-
 /** Ensure the symlink target `data/class-shared-students.md` exists. */
 function ensureClassSharedTarget(): string {
   const src = path.join(DATA_DIR, 'class-shared-students.md');
@@ -327,9 +315,6 @@ export function provisionStudent(opts: {
       updated_at: new Date().toISOString(),
     });
     materializeContainerJson(group.id);
-
-    // 5. keep class-config.json's roster in sync.
-    appendStudentToClassConfig({ name: opts.name, folder });
   } catch (err) {
     // The DB rows are committed but the on-disk scaffold is not. Roll the
     // rows back so a retry reissues this same student_NN instead of
