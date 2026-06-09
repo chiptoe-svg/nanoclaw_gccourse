@@ -14,6 +14,8 @@ NanoClaw is a self-hosted personal-Claude assistant. The Clemson install (Mac St
 
 ## Deployment / install map
 
+> **Port source of truth = `~/.dev-ports.yaml`** (machine-wide, run `ports`). Read it before binding/moving ANY port; update it the same turn when you change one. The numbers below mirror it — if they ever disagree, the registry wins.
+
 This Mac Studio runs **TWO independent nanoclaw installs** (different projects, NOT dev/prod of one):
 - **This one — Clemson/seminar:** `/Users/admin/projects/nanoclaw`, service `com.nanoclaw-v2-581fefa4`, ports proxy **3001** / playground **3002** / webhook **3003**, image `nanoclaw-agent-v2-581fefa4:latest`, `ACTIVE_SCENARIO=industryai_seminar`. Ports pinned in `.env`; webhook port ALSO set in the plist `EnvironmentVariables` (plist wins — change both together).
 - **Personal:** `/Users/admin/projects/nanoclaw_personal`, service `com.nanoclaw-v2-011e3c4e`, ports webhook **3010** / playground **3012** / a localhost service on **3020**, separate bot token + DB + image.
@@ -146,12 +148,12 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `main`
-- **Last tag:** `phase-c-complete-2026-05-28` (37 commits ahead)
+- **Last tag:** `phase-c-complete-2026-05-28` (38 commits ahead)
 
 ### Working tree
 
 ```
-## main...origin/main [ahead 1]
+## main...origin/main [ahead 2]
 M  state.md
 ?? .codegraph/
 ```
@@ -159,6 +161,7 @@ M  state.md
 ### Recent commits (last 15)
 
 ```
+1f2d4ad docs(state): webhook moved to 3003; :3020 overlap resolved
 5f4f851 docs(state): document two-install separation + ncl/port footguns
 c98197f Merge scenario-contract-wiring: platform consumes the scenario contract (Phase 2 wiring)
 88e24e2 docs(plan): scenario-contract wiring execution plan
@@ -173,9 +176,8 @@ da76693 docs(critique-agent): drop platform clause from lede; number capability 
 c0b785f docs(critique-agent): move hardware-feasibility note below the IC-Light interface mockup
 52dc82a feat(scenarios): industryai_seminar profile + ACTIVE_SCENARIO gating
 985ef7d docs(critique-agent): remove personal references; serve brief via GitHub Pages
-3dcd662 feat(scenarios): canonical-role scenario contract + classroom reference (Phase 2 increment 1)
 ```
 
 ### Last refresh
 
-2026-06-09T11:16:32Z
+2026-06-09T11:21:14Z
