@@ -148,20 +148,22 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `default-participant-template`
-- **Last tag:** `phase-c-complete-2026-05-28` (48 commits ahead)
+- **Last tag:** `phase-c-complete-2026-05-28` (49 commits ahead)
 
 ### Working tree
 
 ```
 ## default-participant-template
-M  src/default-participant.test.ts
-M  src/default-participant.ts
+M  src/channels/playground/api-routes.ts
+A  src/channels/playground/api/default-participant.test.ts
+A  src/channels/playground/api/default-participant.ts
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+c4e3bd0 fix(default): write meta for apply-to-all restore points so they're loadable in the library UI
 78a4ca1 feat(default): apply-to-all (backup + overwrite + restart) for user-role groups
 113e42d feat(default): template agent bootstrap + save-as-default
 825548f fix(provision): zero-pad nextFolderForRole to match existing _NN convention
@@ -176,9 +178,8 @@ fc94b18 docs(state): point port section at canonical ~/.dev-ports.yaml registry
 5f4f851 docs(state): document two-install separation + ncl/port footguns
 c98197f Merge scenario-contract-wiring: platform consumes the scenario contract (Phase 2 wiring)
 88e24e2 docs(plan): scenario-contract wiring execution plan
-74ecafd docs(state): record Phase 2 wiring landed (scenario contract now consumed)
 ```
 
 ### Last refresh
 
-2026-06-09T14:54:57Z
+2026-06-09T14:59:01Z
