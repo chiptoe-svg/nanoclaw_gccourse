@@ -43,6 +43,7 @@ import {
   type VolumeMount,
 } from './providers/provider-container-registry.js';
 import { detectAuthMode } from './credential-proxy.js';
+import { readWebSearchProvider } from './web-search-config.js';
 import {
   heartbeatPath,
   markContainerRunning,
@@ -593,6 +594,13 @@ async function buildContainerArgs(
   // is acceptable here (cf. the OneCLI install, which injects it via the vault).
   if (process.env.WEB_SEARCH_API_KEY) {
     args.push('-e', `WEB_SEARCH_API_KEY=${process.env.WEB_SEARCH_API_KEY}`);
+  }
+  // Web-search backend selection (owner picks it install-wide in
+  // data/config/web-search.json; the pi web_search tool dispatches on it).
+  // Forward the provider + the SearXNG URL (Brave key already forwarded above).
+  args.push('-e', `WEB_SEARCH_PROVIDER=${readWebSearchProvider()}`);
+  if (process.env.SEARXNG_URL) {
+    args.push('-e', `SEARXNG_URL=${process.env.SEARXNG_URL}`);
   }
 
   // Provider-contributed env vars (e.g. XDG_DATA_HOME, OPENCODE_*, NO_PROXY).

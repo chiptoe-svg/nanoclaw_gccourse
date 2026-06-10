@@ -151,24 +151,21 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `pluggable-web-search`
-- **Last tag:** `phase-c-complete-2026-05-28` (68 commits ahead)
+- **Last tag:** `phase-c-complete-2026-05-28` (69 commits ahead)
 
 ### Working tree
 
 ```
 ## pluggable-web-search
  M config/playground-seats.json
-M  container/agent-runner/src/providers/pi-tools/web-search.ts
-A  container/agent-runner/src/providers/pi-tools/web-search/brave.ts
-A  container/agent-runner/src/providers/pi-tools/web-search/searxng.test.ts
-A  container/agent-runner/src/providers/pi-tools/web-search/searxng.ts
-A  container/agent-runner/src/providers/pi-tools/web-search/types.ts
+M  src/container-runner.ts
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+ce0c5c4 feat(web-search): pluggable backends (brave + searxng) via WEB_SEARCH_PROVIDER
 175db31 feat(web-search): owner Web Search backend toggle card
 83d315d feat(web-search): owner-gated config API (status/availability/set)
 290f45e feat(web-search): install-wide provider config (data/config/web-search.json)
@@ -183,9 +180,8 @@ e1e3f66 docs(state): record temporary no-auth campus demo mode + revert steps
 51d2ec5 docs(state): default-participant template deployed + live-verified
 209ef62 Merge default-participant-template: owner-defined Participant default + scenario-aware provisioning
 013409f docs(state): record default participant template feature + config-reversibility follow-up
-b3bbfb0 chore(default): honest restore-point copy; drop orphaned readClassConfig; fix stale header
 ```
 
 ### Last refresh
 
-2026-06-10T01:56:05Z
+2026-06-10T01:56:06Z
