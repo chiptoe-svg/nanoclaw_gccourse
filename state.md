@@ -150,21 +150,23 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 
 ### Branch
 
-- **Current:** `main`
-- **Last tag:** `phase-c-complete-2026-05-28` (63 commits ahead)
+- **Current:** `pluggable-web-search`
+- **Last tag:** `phase-c-complete-2026-05-28` (64 commits ahead)
 
 ### Working tree
 
 ```
-## main...origin/main [ahead 1]
+## pluggable-web-search
+M  .gitignore
  M config/playground-seats.json
-A  docs/superpowers/plans/2026-06-09-pluggable-web-search.md
+A  data/searxng/settings.yml.example
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+900bc40 docs(plan): pluggable web search (Brave + SearXNG) implementation plan
 e51c42f docs(spec): pluggable web search (Brave + SearXNG, owner-selectable) design
 65c01e8 feat(container): forward WEB_SEARCH_API_KEY to agent containers (no-OneCLI installs)
 2479fd1 fix(playground): auto-sync agent model to dropdown selection when stored model is invalid/hidden
@@ -179,9 +181,8 @@ b3bbfb0 chore(default): honest restore-point copy; drop orphaned readClassConfig
 c91a7ce feat(default): owner Default Participant Template card
 2b7757c fix(default): restrict save + apply-all to owner-only (admins can read status only)
 e7efdee feat(default): owner-gated API (status/save/apply-all)
-c4e3bd0 fix(default): write meta for apply-to-all restore points so they're loadable in the library UI
 ```
 
 ### Last refresh
 
-2026-06-10T01:27:33Z
+2026-06-10T01:33:55Z
