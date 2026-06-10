@@ -44,6 +44,15 @@ export function mountHome(el) {
       </section>`
     : '';
 
+  const webSearchCard = isOwner
+    ? `
+      <section class="home-card" id="web-search-card">
+        <h2>Web Search</h2>
+        <p class="muted">Choose which search backend agents use. Unavailable backends are greyed out.</p>
+        <div id="web-search-body"><p class="muted">Loading…</p></div>
+      </section>`
+    : '';
+
   const studentsRosterCard = isOwner
     ? `
       <section class="home-card" id="students-roster-card">
@@ -79,6 +88,8 @@ export function mountHome(el) {
       ${classControlsCard}
 
       ${defaultParticipantCard}
+
+      ${webSearchCard}
 
       ${studentsRosterCard}
 
@@ -168,6 +179,7 @@ export function mountHome(el) {
   if (isOwner) {
     renderClassControlsCard(el.querySelector('#class-controls-body'));
     renderDefaultParticipantCard(el.querySelector('#default-participant-body'));
+    renderWebSearchCard(el.querySelector('#web-search-body'));
     renderStudentsRosterCard(el.querySelector('#students-roster-body'));
     renderAddStudentCard(el.querySelector('#add-student-body'));
     // class-enrollment-passcode:home-card START
@@ -565,6 +577,77 @@ function renderDefaultParticipantForm(body, data) {
     } catch (err) {
       statusEl.textContent = `Apply failed: ${String(err)}`;
     }
+  });
+}
+
+// ── Web Search backend card ───────────────────────────────────────────────────
+
+async function renderWebSearchCard(body) {
+  if (!body) return;
+  try {
+    const res = await fetch('/api/web-search-config', { credentials: 'same-origin' });
+    if (!res.ok) {
+      body.innerHTML = `<p class="muted">Couldn't load web search config (${res.status}).</p>`;
+      return;
+    }
+    const data = await res.json();
+    renderWebSearchForm(body, data);
+  } catch (err) {
+    body.innerHTML = `<p class="muted">Couldn't load web search config: ${escapeHtml(String(err))}</p>`;
+  }
+}
+
+function renderWebSearchForm(body, data) {
+  const { active, backends } = data;
+
+  const rows = (backends || [])
+    .map((b) => {
+      const noteHtml = b.note
+        ? ` <span class="muted" style="font-size:0.85em">${escapeHtml(b.note)}</span>`
+        : '';
+      return `
+        <div style="margin: 0.35rem 0;">
+          <label style="${b.available ? '' : 'color: var(--muted-color, #888);'}">
+            <input type="radio" name="web-search-backend" value="${escapeHtml(b.id)}"
+              ${active === b.id ? 'checked' : ''}
+              ${b.available ? '' : 'disabled'}>
+            ${escapeHtml(b.label)}
+          </label>${noteHtml}
+        </div>`;
+    })
+    .join('');
+
+  body.innerHTML = `
+    <div id="ws-backends">${rows}</div>
+    <p class="muted small" id="ws-status"></p>
+  `;
+
+  body.querySelectorAll('input[name="web-search-backend"]').forEach((radio) => {
+    radio.addEventListener('change', async () => {
+      const statusEl = body.querySelector('#ws-status');
+      const chosen = radio.value;
+      const chosenBackend = (backends || []).find((b) => b.id === chosen);
+      statusEl.textContent = 'Switching…';
+      try {
+        const res = await fetch('/api/web-search-config', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ provider: chosen }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          statusEl.textContent = err.error || `Request failed (${res.status}).`;
+          return;
+        }
+        const result = await res.json();
+        const activeLabel = chosenBackend ? chosenBackend.label : result.active;
+        statusEl.textContent =
+          `Switched to ${activeLabel} — agents use it on their next message (containers respawned).`;
+      } catch (err) {
+        statusEl.textContent = `Switch failed: ${String(err)}`;
+      }
+    });
   });
 }
 
