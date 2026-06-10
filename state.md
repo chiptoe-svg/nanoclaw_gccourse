@@ -151,20 +151,25 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `pluggable-web-search`
-- **Last tag:** `phase-c-complete-2026-05-28` (67 commits ahead)
+- **Last tag:** `phase-c-complete-2026-05-28` (68 commits ahead)
 
 ### Working tree
 
 ```
 ## pluggable-web-search
  M config/playground-seats.json
-M  src/channels/playground/public/tabs/home.js
+M  container/agent-runner/src/providers/pi-tools/web-search.ts
+A  container/agent-runner/src/providers/pi-tools/web-search/brave.ts
+A  container/agent-runner/src/providers/pi-tools/web-search/searxng.test.ts
+A  container/agent-runner/src/providers/pi-tools/web-search/searxng.ts
+A  container/agent-runner/src/providers/pi-tools/web-search/types.ts
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+175db31 feat(web-search): owner Web Search backend toggle card
 83d315d feat(web-search): owner-gated config API (status/availability/set)
 290f45e feat(web-search): install-wide provider config (data/config/web-search.json)
 4ed94ef feat(searxng): managed self-hosted SearXNG service for web_search
@@ -179,9 +184,8 @@ e1e3f66 docs(state): record temporary no-auth campus demo mode + revert steps
 209ef62 Merge default-participant-template: owner-defined Participant default + scenario-aware provisioning
 013409f docs(state): record default participant template feature + config-reversibility follow-up
 b3bbfb0 chore(default): honest restore-point copy; drop orphaned readClassConfig; fix stale header
-4d2eace feat(default): Edit template opens the template agent via owner ?seat
 ```
 
 ### Last refresh
 
-2026-06-10T01:52:56Z
+2026-06-10T01:56:05Z
