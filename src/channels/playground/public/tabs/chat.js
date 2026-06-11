@@ -849,7 +849,7 @@ function appendTraceEvent(trace, data) {
  * @param {Element} trace  — the #trace-log <ul> element
  * @param {object}  event  — the native pi-agent-core event object
  */
-function appendPiEvent(trace, event) {
+export function appendPiEvent(trace, event) {
   if (!trace || !event || !event.type) return;
 
   // Lazily initialize per-trace pi state.
@@ -859,8 +859,8 @@ function appendPiEvent(trace, event) {
       messageTextEl: null,      // .trace-event-body inside the bubble
       thinkingDetails: null,    // <details> for thinking content
       thinkingBodyEl: null,     // <pre> inside thinking details
-      toolCallCards: {},        // contentIndex → { li, bodyEl }
-      toolExecCards: {},        // toolCallId → { li, statusEl, argsEl, resultEl }
+      pendingToolCards: {},     // contentIndex → card, only until toolcall_end gives us the id
+      toolCards: {},            // toolCallId → card (the unified card)
     };
   }
   const st = trace._piState;
@@ -938,8 +938,8 @@ function piHandleTurnStart(trace, event, st) {
   st.messageTextEl = null;
   st.thinkingDetails = null;
   st.thinkingBodyEl = null;
-  st.toolCallCards = {};
-  // Do NOT clear toolExecCards here — executions can cross turn boundaries.
+  st.pendingToolCards = {};
+  // Do NOT clear toolCards here — executions can cross turn boundaries.
 
   trace.scrollTop = trace.scrollHeight;
 }
@@ -1077,13 +1077,10 @@ function piHandleThinkingDelta(trace, ame, st) {
 }
 
 /**
- * toolcall_start: begin a tool call card in the trace, keyed on contentIndex.
- * Shows a pending card — finalized by toolcall_end.
+ * Build one unified tool card: <li><details><summary>[badge][name][preview]</summary>
+ * <pre args><pre result hidden></details></li>.
  */
-function piHandleToolcallStart(trace, ame, st) {
-  const idx = ame.contentIndex;
-  const target = trace._currentTurnUl || trace;
-
+function createToolCard(target, toolName) {
   const li = document.createElement('li');
   li.className = 'trace trace-tool_use';
 
@@ -1091,57 +1088,72 @@ function piHandleToolcallStart(trace, ame, st) {
   details.className = 'trace-details';
   const summaryEl = document.createElement('summary');
   summaryEl.className = 'trace-summary';
+
+  const badgeEl = document.createElement('span');
+  badgeEl.className = 'trace-tool-badge';
+  badgeEl.textContent = '…';
+
   const kindEl = document.createElement('span');
   kindEl.className = 'trace-kind';
-  kindEl.textContent = 'tool call · pending…';
-  summaryEl.appendChild(kindEl);
+  kindEl.textContent = toolName ? `tool · ${toolName}` : 'tool call · pending…';
+
   const previewEl = document.createElement('span');
   previewEl.className = 'trace-preview';
   previewEl.textContent = '';
-  summaryEl.appendChild(previewEl);
+
+  summaryEl.append(badgeEl, kindEl, previewEl);
   details.appendChild(summaryEl);
-  const bodyEl = document.createElement('pre');
-  bodyEl.className = 'trace-body';
-  bodyEl.textContent = '';
-  details.appendChild(bodyEl);
+
+  const argsEl = document.createElement('pre');
+  argsEl.className = 'trace-body';
+  argsEl.textContent = '';
+  details.appendChild(argsEl);
+
+  const resultEl = document.createElement('pre');
+  resultEl.className = 'trace-body';
+  resultEl.style.display = 'none';
+  details.appendChild(resultEl);
+
   li.appendChild(details);
   target.appendChild(li);
+  return { li, badgeEl, kindEl, previewEl, argsEl, resultEl, toolName };
+}
 
-  st.toolCallCards[idx] = { li, kindEl, previewEl, bodyEl };
+/**
+ * toolcall_start: begin a unified tool card in the trace, keyed on contentIndex
+ * until toolcall_end gives us the toolCallId.
+ */
+function piHandleToolcallStart(trace, ame, st) {
+  const target = trace._currentTurnUl || trace;
+  const card = createToolCard(target, null);
+  st.pendingToolCards[ame.contentIndex] = card;
   trace.scrollTop = trace.scrollHeight;
 }
 
 /**
- * toolcall_end: finalize the tool call card with name + args. Marks the card
- * with the tool name and shows full args JSON in the expanded body.
- * Mirrors the existing tool_use disclosure style.
+ * toolcall_end: finalize the unified tool card with name + args and key it by
+ * toolCallId so the execution events can find and update it.
  */
 function piHandleToolcallEnd(trace, ame, st) {
   const tc = ame.toolCall;
   if (!tc) return;
-
-  // Try to match a pending card by contentIndex. Fall back to creating a new
-  // card if toolcall_start was somehow missed.
-  const idx = ame.contentIndex;
-  let card = st.toolCallCards != null ? st.toolCallCards[idx] : null;
+  let card = st.pendingToolCards[ame.contentIndex];
   if (!card) {
-    piHandleToolcallStart(trace, ame, st);
-    card = st.toolCallCards[idx];
-    if (!card) return;
+    card = createToolCard(trace._currentTurnUl || trace, null);
   }
+  delete st.pendingToolCards[ame.contentIndex];
 
   const name = tc.name || 'unknown';
   const args = tc.arguments != null ? tc.arguments : {};
-  const argsStr = formatTracePayloadFull(args);
-  const previewStr = formatTracePreview(args);
+  card.toolName = name;
+  card.kindEl.textContent = `tool · ${name}`;
+  card.previewEl.textContent = previewForToolArgs(name, args);
+  card.argsEl.textContent = formatTracePayloadFull(args);
 
-  card.kindEl.textContent = `tool call · ${name}`;
-  card.previewEl.textContent = previewStr;
-  card.bodyEl.textContent = argsStr;
-
-  // Tag with tool-call id so tool_execution_end can find it.
-  if (tc.id) card.li.dataset.toolCallId = tc.id;
-
+  if (tc.id) {
+    card.li.dataset.toolCallId = tc.id;
+    st.toolCards[tc.id] = card;
+  }
   if (trace._currentTurnUl) finalizeTurn(trace._currentTurnUl.closest('.trace-turn'));
   trace.scrollTop = trace.scrollHeight;
 }
@@ -1219,133 +1231,59 @@ function piHandleMessageEnd(trace, event, st) {
 }
 
 /**
- * tool_execution_start: begin a tool execution status card, keyed on toolCallId.
- * Mirrors the .trace-event / .trace-event-head / .trace-event-kind / .trace-event-body
- * pattern (head + body, optionally expandable).
- * Border-left uses .trace-tool_use accent colour (#4a90e2) until the result arrives.
+ * tool_execution_start: find the unified card already created by toolcall_end
+ * (keyed by toolCallId), or create a new one if execution arrived without a
+ * preceding toolcall_end.
  */
 function piHandleToolExecutionStart(trace, event, st) {
   const { toolCallId, toolName, args } = event;
-  const target = trace._currentTurnUl || trace;
-
-  const li = document.createElement('li');
-  li.className = 'trace-event trace-pi-tool-exec';
-
-  // Head row: kind label + tool name.
-  const head = document.createElement('div');
-  head.className = 'trace-event-head';
-  const kindSpan = document.createElement('span');
-  kindSpan.className = 'trace-event-kind';
-  kindSpan.textContent = 'tool exec';
-  const codeEl = document.createElement('code');
-  codeEl.textContent = toolName || toolCallId || '?';
-  head.appendChild(kindSpan);
-  head.appendChild(codeEl);
-  li.appendChild(head);
-
-  // Args disclosed via <details>/<summary>, same as tool_use cards.
-  const argsPayload = args != null ? args : null;
-  let statusEl;
-  if (argsPayload != null) {
-    const details = document.createElement('details');
-    details.className = 'trace-details';
-    const summaryEl = document.createElement('summary');
-    summaryEl.className = 'trace-summary';
-    statusEl = document.createElement('span');
-    statusEl.className = 'trace-event-body trace-pending';
-    statusEl.textContent = 'running…';
-    summaryEl.appendChild(statusEl);
-    details.appendChild(summaryEl);
-    const argsEl = document.createElement('pre');
-    argsEl.className = 'trace-body';
-    argsEl.textContent = formatTracePayloadFull(argsPayload);
-    details.appendChild(argsEl);
-    // Placeholder for result (appended by tool_execution_end).
-    const resultEl = document.createElement('pre');
-    resultEl.className = 'trace-body';
-    resultEl.style.display = 'none';
-    details.appendChild(resultEl);
-    li.appendChild(details);
-    st.toolExecCards[toolCallId] = { li, statusEl, resultEl, details };
-  } else {
-    statusEl = document.createElement('div');
-    statusEl.className = 'trace-event-body trace-pending';
-    statusEl.textContent = 'running…';
-    li.appendChild(statusEl);
-    st.toolExecCards[toolCallId] = { li, statusEl, resultEl: null, details: null };
+  let card = st.toolCards[toolCallId];
+  if (!card) {
+    card = createToolCard(trace._currentTurnUl || trace, toolName || null);
+    if (toolName) card.kindEl.textContent = `tool · ${toolName}`;
+    if (args != null) card.argsEl.textContent = formatTracePayloadFull(args);
+    card.li.dataset.toolCallId = toolCallId;
+    st.toolCards[toolCallId] = card;
   }
-
-  target.appendChild(li);
+  card.badgeEl.textContent = '…';
+  card.previewEl.textContent = card.previewEl.textContent || 'running…';
   if (trace._currentTurnUl) finalizeTurn(trace._currentTurnUl.closest('.trace-turn'));
   trace.scrollTop = trace.scrollHeight;
 }
 
 /**
- * tool_execution_update: stream partial result text into the status slot if
- * available. partialResult may be a string or object.
+ * tool_execution_update: stream partial result text into the preview slot.
+ * partialResult may be a string or object.
  */
 function piHandleToolExecutionUpdate(trace, event, st) {
-  const card = st.toolExecCards[event.toolCallId];
+  const card = st.toolCards[event.toolCallId];
   if (!card) return;
-  if (event.partialResult != null && card.statusEl) {
-    card.statusEl.classList.remove('trace-pending');
-    card.statusEl.textContent = formatTracePreview(event.partialResult);
+  if (event.partialResult != null) {
+    card.previewEl.textContent = formatTracePreview(event.partialResult);
   }
   trace.scrollTop = trace.scrollHeight;
 }
 
 /**
- * tool_execution_end: finalize the execution card. Show result in the body.
- * Removes pending style; adds full result as expandable body.
- * Border-left switches to .trace-tool_result accent (#87a96b) on success.
+ * tool_execution_end: finalize the unified card with the result preview and
+ * full result body. Creates a fallback card if neither toolcall_end nor
+ * tool_execution_start was seen. Status badge wiring is added in Task 3.
  */
 function piHandleToolExecutionEnd(trace, event, st) {
-  const card = st.toolExecCards[event.toolCallId];
-  const result = event.result;
-
+  let card = st.toolCards[event.toolCallId];
   if (!card) {
-    // Card was never started (missed tool_execution_start) — render inline.
-    const target = trace._currentTurnUl || trace;
-    const li = document.createElement('li');
-    li.className = 'trace trace-tool_result';
-    const details = document.createElement('details');
-    details.className = 'trace-details';
-    const summaryEl = document.createElement('summary');
-    summaryEl.className = 'trace-summary';
-    const kindEl = document.createElement('span');
-    kindEl.className = 'trace-kind';
-    kindEl.textContent = `tool result · ${event.toolCallId || '?'}`;
-    summaryEl.appendChild(kindEl);
-    const previewEl = document.createElement('span');
-    previewEl.className = 'trace-preview';
-    previewEl.textContent = formatTracePreview(result);
-    summaryEl.appendChild(previewEl);
-    details.appendChild(summaryEl);
-    const bodyEl = document.createElement('pre');
-    bodyEl.className = 'trace-body';
-    bodyEl.textContent = formatTracePayloadFull(result);
-    details.appendChild(bodyEl);
-    li.appendChild(details);
-    target.appendChild(li);
-    if (trace._currentTurnUl) finalizeTurn(trace._currentTurnUl.closest('.trace-turn'));
-    trace.scrollTop = trace.scrollHeight;
-    return;
+    card = createToolCard(trace._currentTurnUl || trace, event.toolCallId || null);
+    card.li.dataset.toolCallId = event.toolCallId || '';
+    st.toolCards[event.toolCallId] = card;
   }
-
-  // Update the existing card.
-  card.li.classList.add('trace-pi-tool-exec-done');
-  if (card.statusEl) {
-    card.statusEl.classList.remove('trace-pending');
-    card.statusEl.textContent = formatTracePreview(result);
-  }
-  if (card.resultEl && result != null) {
+  const name = card.toolName || 'unknown';
+  const result = event.result;
+  // (Status badge wiring is added in Task 3.)
+  card.previewEl.textContent = previewForToolResult(name, result, 'ok');
+  if (result != null) {
     card.resultEl.textContent = formatTracePayloadFull(result);
     card.resultEl.style.display = '';
   }
-  // Leave the details collapsed — the summary preview is enough at a glance;
-  // click to drill into args + full result. (Auto-opening on completion
-  // meant tool-using turns produced a wall of inline JSON.)
-
   if (trace._currentTurnUl) finalizeTurn(trace._currentTurnUl.closest('.trace-turn'));
   trace.scrollTop = trace.scrollHeight;
 }

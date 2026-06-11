@@ -157,7 +157,7 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `richer-trace-cards`
-- **Last tag:** `phase-c-complete-2026-05-28` (89 commits ahead)
+- **Last tag:** `phase-c-complete-2026-05-28` (90 commits ahead)
 
 ### Working tree
 
@@ -172,6 +172,7 @@ M  src/channels/playground/public/tabs/chat.js
 ### Recent commits (last 15)
 
 ```
+a5f3dce fix(trace): tighten error regex to Error: prefix; guard text-array arm; expand helper tests
 badae79 feat(trace): tool-aware preview + result-classification helpers (exported, tested)
 293bacb docs(plan): richer live trace cards implementation plan
 62ea5df docs(spec): richer live trace cards (unify tool card + status badge + tool-aware previews)
@@ -186,9 +187,8 @@ f3af052 refactor(proxy): drop shadowed route var; test handler-level 403 + query
 5cd6454 fix(fetch_url): block hex IPv4-mapped IPv6, skip DNS when aborted, test happy-path redirect
 6247aeb feat(fetch_url): block internal/loopback/link-local egress + re-validate redirects
 68c3376 docs(plan): agent egress control implementation plan
-3b95be6 docs(spec): egress control — remove proxy catch-all, explicit /anthropic prefix, fail-closed default
 ```
 
 ### Last refresh
 
-2026-06-11T11:17:01Z
+2026-06-11T11:20:34Z

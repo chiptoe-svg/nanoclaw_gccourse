@@ -76,3 +76,75 @@ describe('previewForToolResult', () => {
     expect(previewForToolResult('mystery', 'plain text result', 'ok')).toContain('plain text');
   });
 });
+
+import { appendPiEvent } from './chat.js';
+
+function freshTrace() {
+  const ul = document.createElement('ul');
+  const turnUl = document.createElement('ul');
+  ul._currentTurnUl = turnUl;
+  ul.appendChild(turnUl);
+  return ul;
+}
+function pi(trace, event) {
+  appendPiEvent(trace, event);
+}
+
+describe('unified tool card', () => {
+  it('renders ONE card for a tool call + its execution, keyed by toolCallId', () => {
+    const trace = freshTrace();
+    pi(trace, { type: 'message_update', assistantMessageEvent: { type: 'toolcall_start', contentIndex: 0 } });
+    pi(trace, {
+      type: 'message_update',
+      assistantMessageEvent: {
+        type: 'toolcall_end',
+        contentIndex: 0,
+        toolCall: { id: 'tc1', name: 'web_search', arguments: { query: 'paris' } },
+      },
+    });
+    pi(trace, { type: 'tool_execution_start', toolCallId: 'tc1', toolName: 'web_search', args: { query: 'paris' } });
+    pi(trace, {
+      type: 'tool_execution_end',
+      toolCallId: 'tc1',
+      isError: false,
+      result: { content: [{ type: 'text', text: 'Search results for "paris":\n\n1. A\n2. B' }] },
+    });
+
+    const cards = trace.querySelectorAll('[data-tool-call-id="tc1"]');
+    expect(cards.length).toBe(1);
+    const card = cards[0];
+    expect(card.textContent).toContain('paris');
+    expect(card.textContent).toMatch(/result/i);
+  });
+
+  it('keeps parallel tool calls in separate cards', () => {
+    const trace = freshTrace();
+    pi(trace, {
+      type: 'message_update',
+      assistantMessageEvent: {
+        type: 'toolcall_end',
+        contentIndex: 0,
+        toolCall: { id: 'tcA', name: 'fetch_url', arguments: { url: 'https://a' } },
+      },
+    });
+    pi(trace, {
+      type: 'message_update',
+      assistantMessageEvent: {
+        type: 'toolcall_end',
+        contentIndex: 1,
+        toolCall: { id: 'tcB', name: 'fetch_url', arguments: { url: 'https://b' } },
+      },
+    });
+    pi(trace, { type: 'tool_execution_end', toolCallId: 'tcA', isError: false, result: 'ok-a' });
+    pi(trace, { type: 'tool_execution_end', toolCallId: 'tcB', isError: false, result: 'ok-b' });
+    expect(trace.querySelectorAll('[data-tool-call-id="tcA"]').length).toBe(1);
+    expect(trace.querySelectorAll('[data-tool-call-id="tcB"]').length).toBe(1);
+  });
+
+  it('renders a card when execution arrives with no preceding toolcall_end', () => {
+    const trace = freshTrace();
+    pi(trace, { type: 'tool_execution_start', toolCallId: 'tcX', toolName: 'web_search', args: { query: 'q' } });
+    pi(trace, { type: 'tool_execution_end', toolCallId: 'tcX', isError: false, result: 'done' });
+    expect(trace.querySelectorAll('[data-tool-call-id="tcX"]').length).toBe(1);
+  });
+});
