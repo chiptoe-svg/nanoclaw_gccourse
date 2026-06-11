@@ -1461,7 +1461,7 @@ export function traceResultText(result) {
       .map((b) => b.text)
       .join(' ');
   }
-  if (Array.isArray(result) && result.every((b) => b && typeof b === 'object' && 'text' in b)) {
+  if (Array.isArray(result) && result.every((b) => b && typeof b === 'object' && typeof b.text === 'string')) {
     return result.map((b) => b.text).join(' ');
   }
   try {
@@ -1473,7 +1473,7 @@ export function traceResultText(result) {
 
 // NanoClaw tools' error-string prefixes — the fallback signal when a
 // tool_execution_end event lacks the native isError flag.
-const TRACE_ERROR_RE = /^\s*(Web search failed|Fetch failed|blocked by egress policy|Error\b|HTTP [45]\d\d)/i;
+const TRACE_ERROR_RE = /^\s*(Web search failed|Fetch failed|blocked by egress policy|Error:|HTTP [45]\d\d)/i;
 
 /**
  * Classify a tool_execution_end event as 'ok' | 'error'. Prefers the native

@@ -16,6 +16,15 @@ describe('traceResultText', () => {
     expect(traceResultText({ foo: 1 })).toContain('foo');
     expect(traceResultText(null)).toBe('');
   });
+  it('handles bare text-block arrays and ignores non-string text values', () => {
+    expect(
+      traceResultText([
+        { type: 'text', text: 'a' },
+        { type: 'text', text: 'b' },
+      ]),
+    ).toBe('a b');
+    expect(traceResultText([{ text: 5 }])).toBe(JSON.stringify([{ text: 5 }]));
+  });
 });
 
 describe('classifyToolResult', () => {
@@ -31,6 +40,14 @@ describe('classifyToolResult', () => {
     expect(classifyToolResult({ result: 'Web search failed: 422' })).toBe('error');
     expect(classifyToolResult({ result: 'Search results for "x": ...' })).toBe('ok');
   });
+  it('returns ok for null/empty events', () => {
+    expect(classifyToolResult(null)).toBe('ok');
+    expect(classifyToolResult({})).toBe('ok');
+  });
+  it('does not false-positive on Error-free text (Fix 1)', () => {
+    expect(classifyToolResult({ result: 'Error-free approaches to X' })).toBe('ok');
+    expect(classifyToolResult({ result: 'Error: something broke' })).toBe('error');
+  });
 });
 
 describe('previewForToolArgs', () => {
@@ -39,6 +56,9 @@ describe('previewForToolArgs', () => {
     expect(previewForToolArgs('fetch_url', { url: 'https://example.com/x' })).toContain('https://example.com/x');
     expect(previewForToolArgs('bash', { cmd: 'ls -la' })).toContain('ls -la');
     expect(previewForToolArgs('mystery', { query: 'q' })).toContain('q');
+  });
+  it('handles the real bash param name `command`', () => {
+    expect(previewForToolArgs('bash', { command: 'ls -la' })).toContain('ls -la');
   });
 });
 
@@ -50,7 +70,7 @@ describe('previewForToolResult', () => {
   });
   it('shows a result count for web_search successes when derivable', () => {
     const r = { content: [{ type: 'text', text: 'Search results for "x":\n\n1. A\n2. B\n3. C' }] };
-    expect(previewForToolResult('web_search', r, 'ok')).toMatch(/result/i);
+    expect(previewForToolResult('web_search', r, 'ok')).toMatch(/\b3 results\b/);
   });
   it('falls back to the generic preview for unknown tools', () => {
     expect(previewForToolResult('mystery', 'plain text result', 'ok')).toContain('plain text');
