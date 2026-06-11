@@ -161,20 +161,21 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `main`
-- **Last tag:** `phase-c-complete-2026-05-28` (116 commits ahead)
+- **Last tag:** `phase-c-complete-2026-05-28` (117 commits ahead)
 
 ### Working tree
 
 ```
-## main...origin/main
+## main...origin/main [ahead 1]
  M config/playground-seats.json
-A  docs/superpowers/specs/2026-06-11-simple-my-agent-tab-design.md
+A  docs/superpowers/plans/2026-06-11-simple-my-agent-tab.md
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+93afd88 docs(spec): My Agent simple tab — embedded chat + use-agent toggle + template-driven skills/persona/models
 b597d60 docs(state): record cost governance + scenario-aware Status roster shipped + live-verified
 9d0d490 refactor(home): drop classroom roster + add-student cards (superseded by Status roster)
 ce180c6 fix(status): surface budgets-fetch failure; drop double loadStatus; prompt-based per-agent budget (survives re-render)
@@ -189,9 +190,8 @@ ae94cff feat(cost): budget config + evaluator (pure, tested)
 ea2e2b4 fix(status): scope tab CSS (don't clobber existing .status-badge); surface restart failures; idempotent click wiring; drop dead HEALTH_LABEL
 616cb69 feat(status): owner-only Status tab (host summary + agent health table + restart)
 3424bda test(status): assert restart called with group.id; clear mock state; cover restarted:0
-d854ad1 feat(status): POST /api/status/restart + route wiring
 ```
 
 ### Last refresh
 
-2026-06-11T21:15:38Z
+2026-06-11T21:34:34Z
