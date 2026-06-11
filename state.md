@@ -111,6 +111,8 @@ Pointers, not duplications. Read the relevant one when you're going deep.
 
 Append-only, newest first. One line per decision: *what + 1-line why*. Prune (move to archive) when older than ~6 months.
 
+- **2026-06-11** — **Richer live trace cards shipped** (merged to main, `badae79`..`8bebfb5`; spec/plan `docs/superpowers/{specs,plans}/2026-06-11-richer-trace-cards.*`). The Chat tab's live trace pane (`src/channels/playground/public/tabs/chat.js`) now renders each tool use as ONE card keyed by `toolCallId` (was two: a `contentIndex`-keyed toolcall card + a separate exec card), with a ✓/✗ **success/error badge** (driven by the native `tool_execution_end.isError`, NanoClaw tool error-string prefixes as fallback via `classifyToolResult`) and **tool-aware previews** (`previewForToolArgs`/`previewForToolResult` — query/url/cmd → result-count/error, deferring to the existing `formatTracePreview`). Pure client-side; no backend/SSE/DB/container change — the host serves the JS from `src/…/public/` directly, so it deploys on a browser hard-refresh (no restart/rebuild). **Also closed the renderer's test gap:** exported `appendPiEvent` + the helpers and added the FIRST automated tests for the trace renderer (`chat-trace.test.ts`, 20 tests, vitest + `happy-dom`). Per-tool DURATION deliberately dropped (the per-turn footer already sums latency); persistence/replay + cross-agent view were out of scope (other gap-analysis options, not chosen). Final review APPROVED-WITH-NITS. Host 1178 tests green.
+
 - **2026-06-11** — **Agent egress control shipped + deployed + live-verified** (merged to main, `6247aeb`..`5f4d676`; spec/plan `docs/superpowers/{specs,plans}/2026-06-10-agent-egress-control.*`). Closes a proven SSRF/credential-misuse hole: an agent (it has a `bash` tool + `curl`) could `curl http://192.168.64.1:3001/openai/v1/models` → 200, **using the org's real OpenAI key**, because the credential proxy pinned upstream HOST by path-prefix but not path/method. **Three app/proxy-layer controls (network-layer egress — bash/curl to LAN/internet — is explicitly OUT OF SCOPE, deferred):** (1) `fetch_url` (`container/agent-runner/src/tools/fetch.ts`) now rejects loopback/RFC-1918/link-local/CGNAT/cloud-metadata + IPv4-mapped-IPv6 (incl. hex form) and re-validates every redirect hop, fail-closed on DNS. (2) Credential proxy (`src/credential-proxy.ts`) — `resolveProxyRoute` gives every provider an EXPLICIT prefix incl. a new `/anthropic`; **no catch-all** (unrecognized/bare path → 403); a per-route `EGRESS_ALLOWLIST` + `isEgressAllowed` gate (checked before ANY credential injection/payload log) permits only `POST /v1/messages` (+ the anthropic OAuth token-exchange `/api/oauth/claude_cli/create_api_key`) / `POST /v1/responses` / `POST /v1/chat/completions`; `/googleapis` allowlist is **empty** (dead route — the GWS relay calls Google directly — so it 403s, closing the Google-OAuth vector). (3) `container-runner.ts` points `ANTHROPIC_BASE_URL` at the `/anthropic` prefix. Final opus review APPROVED-WITH-NITS (nits = non-routable exotic IPv6 in fetch_url, optional follow-up). **Deploy-discovered regression, fixed (`5f4d676`):** `pi-model.ts` reused `ANTHROPIC_BASE_URL` *verbatim* as the omlx/clemson proxy origin, so the new `/anthropic` suffix leaked → `…/anthropic/omlx/v1/…` → 403; fixed by stripping to origin (`deriveProxyOrigin`). **Live-verified:** `/openai/v1/models` from a container → 403 (was 200); a real openai-codex agent replied end-to-end (`/openai/v1/responses` allowed); owner_01 (local) routes to `/omlx/v1` again (its 502 is the OMLX backend being down — pre-existing, unrelated). Host 1158 tests / agent-runner 182 green throughout.
   - **Deploy nuance (important):** the proxy allowlist is host-side and took effect on the host restart for ALL sessions immediately (the critical control). But **agent-runner source changes (`fetch.ts`, `pi-model.ts`) only load on container re-spawn** — long-lived per-session containers keep old code in memory until cycled (`restartAgentGroupContainers` / `container stop` + next message / idle-sweep churn). owner_01's stale container had to be cycled to pick up the `pi-model` fix. For future agent-runner deploys: cycle running session containers, don't just restart the host.
 
@@ -156,21 +158,22 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 
 ### Branch
 
-- **Current:** `richer-trace-cards`
-- **Last tag:** `phase-c-complete-2026-05-28` (95 commits ahead)
+- **Current:** `main`
+- **Last tag:** `phase-c-complete-2026-05-28` (96 commits ahead)
 
 ### Working tree
 
 ```
-## richer-trace-cards
+## main...origin/main [ahead 34]
  M config/playground-seats.json
-M  src/channels/playground/public/tabs/chat.js
+M  state.md
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+8bebfb5 fix(trace): don't register a fallback card under an undefined toolCallId key
 134b68b test(trace): no-regression coverage for text-only turns
 e0d0b37 fix(trace): clear opposite status class on re-fire; badge title; CSS specificity; pending-state test
 db5db62 feat(trace): success/error status badge on tool cards (isError + fallback)
@@ -185,9 +188,8 @@ c7b9dfd docs(state): record agent egress control shipped + live-verified + deplo
 35ad39c docs/test(proxy): document exact-match egress semantics + fail-closed edge cases
 46bda30 feat(proxy): per-route egress allowlist (chat + anthropic OAuth exchange); googleapis fail-closed
 bb2d075 docs(egress): anthropic allowlist must include the OAuth token-exchange path
-f3af052 refactor(proxy): drop shadowed route var; test handler-level 403 + query-string routing
 ```
 
 ### Last refresh
 
-2026-06-11T11:40:11Z
+2026-06-11T11:41:55Z
