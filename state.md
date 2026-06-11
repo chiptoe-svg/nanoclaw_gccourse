@@ -159,7 +159,7 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `status-health-tab`
-- **Last tag:** `phase-c-complete-2026-05-28` (101 commits ahead)
+- **Last tag:** `phase-c-complete-2026-05-28` (102 commits ahead)
 
 ### Working tree
 
@@ -168,13 +168,13 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
  M config/playground-seats.json
 M  src/channels/playground/api-routes.ts
 M  src/channels/playground/api/status.test.ts
-M  src/channels/playground/api/status.ts
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+d854ad1 feat(status): POST /api/status/restart + route wiring
 ff2a764 fix(status): classify health from active sessions only; stat heartbeat once; export AgentStatus; test boundaries
 395a2ad feat(status): health-classifier + GET /api/status (owner-gated)
 123a92a docs(plan): owner Status/Health tab plan + spec correction (sessions.container_status source)
@@ -189,9 +189,8 @@ db5db62 feat(trace): success/error status badge on tool cards (isError + fallbac
 a5f3dce fix(trace): tighten error regex to Error: prefix; guard text-array arm; expand helper tests
 badae79 feat(trace): tool-aware preview + result-classification helpers (exported, tested)
 293bacb docs(plan): richer live trace cards implementation plan
-62ea5df docs(spec): richer live trace cards (unify tool card + status badge + tool-aware previews)
 ```
 
 ### Last refresh
 
-2026-06-11T12:55:42Z
+2026-06-11T13:01:03Z

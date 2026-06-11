@@ -154,6 +154,7 @@ describe('handlePostStatusRestart', () => {
       granted_at: new Date().toISOString(),
     });
     createUser({ id: MEMBER_ID, kind: 'playground', display_name: null, created_at: new Date().toISOString() });
+    vi.clearAllMocks();
   });
 
   afterEach(() => {
@@ -173,21 +174,36 @@ describe('handlePostStatusRestart', () => {
     const { handlePostStatusRestart } = await import('./status.js');
     expect(handlePostStatusRestart(ownerSession(), { folder: 'definitely-not-a-folder' }).status).toBe(404);
   });
-  it('200 with {ok:true, restarted:2} for a known folder', async () => {
+  it('200 with {ok:true, restarted:2} for a known folder — asserts group.id not folder', async () => {
     createAgentGroup({
-      id: 'restart-test-group',
+      id: 'ag-restart-xyz',
       name: 'Restart Test',
-      folder: 'restart-test-group',
+      folder: 'restart-folder',
       agent_provider: null,
       created_at: new Date().toISOString(),
     });
     const { handlePostStatusRestart } = await import('./status.js');
     const { restartAgentGroupContainers } = await import('../../../container-restart.js');
-    const result = handlePostStatusRestart(ownerSession(), { folder: 'restart-test-group' });
+    vi.mocked(restartAgentGroupContainers).mockReturnValue(2);
+    const result = handlePostStatusRestart(ownerSession(), { folder: 'restart-folder' });
     expect(result.status).toBe(200);
-    const body = result.body as { ok: boolean; restarted: number };
-    expect(body.ok).toBe(true);
-    expect(body.restarted).toBe(2);
-    expect(restartAgentGroupContainers).toHaveBeenCalled();
+    expect(result.body).toEqual({ ok: true, restarted: 2 });
+    expect(restartAgentGroupContainers).toHaveBeenCalledWith('ag-restart-xyz', 'owner-status-restart');
+  });
+  it('200 with {ok:true, restarted:0} when no containers are running (idempotent no-op)', async () => {
+    createAgentGroup({
+      id: 'ag-restart-xyz',
+      name: 'Restart Test',
+      folder: 'restart-folder',
+      agent_provider: null,
+      created_at: new Date().toISOString(),
+    });
+    const { handlePostStatusRestart } = await import('./status.js');
+    const { restartAgentGroupContainers } = await import('../../../container-restart.js');
+    vi.mocked(restartAgentGroupContainers).mockReturnValueOnce(0);
+    const result = handlePostStatusRestart(ownerSession(), { folder: 'restart-folder' });
+    expect(result.status).toBe(200);
+    expect(result.body).toEqual({ ok: true, restarted: 0 });
+    expect(restartAgentGroupContainers).toHaveBeenCalledWith('ag-restart-xyz', 'owner-status-restart');
   });
 });

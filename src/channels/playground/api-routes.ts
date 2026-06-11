@@ -813,6 +813,7 @@ export async function route(
     const r = handleGetStatus(session);
     return send(res, r.status, r.body);
   }
+
   // POST /api/status/restart — owner/admin: restart all containers for an agent group
   if (method === 'POST' && url.pathname === '/api/status/restart') {
     const body = await readJsonBody(req);
