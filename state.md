@@ -161,21 +161,21 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `simple-my-agent-tab`
-- **Last tag:** `phase-c-complete-2026-05-28` (122 commits ahead)
+- **Last tag:** `phase-c-complete-2026-05-28` (123 commits ahead)
 
 ### Working tree
 
 ```
 ## simple-my-agent-tab
  M config/playground-seats.json
-M  src/channels/playground/api/simple-config.test.ts
-M  src/channels/playground/api/simple-config.ts
+M  src/channels/playground/api-routes.ts
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+e395217 fix(playground): reject control/invisible chars in agent names; tighten 400-path test
 cb9cd10 feat(playground): agent-name PUT + simple-restart handlers
 2e1e739 fix(playground): simple-config — YAML block-scalar description fallback, single skills readdir, empty-model contract test
 e0303ac feat(playground): GET /api/simple-config handler — template skill shortlist + model choices
@@ -190,9 +190,8 @@ ce180c6 fix(status): surface budgets-fetch failure; drop double loadStatus; prom
 b480065 feat(cost): scenario-aware GET/POST /api/budgets (members + cost + budget)
 2bf08f0 fix(cost): guard perAgent against array json in readCostBudgets
 ae94cff feat(cost): budget config + evaluator (pure, tested)
-2db72ff docs(plan): cost governance + scenario-aware Status roster implementation plan
 ```
 
 ### Last refresh
 
-2026-06-11T21:56:42Z
+2026-06-11T21:59:26Z

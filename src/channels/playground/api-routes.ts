@@ -146,6 +146,7 @@ import {
   handleLogout,
   handleLogoutAll,
 } from './api/me.js';
+import { handleGetSimpleConfig, handlePutAgentName, handleSimpleRestart } from './api/simple-config.js';
 import { pushToAll, registerSseClient } from './sse.js';
 
 export async function route(
@@ -657,6 +658,45 @@ export async function route(
     }
     const body = await readJsonBody(req);
     const r = await handlePutActiveModel(draftFolder, session.userId ?? '', body);
+    return send(res, r.status, r.body);
+  }
+
+  // GET /api/simple-config?folder=… — beginner-tab config: template skill
+  // shortlist + model choices + the agent's current name/model. Member-
+  // readable behind the same draft-read gate as the other drafts GETs.
+  if (method === 'GET' && url.pathname === '/api/simple-config') {
+    const folder = url.searchParams.get('folder') || '';
+    if (!canReadDraft(folder, session.userId)) return send(res, 403, { error: 'Forbidden' });
+    const r = handleGetSimpleConfig(folder);
+    return send(res, r.status, r.body);
+  }
+
+  // PUT /api/drafts/:folder/name — student-editable assistant name.
+  // Reuses the skills_put gate action: name edits belong to the same
+  // "save my agent" surface as the skills checklist.
+  const nameMatch = url.pathname.match(/^\/api\/drafts\/([A-Za-z0-9_-]+)\/name$/);
+  if (method === 'PUT' && nameMatch) {
+    const draftFolder = nameMatch[1]!;
+    {
+      const decision = checkDraftMutation(draftFolder, 'skills_put', session.userId);
+      if (!decision.allow) return send(res, 403, { error: decision.reason || 'Forbidden' });
+    }
+    const body = await readJsonBody(req);
+    const r = handlePutAgentName(draftFolder, body as { name?: unknown });
+    return send(res, r.status, r.body);
+  }
+
+  // POST /api/simple-restart — recycle the group's container so a simple-tab
+  // save takes effect on the next message.
+  if (method === 'POST' && url.pathname === '/api/simple-restart') {
+    const body = await readJsonBody(req);
+    const folder = typeof body.folder === 'string' ? body.folder : '';
+    if (!folder) return send(res, 400, { error: 'folder (string) required' });
+    {
+      const decision = checkDraftMutation(folder, 'skills_put', session.userId);
+      if (!decision.allow) return send(res, 403, { error: decision.reason || 'Forbidden' });
+    }
+    const r = handleSimpleRestart(folder);
     return send(res, r.status, r.body);
   }
 
