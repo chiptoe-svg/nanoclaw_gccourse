@@ -13,6 +13,14 @@ describe('ipIsBlocked', () => {
       expect(ipIsBlocked(ip)).toBe(true);
     }
   });
+  it('blocks hex-form IPv4-mapped IPv6 for private ranges', () => {
+    expect(ipIsBlocked('::ffff:c0a8:1')).toBe(true);   // 192.168.0.1
+    expect(ipIsBlocked('::ffff:0a00:0001')).toBe(true); // 10.0.0.1
+    expect(ipIsBlocked('::ffff:a00:1')).toBe(true);     // 10.0.0.1 (compressed)
+  });
+  it('strips IPv6 zone id before checking', () => {
+    expect(ipIsBlocked('fe80::1%eth0')).toBe(true);
+  });
   it('allows public addresses', () => {
     for (const ip of ['8.8.8.8', '1.1.1.1', '172.15.0.1', '172.32.0.1', '2606:4700::1111']) {
       expect(ipIsBlocked(ip)).toBe(false);
@@ -36,6 +44,9 @@ describe('assertUrlAllowed', () => {
   it('fails closed when DNS does not resolve (RFC 6761 .invalid never resolves)', async () => {
     await expect(assertUrlAllowed('http://nonexistent.invalid/')).rejects.toThrow(/DNS resolution failed/);
   });
+  it('rejects hex IPv4-mapped IPv6 internal address', async () => {
+    await expect(assertUrlAllowed('http://[::ffff:c0a8:0001]/')).rejects.toThrow(/blocked/);
+  });
 });
 
 describe('fetch_url redirect re-validation', () => {
@@ -50,6 +61,33 @@ describe('fetch_url redirect re-validation', () => {
       const res = await tool.execute('id', { url: 'https://example.com/redirect' });
       const text = res.content.map((c) => ('text' in c ? c.text : '')).join('');
       expect(text).toMatch(/blocked by egress policy/);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
+  it('follows a redirect to a public URL and returns the body', async () => {
+    const realFetch = globalThis.fetch;
+    let callCount = 0;
+    globalThis.fetch = mock(async () => {
+      callCount++;
+      if (callCount === 1) {
+        return new Response(null, {
+          status: 302,
+          headers: { location: 'https://93.184.216.34/final' },
+        });
+      }
+      return new Response('hello from final', {
+        status: 200,
+        headers: { 'content-type': 'text/plain' },
+      });
+    }) as unknown as typeof fetch;
+    try {
+      const { createFetchTool } = await import('./fetch.js');
+      const tool = createFetchTool();
+      const res = await tool.execute('id', { url: 'https://example.com/start' });
+      const text = res.content.map((c) => ('text' in c ? c.text : '')).join('');
+      expect(text).toBe('hello from final');
     } finally {
       globalThis.fetch = realFetch;
     }

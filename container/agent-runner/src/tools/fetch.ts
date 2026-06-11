@@ -79,12 +79,20 @@ export function ipIsBlocked(ip: string): boolean {
     if (p[0] === 0) return true; // unspecified
     return false;
   }
-  const lower = ip.toLowerCase();
+  const lower = ip.toLowerCase().split('%')[0]; // drop IPv6 zone id (e.g. fe80::1%eth0)
   if (lower === '::1') return true; // loopback
   if (lower.startsWith('fe80')) return true; // link-local
   if (lower.startsWith('fc') || lower.startsWith('fd')) return true; // ULA fc00::/7
-  const mapped = lower.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
-  if (mapped) return ipIsBlocked(mapped[1]);
+  // IPv4-mapped IPv6, dotted form: ::ffff:192.168.0.1
+  const dotted = lower.match(/^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
+  if (dotted) return ipIsBlocked(dotted[1]);
+  // IPv4-mapped IPv6, hex form: ::ffff:c0a8:1  (URL parser compresses leading zeros)
+  const hex = lower.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+  if (hex) {
+    const hi = parseInt(hex[1], 16);
+    const lo = parseInt(hex[2], 16);
+    return ipIsBlocked(`${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`);
+  }
   return false;
 }
 
@@ -157,6 +165,7 @@ export function createFetchTool(): AgentTool {
         let response: Response;
         let redirects = 0;
         for (;;) {
+          if (controller.signal.aborted) throw new Error('fetch aborted (timeout)');
           await assertUrlAllowed(currentUrl); // throws on internal/blocked targets
           response = await fetch(currentUrl, {
             signal: controller.signal,
