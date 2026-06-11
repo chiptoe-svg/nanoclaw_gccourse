@@ -1,6 +1,13 @@
 import fs from 'fs';
 import path from 'path';
 import { PROJECT_ROOT } from '../../../config.js';
+import { isGlobalAdmin, isOwner } from '../../../modules/permissions/db/user-roles.js';
+import { getAllAgentGroups } from '../../../db/agent-groups.js';
+import { getContainerConfig } from '../../../db/container-configs.js';
+import { roleForFolder, roleProfile, memberName } from '../../../scenarios/registry.js';
+import { aggregateAgentUsage } from './usage.js';
+import type { PlaygroundSession } from '../auth-store.js';
+import type { ApiResult } from './enrollment.js';
 
 export interface CostBudgets {
   defaultMonthlyUsd: number | null;
@@ -49,4 +56,90 @@ export function evaluateBudget(
   if (costUsd >= budgetUsd) status = 'over';
   else if (costUsd >= budgetUsd * warnFraction) status = 'approaching';
   return { status, costUsd, budgetUsd, fraction };
+}
+
+function isOwnerOrAdmin(userId: string | null): boolean {
+  if (!userId) return false;
+  return isOwner(userId) || isGlobalAdmin(userId);
+}
+
+export interface BudgetAgentRow {
+  folder: string;
+  name: string;
+  role: string;
+  roleLabel: string;
+  model: string | null;
+  provider: string | null;
+  costUsdThisMonth: number;
+  budgetUsd: number | null;
+  status: BudgetStatus;
+  fraction: number | null;
+}
+
+export function handleGetBudgets(
+  session: PlaygroundSession,
+): ApiResult<{ defaultMonthlyUsd: number | null; warnFraction: number; agents: BudgetAgentRow[] }> {
+  if (!isOwnerOrAdmin(session.userId)) return { status: 403, body: { error: 'owner or admin required' } };
+  const cfg = readCostBudgets();
+  const agents: BudgetAgentRow[] = [];
+  for (const g of getAllAgentGroups()) {
+    const role = roleForFolder(g.folder);
+    if (role == null) continue;
+    const ev = evaluateBudget(
+      aggregateAgentUsage(g.id).thisMonth.costUsd,
+      budgetForAgent(g.folder, cfg),
+      cfg.warnFraction,
+    );
+    const cc = getContainerConfig(g.id);
+    agents.push({
+      folder: g.folder,
+      name: memberName(g.folder) ?? g.name,
+      role,
+      roleLabel: roleProfile(role)?.label ?? role,
+      model: cc?.model ?? null,
+      provider: cc?.model_provider ?? null,
+      costUsdThisMonth: ev.costUsd,
+      budgetUsd: ev.budgetUsd,
+      status: ev.status,
+      fraction: ev.fraction,
+    });
+  }
+  return { status: 200, body: { defaultMonthlyUsd: cfg.defaultMonthlyUsd, warnFraction: cfg.warnFraction, agents } };
+}
+
+export function handlePostBudgets(
+  session: PlaygroundSession,
+  body: { defaultMonthlyUsd?: unknown; warnFraction?: unknown; perAgent?: unknown },
+): ApiResult<CostBudgets> {
+  if (!isOwnerOrAdmin(session.userId)) return { status: 403, body: { error: 'owner or admin required' } };
+  const next: CostBudgets = { ...readCostBudgets() };
+  if ('defaultMonthlyUsd' in body) {
+    const v = body.defaultMonthlyUsd;
+    if (v !== null && (typeof v !== 'number' || v < 0))
+      return { status: 400, body: { error: 'defaultMonthlyUsd must be ≥ 0 or null' } };
+    next.defaultMonthlyUsd = v as number | null;
+  }
+  if ('warnFraction' in body) {
+    const v = body.warnFraction;
+    if (typeof v !== 'number' || v <= 0 || v > 1)
+      return { status: 400, body: { error: 'warnFraction must be in (0, 1]' } };
+    next.warnFraction = v;
+  }
+  if ('perAgent' in body) {
+    const pa = body.perAgent;
+    if (pa == null || typeof pa !== 'object') return { status: 400, body: { error: 'perAgent must be an object' } };
+    const out: Record<string, number> = { ...next.perAgent };
+    for (const [folder, v] of Object.entries(pa as Record<string, unknown>)) {
+      if (v === null) {
+        delete out[folder];
+        continue;
+      }
+      if (typeof v !== 'number' || v < 0)
+        return { status: 400, body: { error: `perAgent.${folder} must be ≥ 0 or null` } };
+      out[folder] = v;
+    }
+    next.perAgent = out;
+  }
+  writeCostBudgets(next);
+  return { status: 200, body: next };
 }

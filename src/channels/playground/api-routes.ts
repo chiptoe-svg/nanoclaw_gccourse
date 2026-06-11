@@ -131,6 +131,7 @@ import {
 } from './api/default-participant.js';
 import { handleGetWebSearchConfig, handlePostWebSearchConfig } from './api/web-search-config.js';
 import { handleGetStatus, handlePostStatusRestart } from './api/status.js';
+import { handleGetBudgets, handlePostBudgets } from './api/cost-budgets.js';
 import { handleDirectChat } from './api/direct-chat.js';
 import { handleGetStudentDetail, handleGetStudentsUsage, handleGetUsage } from './api/usage.js';
 import { isOwner } from '../../modules/permissions/db/user-roles.js';
@@ -830,6 +831,18 @@ export async function route(
   if (method === 'POST' && url.pathname === '/api/web-search-config') {
     const body = await readJsonBody(req);
     const r = handlePostWebSearchConfig(session, body);
+    return send(res, r.status, r.body);
+  }
+
+  // GET /api/budgets — owner/admin: per-member cost + budget summary
+  if (method === 'GET' && url.pathname === '/api/budgets') {
+    const r = handleGetBudgets(session);
+    return send(res, r.status, r.body);
+  }
+  // POST /api/budgets — owner/admin: write budget config
+  if (method === 'POST' && url.pathname === '/api/budgets') {
+    const body = await readJsonBody(req);
+    const r = handlePostBudgets(session, body);
     return send(res, r.status, r.body);
   }
 

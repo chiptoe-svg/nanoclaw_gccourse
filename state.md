@@ -160,13 +160,15 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `cost-governance`
-- **Last tag:** `phase-c-complete-2026-05-28` (109 commits ahead)
+- **Last tag:** `phase-c-complete-2026-05-28` (110 commits ahead)
 
 ### Working tree
 
 ```
 ## cost-governance
  M config/playground-seats.json
+M  src/channels/playground/api-routes.ts
+M  src/channels/playground/api/cost-budgets.test.ts
 M  src/channels/playground/api/cost-budgets.ts
 ?? .codegraph/
 ```
@@ -174,6 +176,7 @@ M  src/channels/playground/api/cost-budgets.ts
 ### Recent commits (last 15)
 
 ```
+2bf08f0 fix(cost): guard perAgent against array json in readCostBudgets
 ae94cff feat(cost): budget config + evaluator (pure, tested)
 2db72ff docs(plan): cost governance + scenario-aware Status roster implementation plan
 410b3eb docs(spec): cost governance (alert-only) + scenario-aware Status roster
@@ -188,9 +191,8 @@ ff2a764 fix(status): classify health from active sessions only; stat heartbeat o
 bf2f1ec docs(spec): owner Status/Health tab (health roll-up + restart op)
 4c729ff docs(state): record richer live trace cards shipped
 8bebfb5 fix(trace): don't register a fallback card under an undefined toolCallId key
-134b68b test(trace): no-regression coverage for text-only turns
 ```
 
 ### Last refresh
 
-2026-06-11T15:18:28Z
+2026-06-11T15:22:34Z
