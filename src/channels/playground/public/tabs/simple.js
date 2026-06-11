@@ -41,7 +41,7 @@ export function renderSkillRows(container, skills) {
     const desc = document.createElement('div');
     desc.className = 'simple-skill-desc';
     desc.hidden = true;
-    desc.textContent = s.description;
+    desc.textContent = s.description || '';
 
     info.addEventListener('click', () => {
       const wasHidden = desc.hidden;
@@ -155,7 +155,7 @@ function initPanel(wrapper, folder) {
   // Name saves on blur / Enter; the bubble label follows live.
   async function saveName() {
     const name = nameInput.value.trim();
-    if (!name || name === lastSavedName) return;
+    if (!name || name === lastSavedName) return true;
     try {
       const r = await fetch(`/api/drafts/${folder}/name`, {
         method: 'PUT',
@@ -166,11 +166,14 @@ function initPanel(wrapper, folder) {
       if (r.ok) {
         lastSavedName = name;
         setBubbleLabels(wrapper, name, currentModelLabel(wrapper)); // Task 7
+        return true;
       } else {
         statusEl.textContent = "Couldn't save the name — try again.";
+        return false;
       }
     } catch {
       statusEl.textContent = "Couldn't save the name — try again.";
+      return false;
     }
   }
   nameInput.addEventListener('keydown', (e) => {
@@ -181,6 +184,7 @@ function initPanel(wrapper, folder) {
   // Save = skills + persona (+ name if dirty), then restart so the next
   // message respawns the container with the new setup.
   saveBtn.addEventListener('click', async () => {
+    saveBtn.disabled = true;
     statusEl.textContent = 'Saving…';
     try {
       const skillsRes = await fetch(`/api/drafts/${folder}/skills`, {
@@ -195,17 +199,19 @@ function initPanel(wrapper, folder) {
         credentials: 'same-origin',
         body: JSON.stringify({ text: personaEl.value }),
       });
-      await saveName();
+      const nameOk = await saveName();
       const restartRes = await fetch('/api/simple-restart', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         credentials: 'same-origin',
         body: JSON.stringify({ folder }),
       });
-      if (!skillsRes.ok || !personaRes.ok || !restartRes.ok) throw new Error('save failed');
+      if (!skillsRes.ok || !personaRes.ok || !nameOk || !restartRes.ok) throw new Error('save failed');
       statusEl.textContent = 'Saved! Your agent will use this from its next reply.';
     } catch {
       statusEl.textContent = "Couldn't save — try again.";
+    } finally {
+      saveBtn.disabled = false;
     }
   });
 }

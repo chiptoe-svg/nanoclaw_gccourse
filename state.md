@@ -161,7 +161,7 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `simple-my-agent-tab`
-- **Last tag:** `phase-c-complete-2026-05-28` (127 commits ahead)
+- **Last tag:** `phase-c-complete-2026-05-28` (128 commits ahead)
 
 ### Working tree
 
@@ -169,13 +169,13 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ## simple-my-agent-tab
  M config/playground-seats.json
 M  src/channels/playground/public/tabs/simple.js
-A  src/channels/playground/public/tabs/simple.test.ts
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+9de9da9 feat(playground): simple tab side panel — skills checklist, persona, toggle, save
 54bacb6 fix(playground): hide chat toolbar/trace in simple mode; use design tokens
 4064a8e chore(playground): undo collateral prettier reformat of public assets — keep diffs minimal
 986f42c feat(playground): My Agent simple tab skeleton — registration, layout, embedded chat, CSS hiding
@@ -190,9 +190,8 @@ acdd91e refactor(playground): export killGroupContainer with reason param
 b597d60 docs(state): record cost governance + scenario-aware Status roster shipped + live-verified
 9d0d490 refactor(home): drop classroom roster + add-student cards (superseded by Status roster)
 ce180c6 fix(status): surface budgets-fetch failure; drop double loadStatus; prompt-based per-agent budget (survives re-render)
-8b041fa feat(status): scenario roster + spend/budget columns + budget editor + add-participant
 ```
 
 ### Last refresh
 
-2026-06-11T22:19:31Z
+2026-06-11T22:22:47Z
