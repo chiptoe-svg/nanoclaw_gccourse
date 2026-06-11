@@ -36,21 +36,30 @@ Confirmed facts that shape the design:
 
 Three components, all **fail-closed**.
 
-### Component 1 — Credential-proxy per-route path allowlist (primary control)
+### Component 1 — Explicit-prefix routing with no provider catch-all (fail-closed default)
 
-In `src/credential-proxy.ts`, after the route is determined and the prefix stripped (the `upstreamPath` computation, ~line 476–486) and **before** credential injection/forwarding, check `(method, upstreamPath)` against a per-route allowlist constant. On no-match: respond **403** with `{ "error": "endpoint not allowed by nanoclaw egress policy" }`, attach **no** credentials, do not forward, and emit a host audit log line. Hardcoded constant (no config knob — YAGNI).
+Today the proxy routes unrecognized/unprefixed paths to Anthropic (the `else → anthropicUpstream` fallback, `credential-proxy.ts` ~line 475), because the Anthropic SDK is pointed at the proxy with a *bare* base URL (`ANTHROPIC_BASE_URL=http://gateway:3001`, no prefix). This permissive catch-all hands out credentials for any unrecognized path and privileges one provider. **Remove it.** Every provider gets an explicit prefix; the bare/unrecognized route fails closed.
+
+- **Add an `/anthropic` route** to the proxy (parallel to `/openai`, `/omlx`, `/clemson`, `/googleapis`): match `/anthropic/*`, strip the prefix, forward to `anthropicUpstream`. Update the credential-resolution branch (`credential-proxy.ts` ~line 542, currently keyed on `!isGoogle && !isOmlx && !isClemson`) to key on the explicit `isAnthropic` instead.
+- **Change `container-runner.ts`** `buildContainerArgs` to set `ANTHROPIC_BASE_URL=http://${gateway}:${port}/anthropic` (was bare). The Anthropic SDK then posts to `/anthropic/v1/messages`; the proxy strips `/anthropic` → `/v1/messages`.
+- **Bare path / unrecognized prefix → 403, fail-closed, no creds.** There is no provider catch-all.
+
+**OAuth-landmine interaction (verify in impl):** one of the four Anthropic OAuth landmines is the `model.baseUrl` override (`pi.ts`), which is set from `ANTHROPIC_BASE_URL`. With the `/anthropic` prefix it becomes `…/anthropic`; confirm the SDK appends `/v1/messages` correctly and the proxy's prefix-strip + the preamble/beta-header handling all still produce a valid upstream call. This box has no Anthropic creds/agents so it can't be live-verified here — verify on a path that exercises the strip (unit test) and flag for the next Anthropic-using install.
+
+Then, after the route is determined and the prefix stripped (the `upstreamPath` computation, ~line 476–486) and **before** credential injection/forwarding, check `(method, upstreamPath)` against a per-route allowlist constant. On no-match: respond **403** with `{ "error": "endpoint not allowed by nanoclaw egress policy" }`, attach **no** credentials, do not forward, and emit a host audit log line. Hardcoded constant (no config knob — YAGNI).
 
 Allowlist (path match is exact or a documented prefix; method pinned to `POST` for LLM routes):
 
-| Route (internal id) | Allowed (method + path) |
-|---|---|
-| `anthropic` (default) | `POST /v1/messages`; `POST /v1/messages/count_tokens` **only if** the SDK is confirmed to call it (verify in impl; omit otherwise) |
-| `openai` / `openai-platform` | `POST /v1/responses`, `POST /v1/chat/completions` |
-| `omlx` | `POST /v1/chat/completions`, `POST /v1/responses` |
-| `clemson` | `POST /v1/chat/completions`, `POST /v1/responses` |
-| `googleapis` | prefix-allow the GWS surfaces the relay uses: `gmail/v1/`, `calendar/v3/`, `drive/v3/`, `sheets/v4/`, `slides/v1/`, `oauth2/v2/userinfo` (enumerate precisely from the `@googleapis/*` calls in impl) |
+| Route (internal id) | Reached via | Allowed (method + path) |
+|---|---|---|
+| `anthropic` | `/anthropic/*` prefix | `POST /v1/messages`; `POST /v1/messages/count_tokens` **only if** the SDK is confirmed to call it (verify in impl; omit otherwise) |
+| `openai` / `openai-platform` | `/openai/*`, `/openai-platform/*` | `POST /v1/responses`, `POST /v1/chat/completions` |
+| `omlx` | `/omlx/*` | `POST /v1/chat/completions`, `POST /v1/responses` |
+| `clemson` | `/clemson/*` | `POST /v1/chat/completions`, `POST /v1/responses` |
+| `googleapis` | `/googleapis/*` | prefix-allow the GWS surfaces the relay uses: `gmail/v1/`, `calendar/v3/`, `drive/v3/`, `sheets/v4/`, `slides/v1/`, `oauth2/v2/userinfo` (enumerate precisely from the `@googleapis/*` calls in impl) |
+| _(none)_ | bare path / unrecognized prefix | **nothing — 403 fail-closed, no creds** |
 
-This closes the proven finding: `/openai/v1/models` (and all other non-chat endpoints) → 403.
+This closes the proven finding (`/openai/v1/models` → 403) **and** removes the permissive Anthropic catch-all.
 
 ### Component 2 — Source-fence the Google route
 
@@ -78,8 +87,10 @@ All three components fail closed. Rejections return a clear, non-leaky message t
 ## Testing
 
 **Host (`vitest`, `src/credential-proxy.test.ts` or a new test):**
+- `/anthropic/v1/messages` routes to the anthropic upstream with the prefix stripped (and gets the anthropic cred).
+- Bare path (`/v1/messages`, `/`) and unrecognized prefix (`/foo/…`) → **403, no creds, not forwarded** (the catch-all is gone).
 - Allowlisted `(method, path)` per route → forwarded (creds injected, upstream reached via a mock).
-- `/v1/models`, `/v1/files`, arbitrary paths, and wrong method on every route → **403, no credential header attached** (assert the injected `x-api-key`/`Authorization` is absent on the rejected path).
+- `/openai/v1/models`, `/v1/files`, arbitrary paths, and wrong method on every route → **403, no credential header attached** (assert the injected `x-api-key`/`Authorization` is absent on the rejected path).
 - `/googleapis/*` from a `192.168.64.x` source → 403; from loopback → allowed (mock `remoteAddress`).
 
 **Agent-runner (`bun test`, `container/agent-runner/src/tools/fetch.test.ts`):**
@@ -102,13 +113,16 @@ Build clean (`pnpm run build` + agent-runner `bun run typecheck`) + full suites 
 ## Risks / notes
 
 - **Allowlist too tight breaks real traffic.** Mitigated by grounding paths in verified harness/SDK behavior and by the live re-probe gate. The riskiest entries are `count_tokens` (verify before including/excluding) and the exact Google path prefixes.
-- **Source-fence depends on the relay's source address.** Verify in implementation; have the documented fallback ready.
 - **No container rebuild needed for the proxy change** (host-side; restart host). The `fetch_url` change is agent-runner source — picked up via the runtime RO mount on next container spawn (no image rebuild; see `state.md` decision log).
+- **The `/anthropic`-prefix change is trunk and atomic-deploy-sensitive.** `container-runner.ts` (sets the new base URL at spawn) and `credential-proxy.ts` (strips the new prefix) must update together; a host restart does both in one process, and new spawns pick up the new env. Existing running containers spawned before the restart still carry the bare `ANTHROPIC_BASE_URL` and would 403 against the new proxy — on this box that's moot (no Anthropic agents), but for an Anthropic-using install the restart should respawn/let sessions re-spawn. Flag this in the `update-nanoclaw` path so other installs don't get a half-applied routing change.
+- **The `/anthropic` routing change affects every install, including Anthropic-primary ones (personal).** It's verified by unit test on this box (no live Anthropic creds); the next Anthropic-using install must live-verify a real Claude turn after deploy.
+- **Source-fence depends on the relay's source address.** Verify in implementation; have the documented fallback ready.
 - **Defense-in-depth, not a wall.** This does not stop a determined prompt-injected agent with `bash`. It removes the credential-misuse vector (the proven, highest-severity finding) and the trivial `fetch_url` path. The network-layer follow-up remains the complete control.
 
 ## Suggested phasing (for the plan)
 
 1. `fetch_url` egress guard + redirect re-validation + tests (self-contained, agent-runner).
-2. Credential-proxy per-route path allowlist + tests (host).
-3. Source-fence `/googleapis` (after verifying the relay's source) + tests.
-4. Build + full suites + live re-probe + `state.md` decision-log entry.
+2. Explicit-prefix routing: add the `/anthropic` proxy route + strip, switch `container-runner.ts` `ANTHROPIC_BASE_URL` to the `/anthropic` prefix, drop the catch-all so bare/unrecognized → 403 + tests (host). Verify the OAuth-landmine base-URL handling via unit test.
+3. Credential-proxy per-route path allowlist (incl. fail-closed default) + tests (host).
+4. Source-fence `/googleapis` (after verifying the relay's source) + tests.
+5. Build + full suites + live re-probe + `state.md` decision-log entry.

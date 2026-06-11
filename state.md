@@ -154,20 +154,21 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `main`
-- **Last tag:** `phase-c-complete-2026-05-28` (73 commits ahead)
+- **Last tag:** `phase-c-complete-2026-05-28` (74 commits ahead)
 
 ### Working tree
 
 ```
-## main...origin/main [ahead 11]
+## main...origin/main [ahead 12]
  M config/playground-seats.json
-A  docs/superpowers/specs/2026-06-10-agent-egress-control-design.md
+M  docs/superpowers/specs/2026-06-10-agent-egress-control-design.md
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+9a8c3c3 docs(spec): agent egress control — proxy allowlist + fetch_url guard
 489d8f4 docs(state): record pluggable web search shipped + Apple-container/env deploy fixes
 71d3730 fix(web-search): read SEARXNG_URL/WEB_SEARCH_API_KEY via readEnvFile, not process.env
 1bc47cc refactor(web-search): use exported TEMPLATE_FOLDER constant
@@ -182,9 +183,8 @@ e51c42f docs(spec): pluggable web search (Brave + SearXNG, owner-selectable) des
 65c01e8 feat(container): forward WEB_SEARCH_API_KEY to agent containers (no-OneCLI installs)
 2479fd1 fix(playground): auto-sync agent model to dropdown selection when stored model is invalid/hidden
 2c7f587 fix(session): re-scaffold missing session dir on write (stale rows after data reset)
-8afcafd fix(direct-chat): accept bare 'openai' provider (normalize to codex /openai/v1)
 ```
 
 ### Last refresh
 
-2026-06-11T03:32:52Z
+2026-06-11T03:39:59Z
