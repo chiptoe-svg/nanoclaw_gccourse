@@ -143,6 +143,38 @@ describe('handleGetSimpleConfig', () => {
     const { handleGetSimpleConfig } = await import('./simple-config.js');
     expect(handleGetSimpleConfig('nope').status).toBe(404);
   });
+
+  it('falls back to the humanized name for YAML block-scalar descriptions', async () => {
+    writeSkill('onecli-gateway', '---\ndescription: >-\n  Long text here.\n---\n# OneCLI\n');
+    vi.doMock('../../../db/agent-groups.js', () => ({ getAgentGroupByFolder: () => GROUP }));
+    vi.doMock('../../../container-config.js', () => ({
+      materializeContainerJson: () => ({ skills: [] }),
+    }));
+    vi.doMock('../../../default-participant-slot.js', () => ({
+      readSlotConfig: () => ({ skills: ['onecli-gateway'], allowed_models: [] }),
+    }));
+    vi.doMock('../../../model-catalog.js', () => ({ getModelCatalog: () => [] }));
+    const { handleGetSimpleConfig } = await import('./simple-config.js');
+    const r = handleGetSimpleConfig('user_01');
+    const body = r.body as { skills: { description: string }[] };
+    expect(body.skills[0]!.description).toBe('Onecli gateway');
+  });
+
+  it('returns models: [] and activeModel: null for a group with no model configured', async () => {
+    vi.doMock('../../../db/agent-groups.js', () => ({ getAgentGroupByFolder: () => GROUP }));
+    vi.doMock('../../../container-config.js', () => ({
+      materializeContainerJson: () => ({ skills: [] }),
+    }));
+    vi.doMock('../../../default-participant-slot.js', () => ({
+      readSlotConfig: () => ({ skills: [], allowed_models: [] }),
+    }));
+    vi.doMock('../../../model-catalog.js', () => ({ getModelCatalog: () => [] }));
+    const { handleGetSimpleConfig } = await import('./simple-config.js');
+    const r = handleGetSimpleConfig('user_01');
+    const body = r.body as { models: unknown[]; activeModel: unknown };
+    expect(body.models).toEqual([]);
+    expect(body.activeModel).toBeNull();
+  });
 });
 
 describe('humanizeSkillTitle', () => {

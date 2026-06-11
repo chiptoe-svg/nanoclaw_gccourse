@@ -70,9 +70,12 @@ function skillDescription(name: string): string {
       for (const line of fm[1]!.split('\n')) {
         const m = line.match(/^description:\s*(.+)$/);
         if (m) {
-          const full = m[1]!.trim();
-          const sentence = full.match(/^.*?[.!?](?=\s|$)/);
-          return sentence ? sentence[0]! : full;
+          const raw = m[1]!.trim();
+          // YAML block scalar (>-, |, etc.) — the content is on subsequent
+          // indented lines we don't parse; fall through to the name fallback.
+          if (raw === '>-' || raw === '>' || raw === '|-' || raw === '|') break;
+          const sentence = raw.match(/^.*?[.!?](?=\s|$)/);
+          return sentence ? sentence[0]! : raw;
         }
       }
     }
@@ -93,11 +96,12 @@ export function handleGetSimpleConfig(draftFolder: string): ApiResult<SimpleConf
     // narrows the template to curate).
     const slot = readSlotConfig();
     const slotSkills = slot?.skills;
+    const allSkills = listContainerSkills(); // once: shortlist fallback + 'all' expansion
     const shortlist = Array.isArray(slotSkills)
       ? slotSkills.filter((s): s is string => typeof s === 'string')
-      : listContainerSkills();
+      : allSkills;
 
-    const enabledSet = new Set(cfg.skills === 'all' ? listContainerSkills() : cfg.skills);
+    const enabledSet = new Set(cfg.skills === 'all' ? allSkills : cfg.skills);
     const skills: SimpleSkill[] = shortlist.map((name) => ({
       name,
       title: humanizeSkillTitle(name),
