@@ -168,3 +168,52 @@ describe('unified tool card', () => {
     expect(trace.querySelectorAll('[data-tool-call-id="tcX"]').length).toBe(1);
   });
 });
+
+describe('status badge', () => {
+  it('marks an errored execution with the error class + ✗', () => {
+    const trace = freshTrace();
+    pi(trace, {
+      type: 'message_update',
+      assistantMessageEvent: {
+        type: 'toolcall_end',
+        contentIndex: 0,
+        toolCall: { id: 'e1', name: 'fetch_url', arguments: { url: 'http://192.168.64.1' } },
+      },
+    });
+    pi(trace, {
+      type: 'tool_execution_end',
+      toolCallId: 'e1',
+      isError: true,
+      result: { content: [{ type: 'text', text: 'Fetch failed: blocked by egress policy' }] },
+    });
+    const card = trace.querySelector('[data-tool-call-id="e1"]');
+    expect(card.classList.contains('trace-tool-error')).toBe(true);
+    expect(card.querySelector('.trace-tool-badge').textContent).toContain('✗');
+  });
+  it('marks a successful execution with the ok class + ✓', () => {
+    const trace = freshTrace();
+    pi(trace, {
+      type: 'message_update',
+      assistantMessageEvent: {
+        type: 'toolcall_end',
+        contentIndex: 0,
+        toolCall: { id: 'k1', name: 'web_search', arguments: { query: 'x' } },
+      },
+    });
+    pi(trace, {
+      type: 'tool_execution_end',
+      toolCallId: 'k1',
+      isError: false,
+      result: 'Search results for "x":\n\n1. A',
+    });
+    const card = trace.querySelector('[data-tool-call-id="k1"]');
+    expect(card.classList.contains('trace-tool-ok')).toBe(true);
+    expect(card.querySelector('.trace-tool-badge').textContent).toContain('✓');
+  });
+  it('uses the error-string fallback when isError is absent', () => {
+    const trace = freshTrace();
+    pi(trace, { type: 'tool_execution_start', toolCallId: 'f1', toolName: 'web_search', args: {} });
+    pi(trace, { type: 'tool_execution_end', toolCallId: 'f1', result: 'Web search failed: 422' });
+    expect(trace.querySelector('[data-tool-call-id="f1"]').classList.contains('trace-tool-error')).toBe(true);
+  });
+});

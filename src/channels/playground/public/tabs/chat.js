@@ -1281,8 +1281,10 @@ function piHandleToolExecutionEnd(trace, event, st) {
   }
   const name = card.toolName || 'unknown';
   const result = event.result;
-  // (Status badge wiring is added in Task 3.)
-  card.previewEl.textContent = previewForToolResult(name, result, 'ok');
+  const status = classifyToolResult(event); // 'ok' | 'error'
+  card.li.classList.add(status === 'error' ? 'trace-tool-error' : 'trace-tool-ok');
+  card.badgeEl.textContent = status === 'error' ? '✗' : '✓';
+  card.previewEl.textContent = previewForToolResult(name, result, status);
   if (result != null) {
     card.resultEl.textContent = formatTracePayloadFull(result);
     card.resultEl.style.display = '';

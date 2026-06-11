@@ -157,13 +157,14 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `richer-trace-cards`
-- **Last tag:** `phase-c-complete-2026-05-28` (91 commits ahead)
+- **Last tag:** `phase-c-complete-2026-05-28` (92 commits ahead)
 
 ### Working tree
 
 ```
 ## richer-trace-cards
  M config/playground-seats.json
+M  src/channels/playground/public/style.css
 M  src/channels/playground/public/tabs/chat-trace.test.ts
 M  src/channels/playground/public/tabs/chat.js
 ?? .codegraph/
@@ -172,6 +173,7 @@ M  src/channels/playground/public/tabs/chat.js
 ### Recent commits (last 15)
 
 ```
+6dfacd4 fix(trace): no-id card rekey, preserve args preview on exec update, label cleanup + tests
 73953c0 feat(trace): unify tool call + execution into one card keyed by toolCallId
 a5f3dce fix(trace): tighten error regex to Error: prefix; guard text-array arm; expand helper tests
 badae79 feat(trace): tool-aware preview + result-classification helpers (exported, tested)
@@ -186,9 +188,8 @@ f3af052 refactor(proxy): drop shadowed route var; test handler-level 403 + query
 2e8032a docs(proxy): update module docstring for explicit-prefix routing (no catch-all)
 81c97a0 feat(proxy): explicit /anthropic prefix, no provider catch-all (unrecognized -> 403)
 5cd6454 fix(fetch_url): block hex IPv4-mapped IPv6, skip DNS when aborted, test happy-path redirect
-6247aeb feat(fetch_url): block internal/loopback/link-local egress + re-validate redirects
 ```
 
 ### Last refresh
 
-2026-06-11T11:29:40Z
+2026-06-11T11:31:49Z
