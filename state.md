@@ -156,21 +156,23 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 
 ### Branch
 
-- **Current:** `main`
-- **Last tag:** `phase-c-complete-2026-05-28` (87 commits ahead)
+- **Current:** `richer-trace-cards`
+- **Last tag:** `phase-c-complete-2026-05-28` (88 commits ahead)
 
 ### Working tree
 
 ```
-## main...origin/main [ahead 25]
+## richer-trace-cards
  M config/playground-seats.json
-A  docs/superpowers/plans/2026-06-11-richer-trace-cards.md
+A  src/channels/playground/public/tabs/chat-trace.test.ts
+M  src/channels/playground/public/tabs/chat.js
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+293bacb docs(plan): richer live trace cards implementation plan
 62ea5df docs(spec): richer live trace cards (unify tool card + status badge + tool-aware previews)
 c7b9dfd docs(state): record agent egress control shipped + live-verified + deploy nuances
 5f4d676 fix(pi-model): derive proxy ORIGIN from ANTHROPIC_BASE_URL for omlx/clemson
@@ -185,9 +187,8 @@ f3af052 refactor(proxy): drop shadowed route var; test handler-level 403 + query
 68c3376 docs(plan): agent egress control implementation plan
 3b95be6 docs(spec): egress control — remove proxy catch-all, explicit /anthropic prefix, fail-closed default
 9a8c3c3 docs(spec): agent egress control — proxy allowlist + fetch_url guard
-489d8f4 docs(state): record pluggable web search shipped + Apple-container/env deploy fixes
 ```
 
 ### Last refresh
 
-2026-06-11T11:05:44Z
+2026-06-11T11:08:15Z

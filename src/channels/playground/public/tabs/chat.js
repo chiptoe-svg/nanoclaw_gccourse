@@ -1447,6 +1447,78 @@ function truncate(s, max) {
   return s.length <= max ? s : s.slice(0, max) + `\n… (${s.length - max} more chars)`;
 }
 
+/**
+ * Extract a plain-text view of a tool result for classification/preview.
+ * Handles: string, AgentToolResult { content: [{type:'text', text}] }, or
+ * any object (compact JSON). Returns the full (untruncated) text.
+ */
+export function traceResultText(result) {
+  if (result == null) return '';
+  if (typeof result === 'string') return result;
+  if (result && Array.isArray(result.content)) {
+    return result.content
+      .filter((b) => b && typeof b === 'object' && typeof b.text === 'string')
+      .map((b) => b.text)
+      .join(' ');
+  }
+  if (Array.isArray(result) && result.every((b) => b && typeof b === 'object' && 'text' in b)) {
+    return result.map((b) => b.text).join(' ');
+  }
+  try {
+    return JSON.stringify(result);
+  } catch {
+    return String(result);
+  }
+}
+
+// NanoClaw tools' error-string prefixes — the fallback signal when a
+// tool_execution_end event lacks the native isError flag.
+const TRACE_ERROR_RE = /^\s*(Web search failed|Fetch failed|blocked by egress policy|Error\b|HTTP [45]\d\d)/i;
+
+/**
+ * Classify a tool_execution_end event as 'ok' | 'error'. Prefers the native
+ * `isError` boolean; falls back to scanning the result text for known
+ * NanoClaw tool error prefixes.
+ */
+export function classifyToolResult(event) {
+  if (event && typeof event.isError === 'boolean') return event.isError ? 'error' : 'ok';
+  const text = traceResultText(event && event.result);
+  return TRACE_ERROR_RE.test(text) ? 'error' : 'ok';
+}
+
+/**
+ * One-line summary of a tool call's ARGS. Adds the bash `cmd` alias and keeps
+ * tool intent explicit, deferring to the generic formatter otherwise.
+ */
+export function previewForToolArgs(name, args) {
+  if (args && typeof args === 'object') {
+    if (name === 'web_search' && typeof args.query === 'string') return truncate(args.query, 80);
+    if (name === 'fetch_url' && typeof args.url === 'string') return truncate(args.url, 80);
+    if ((name === 'bash' || name === 'terminal') && typeof (args.cmd ?? args.command) === 'string') {
+      return truncate(String(args.cmd ?? args.command), 80);
+    }
+  }
+  return formatTracePreview(args);
+}
+
+/**
+ * One-line summary of a tool RESULT. On error: the first line of the result
+ * text. For web_search successes: a result count when derivable. Otherwise
+ * the generic preview.
+ */
+export function previewForToolResult(name, result, status) {
+  const text = traceResultText(result);
+  if (status === 'error') {
+    const firstLine = text.split('\n')[0].trim();
+    return truncate(firstLine || 'error', 80);
+  }
+  if (name === 'web_search') {
+    const matches = text.match(/^\s*\d+\.\s/gm);
+    if (matches && matches.length > 0) return `${matches.length} result${matches.length === 1 ? '' : 's'}`;
+  }
+  return formatTracePreview(result);
+}
+
 function appendSystemNote(log, text) {
   const li = document.createElement('li');
   li.className = 'msg system';
