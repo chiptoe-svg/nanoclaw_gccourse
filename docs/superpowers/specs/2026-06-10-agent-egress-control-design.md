@@ -56,16 +56,16 @@ Allowlist (path match is exact or a documented prefix; method pinned to `POST` f
 | `openai` / `openai-platform` | `/openai/*`, `/openai-platform/*` | `POST /v1/responses`, `POST /v1/chat/completions` |
 | `omlx` | `/omlx/*` | `POST /v1/chat/completions`, `POST /v1/responses` |
 | `clemson` | `/clemson/*` | `POST /v1/chat/completions`, `POST /v1/responses` |
-| `googleapis` | `/googleapis/*` | prefix-allow the GWS surfaces the relay uses: `gmail/v1/`, `calendar/v3/`, `drive/v3/`, `sheets/v4/`, `slides/v1/`, `oauth2/v2/userinfo` (enumerate precisely from the `@googleapis/*` calls in impl) |
+| `googleapis` | `/googleapis/*` | **nothing — empty allowlist → 403** (route is dead; see Component 2) |
 | _(none)_ | bare path / unrecognized prefix | **nothing — 403 fail-closed, no creds** |
 
 This closes the proven finding (`/openai/v1/models` → 403) **and** removes the permissive Anthropic catch-all.
 
-### Component 2 — Source-fence the Google route
+### Component 2 — Fail the `/googleapis` route closed (it has no legitimate caller)
 
-The Component 1 allowlist still permits an agent to ride the Google OAuth token *within* the allowlisted Google paths. Since the container's only legitimate proxy use is the LLM routes, **reject `/googleapis/*` requests whose source is the container bridge subnet `192.168.64.0/24`**, allowing only loopback/host (the relay). This closes the agent→Google-OAuth vector.
+Verified during planning (2026-06-10): the proxy's `/googleapis` route is **dead** in the current architecture. The container reaches Google Workspace via the **GWS relay on `:3007`** (`container/agent-runner/src/mcp-tools/gws.ts`), and the relay (`src/gws-mcp-tools.ts`) resolves the OAuth token host-side (`getGoogleAccessTokenForAgentGroup`) and sets it **directly** on the `@googleapis/*` clients — which call Google's own hosts (`www.googleapis.com`, `gmail.googleapis.com`, …) directly, **never through the proxy**. Host logs show zero `/googleapis` route activity. So the route is purely a dormant capability (a per-student-GWS-through-proxy idea) and, right now, only an **agent→Google-OAuth egress hole**.
 
-Implementation must **verify the relay actually calls the proxy from loopback** (`127.0.0.1`). If it does not (e.g., it calls via the gateway IP indistinguishable from a container), fall back to: keep the Component 1 Google path allowlist and document the residual risk, or introduce a relay-scoped marker the container can't forge. Do not ship a source-fence that also blocks the legitimate relay.
+Therefore: **give `/googleapis` an empty allowlist → every request to it returns 403, no token injected.** Simpler and strictly stronger than a source-fence (no relay-source assumption, no residual). The `isGoogle` token-injection block (`credential-proxy.ts` ~line 571–590) becomes unreachable; leave it in place with a one-line comment noting it's gated off pending a future per-student GWS-through-proxy design (do not delete — pre-existing infra, out of scope). If that future design lands, it re-enables `/googleapis` with its own controls.
 
 ### Component 3 — `fetch_url` egress guard (defense-in-depth)
 
@@ -91,7 +91,7 @@ All three components fail closed. Rejections return a clear, non-leaky message t
 - Bare path (`/v1/messages`, `/`) and unrecognized prefix (`/foo/…`) → **403, no creds, not forwarded** (the catch-all is gone).
 - Allowlisted `(method, path)` per route → forwarded (creds injected, upstream reached via a mock).
 - `/openai/v1/models`, `/v1/files`, arbitrary paths, and wrong method on every route → **403, no credential header attached** (assert the injected `x-api-key`/`Authorization` is absent on the rejected path).
-- `/googleapis/*` from a `192.168.64.x` source → 403; from loopback → allowed (mock `remoteAddress`).
+- `/googleapis/*` (any source, any path) → 403, no Google token injected (empty allowlist).
 
 **Agent-runner (`bun test`, `container/agent-runner/src/tools/fetch.test.ts`):**
 - Rejects `http://192.168.64.1:3001`, `http://127.0.0.1:x`, `http://10.x`, `http://169.254.169.254`, `file://…`, and the gateway IP.
@@ -124,5 +124,5 @@ Build clean (`pnpm run build` + agent-runner `bun run typecheck`) + full suites 
 1. `fetch_url` egress guard + redirect re-validation + tests (self-contained, agent-runner).
 2. Explicit-prefix routing: add the `/anthropic` proxy route + strip, switch `container-runner.ts` `ANTHROPIC_BASE_URL` to the `/anthropic` prefix, drop the catch-all so bare/unrecognized → 403 + tests (host). Verify the OAuth-landmine base-URL handling via unit test.
 3. Credential-proxy per-route path allowlist (incl. fail-closed default) + tests (host).
-4. Source-fence `/googleapis` (after verifying the relay's source) + tests.
-5. Build + full suites + live re-probe + `state.md` decision-log entry.
+   (Includes `/googleapis` → empty allowlist → 403; the dormant route is fenced off.)
+4. Build + full suites + live re-probe + `state.md` decision-log entry.

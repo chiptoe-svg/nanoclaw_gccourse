@@ -154,13 +154,14 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `main`
-- **Last tag:** `phase-c-complete-2026-05-28` (74 commits ahead)
+- **Last tag:** `phase-c-complete-2026-05-28` (75 commits ahead)
 
 ### Working tree
 
 ```
-## main...origin/main [ahead 12]
+## main...origin/main [ahead 13]
  M config/playground-seats.json
+A  docs/superpowers/plans/2026-06-10-agent-egress-control.md
 M  docs/superpowers/specs/2026-06-10-agent-egress-control-design.md
 ?? .codegraph/
 ```
@@ -168,6 +169,7 @@ M  docs/superpowers/specs/2026-06-10-agent-egress-control-design.md
 ### Recent commits (last 15)
 
 ```
+3b95be6 docs(spec): egress control — remove proxy catch-all, explicit /anthropic prefix, fail-closed default
 9a8c3c3 docs(spec): agent egress control — proxy allowlist + fetch_url guard
 489d8f4 docs(state): record pluggable web search shipped + Apple-container/env deploy fixes
 71d3730 fix(web-search): read SEARXNG_URL/WEB_SEARCH_API_KEY via readEnvFile, not process.env
@@ -182,9 +184,8 @@ ce0c5c4 feat(web-search): pluggable backends (brave + searxng) via WEB_SEARCH_PR
 e51c42f docs(spec): pluggable web search (Brave + SearXNG, owner-selectable) design
 65c01e8 feat(container): forward WEB_SEARCH_API_KEY to agent containers (no-OneCLI installs)
 2479fd1 fix(playground): auto-sync agent model to dropdown selection when stored model is invalid/hidden
-2c7f587 fix(session): re-scaffold missing session dir on write (stale rows after data reset)
 ```
 
 ### Last refresh
 
-2026-06-11T03:39:59Z
+2026-06-11T03:49:12Z
