@@ -160,21 +160,22 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 
 ### Branch
 
-- **Current:** `main`
-- **Last tag:** `phase-c-complete-2026-05-28` (117 commits ahead)
+- **Current:** `simple-my-agent-tab`
+- **Last tag:** `phase-c-complete-2026-05-28` (118 commits ahead)
 
 ### Working tree
 
 ```
-## main...origin/main [ahead 1]
+## simple-my-agent-tab
  M config/playground-seats.json
-A  docs/superpowers/plans/2026-06-11-simple-my-agent-tab.md
+M  src/channels/playground/api/agent-library-handlers.ts
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+7386c62 docs(plans): My Agent simple tab implementation plan
 93afd88 docs(spec): My Agent simple tab — embedded chat + use-agent toggle + template-driven skills/persona/models
 b597d60 docs(state): record cost governance + scenario-aware Status roster shipped + live-verified
 9d0d490 refactor(home): drop classroom roster + add-student cards (superseded by Status roster)
@@ -189,9 +190,8 @@ ae94cff feat(cost): budget config + evaluator (pure, tested)
 2e73b91 docs(state): record owner Status/Health tab shipped + live-verified
 ea2e2b4 fix(status): scope tab CSS (don't clobber existing .status-badge); surface restart failures; idempotent click wiring; drop dead HEALTH_LABEL
 616cb69 feat(status): owner-only Status tab (host summary + agent health table + restart)
-3424bda test(status): assert restart called with group.id; clear mock state; cover restarted:0
 ```
 
 ### Last refresh
 
-2026-06-11T21:34:34Z
+2026-06-11T21:38:41Z
