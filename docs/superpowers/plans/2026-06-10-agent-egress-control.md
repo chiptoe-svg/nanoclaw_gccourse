@@ -465,7 +465,9 @@ In `src/credential-proxy.ts`, below `resolveProxyRoute`, add:
  * on pathname only).
  */
 export const EGRESS_ALLOWLIST: Record<ProxyRoute, string[]> = {
-  anthropic: ['POST /v1/messages'],
+  // /api/oauth/... is the OAuth-mode token→temp-key exchange the proxy injects
+  // on (see module docstring); REQUIRED or OAuth-mode installs break.
+  anthropic: ['POST /v1/messages', 'POST /api/oauth/claude_cli/create_api_key'],
   openai: ['POST /v1/responses', 'POST /v1/chat/completions'],
   'openai-platform': ['POST /v1/responses', 'POST /v1/chat/completions'],
   omlx: ['POST /v1/chat/completions', 'POST /v1/responses'],

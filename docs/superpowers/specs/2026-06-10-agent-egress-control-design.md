@@ -52,7 +52,7 @@ Allowlist (path match is exact or a documented prefix; method pinned to `POST` f
 
 | Route (internal id) | Reached via | Allowed (method + path) |
 |---|---|---|
-| `anthropic` | `/anthropic/*` prefix | `POST /v1/messages`; `POST /v1/messages/count_tokens` **only if** the SDK is confirmed to call it (verify in impl; omit otherwise) |
+| `anthropic` | `/anthropic/*` prefix | `POST /v1/messages`; `POST /api/oauth/claude_cli/create_api_key` (REQUIRED — the OAuth-mode token→temp-key exchange the proxy injects on; blocking it breaks OAuth-mode installs). (`count_tokens` confirmed unused — omitted.) |
 | `openai` / `openai-platform` | `/openai/*`, `/openai-platform/*` | `POST /v1/responses`, `POST /v1/chat/completions` |
 | `omlx` | `/omlx/*` | `POST /v1/chat/completions`, `POST /v1/responses` |
 | `clemson` | `/clemson/*` | `POST /v1/chat/completions`, `POST /v1/responses` |
