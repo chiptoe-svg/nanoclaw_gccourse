@@ -153,22 +153,23 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 
 ### Branch
 
-- **Current:** `agent-egress-control`
-- **Last tag:** `phase-c-complete-2026-05-28` (83 commits ahead)
+- **Current:** `main`
+- **Last tag:** `phase-c-complete-2026-05-28` (84 commits ahead)
 
 ### Working tree
 
 ```
-## agent-egress-control
+## main...origin/main [ahead 22]
  M config/playground-seats.json
-M  src/credential-proxy.test.ts
-M  src/credential-proxy.ts
+M  container/agent-runner/src/providers/pi-model.test.ts
+M  container/agent-runner/src/providers/pi-model.ts
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+35ad39c docs/test(proxy): document exact-match egress semantics + fail-closed edge cases
 46bda30 feat(proxy): per-route egress allowlist (chat + anthropic OAuth exchange); googleapis fail-closed
 bb2d075 docs(egress): anthropic allowlist must include the OAuth token-exchange path
 f3af052 refactor(proxy): drop shadowed route var; test handler-level 403 + query-string routing
@@ -183,9 +184,8 @@ f3af052 refactor(proxy): drop shadowed route var; test handler-level 403 + query
 71d3730 fix(web-search): read SEARXNG_URL/WEB_SEARCH_API_KEY via readEnvFile, not process.env
 1bc47cc refactor(web-search): use exported TEMPLATE_FOLDER constant
 b077fd7 feat(container): forward WEB_SEARCH_PROVIDER + SEARXNG_URL to agent containers
-ce0c5c4 feat(web-search): pluggable backends (brave + searxng) via WEB_SEARCH_PROVIDER
 ```
 
 ### Last refresh
 
-2026-06-11T04:20:09Z
+2026-06-11T10:32:16Z
