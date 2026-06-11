@@ -160,20 +160,21 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `main`
-- **Last tag:** `phase-c-complete-2026-05-28` (106 commits ahead)
+- **Last tag:** `phase-c-complete-2026-05-28` (107 commits ahead)
 
 ### Working tree
 
 ```
-## main...origin/main [ahead 44]
+## main...origin/main [ahead 45]
  M config/playground-seats.json
-A  docs/superpowers/specs/2026-06-11-cost-governance-design.md
+A  docs/superpowers/plans/2026-06-11-cost-governance.md
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+410b3eb docs(spec): cost governance (alert-only) + scenario-aware Status roster
 2e73b91 docs(state): record owner Status/Health tab shipped + live-verified
 ea2e2b4 fix(status): scope tab CSS (don't clobber existing .status-badge); surface restart failures; idempotent click wiring; drop dead HEALTH_LABEL
 616cb69 feat(status): owner-only Status tab (host summary + agent health table + restart)
@@ -188,9 +189,8 @@ bf2f1ec docs(spec): owner Status/Health tab (health roll-up + restart op)
 134b68b test(trace): no-regression coverage for text-only turns
 e0d0b37 fix(trace): clear opposite status class on re-fire; badge title; CSS specificity; pending-state test
 db5db62 feat(trace): success/error status badge on tool cards (isError + fallback)
-6dfacd4 fix(trace): no-id card rekey, preserve args preview on exec update, label cleanup + tests
 ```
 
 ### Last refresh
 
-2026-06-11T15:01:21Z
+2026-06-11T15:04:18Z
