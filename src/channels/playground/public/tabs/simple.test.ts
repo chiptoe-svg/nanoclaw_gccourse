@@ -1,6 +1,12 @@
 // @vitest-environment happy-dom
 import { describe, it, expect } from 'vitest';
-import { renderSkillRows, checkedSkills, applyUseAgentToggle } from './simple.js';
+import {
+  renderSkillRows,
+  checkedSkills,
+  applyUseAgentToggle,
+  syncHiddenModelSelects,
+  setBubbleLabels,
+} from './simple.js';
 
 const SKILLS = [
   { name: 'image-gen', title: 'Image gen', description: 'Create pictures and logos.', enabled: true },
@@ -63,5 +69,64 @@ describe('applyUseAgentToggle', () => {
     applyUseAgentToggle(wrapper, true);
     expect(clicked).toBe('agent');
     expect(wrapper.querySelector('.simple-panel-body')!.classList.contains('simple-disabled')).toBe(false);
+  });
+});
+
+// happy-dom does not expose Option as a global constructor; polyfill it so
+// the tests below (and syncHiddenModelSelects) can use `new Option(text, val)`.
+if (typeof Option === 'undefined') {
+  (globalThis as any).Option = function (text?: string, value?: string) {
+    const opt = document.createElement('option');
+    if (text !== undefined) opt.text = text;
+    if (value !== undefined) opt.value = value;
+    return opt;
+  };
+}
+
+describe('syncHiddenModelSelects', () => {
+  function wrapperWithHiddenSelects() {
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = `<select id="provider-sel"></select><select id="model-sel"></select>`;
+    return wrapper;
+  }
+
+  it('maps a catalog modelProvider to its PROVIDER_GROUP id and sets both selects', () => {
+    const wrapper = wrapperWithHiddenSelects();
+    syncHiddenModelSelects(wrapper, 'openai-codex', 'gpt-5.4-mini');
+    expect((wrapper.querySelector('#provider-sel') as HTMLSelectElement).value).toBe('openai');
+    expect((wrapper.querySelector('#model-sel') as HTMLSelectElement).value).toBe('gpt-5.4-mini');
+  });
+
+  it('appends missing options instead of silently failing (template wider than whitelist)', () => {
+    const wrapper = wrapperWithHiddenSelects();
+    const modelSel = wrapper.querySelector('#model-sel') as HTMLSelectElement;
+    modelSel.add(new Option('other-model', 'other-model'));
+    syncHiddenModelSelects(wrapper, 'anthropic', 'claude-haiku-4-5');
+    expect(modelSel.value).toBe('claude-haiku-4-5');
+    expect([...modelSel.options].map((o) => o.value)).toContain('other-model'); // existing options kept
+  });
+
+  it('passes unknown providers through as-is (clemson/local style ids)', () => {
+    const wrapper = wrapperWithHiddenSelects();
+    syncHiddenModelSelects(wrapper, 'clemson', 'some-model');
+    expect((wrapper.querySelector('#provider-sel') as HTMLSelectElement).value).toBe('clemson');
+  });
+});
+
+describe('setBubbleLabels', () => {
+  it('writes both CSS custom properties on the wrapper', () => {
+    const wrapper = document.createElement('div');
+    setBubbleLabels(wrapper, 'JaneBot', 'gpt-5.4-mini');
+    expect(wrapper.style.getPropertyValue('--agent-label')).toBe('"🤖 JaneBot — your agent"');
+    expect(wrapper.style.getPropertyValue('--model-label')).toBe(
+      '"⚡ gpt-5.4-mini — model only (no skills, no personality)"',
+    );
+  });
+
+  it('escapes double quotes so a name cannot break out of the CSS string', () => {
+    const wrapper = document.createElement('div');
+    setBubbleLabels(wrapper, 'Jane"Bot', 'm"x');
+    expect(wrapper.style.getPropertyValue('--agent-label')).toBe('"🤖 Jane\\"Bot — your agent"');
+    expect(wrapper.style.getPropertyValue('--model-label')).toBe('"⚡ m\\"x — model only (no skills, no personality)"');
   });
 });

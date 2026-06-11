@@ -1762,3 +1762,33 @@ select.model-changed {
   opacity: 0.35;
   pointer-events: none;
 }
+
+/* Reply differentiation — agent replies are `.msg.agent` (chat.js:692),
+   direct/model-only replies are `.bubble-direct` (chat.js:571). Labels come
+   from CSS vars set by simple.js (setBubbleLabels). */
+.simple-mode .msg.agent {
+  background: #e8f5ec;
+  border: 1px solid #bfe3c9;
+  border-radius: 8px;
+}
+.simple-mode .msg.agent::before {
+  content: var(--agent-label, '🤖 your agent');
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: #2e7d46;
+  margin-bottom: 2px;
+}
+.simple-mode .bubble-direct {
+  background: #eef1f8;
+  border: 1px dashed #aab4d4;
+  border-radius: 8px;
+}
+.simple-mode .bubble-direct::before {
+  content: var(--model-label, '⚡ model only');
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: #4a5a96;
+  margin-bottom: 2px;
+}

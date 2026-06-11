@@ -216,9 +216,86 @@ function initPanel(wrapper, folder) {
   });
 }
 
-// Replaced with real implementations in Task 7 (model dropdown + bubble labels).
-function initModelDropdown(wrapper, folder, config) {}
-export function setBubbleLabels(wrapper, agentName, modelLabel) {}
+/**
+ * Keep the embedded chat's hidden #provider-sel / #model-sel in step with
+ * the simple dropdown so DIRECT mode (which reads the selects verbatim at
+ * send time) uses the same model. Values are set silently — dispatching
+ * 'change' on #provider-sel would trip chat.js's provider-switch modal and
+ * a second active-model PUT. #provider-sel holds PROVIDER_GROUP ids, so map
+ * the catalog modelProvider first; append missing <option>s because the
+ * student's whitelist may be narrower than the template's choices.
+ */
+export function syncHiddenModelSelects(wrapper, provider, modelId) {
+  const group = PROVIDER_GROUPS.find((g) => (g.memberModelProviders || []).includes(provider));
+  const groupId = group ? group.id : provider;
+  const provSel = wrapper.querySelector('#provider-sel');
+  const modelSel = wrapper.querySelector('#model-sel');
+  if (!provSel || !modelSel) return;
+  if (![...provSel.options].some((o) => o.value === groupId)) {
+    provSel.add(new Option(group ? group.displayName : provider, groupId));
+  }
+  provSel.value = groupId;
+  if (![...modelSel.options].some((o) => o.value === modelId)) {
+    modelSel.add(new Option(modelId, modelId));
+  }
+  modelSel.value = modelId;
+}
+
+/** Bubble headers via CSS vars — see the .simple-mode bubble rules in style.css. */
+export function setBubbleLabels(wrapper, agentName, modelLabel) {
+  const esc = (s) => String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  wrapper.style.setProperty('--agent-label', `"🤖 ${esc(agentName)} — your agent"`);
+  wrapper.style.setProperty('--model-label', `"⚡ ${esc(modelLabel)} — model only (no skills, no personality)"`);
+}
+
 function currentModelLabel(wrapper) {
-  return '';
+  const sel = wrapper.querySelector('#simple-model-sel');
+  const opt = sel && sel.selectedOptions[0];
+  return opt ? opt.textContent : '';
+}
+
+/**
+ * Top-bar model dropdown — populated from the TEMPLATE's allowed_models
+ * (config.models), preselected from the agent's active model. On change:
+ * our own PUT active-model (server resolves + recycles the container) and
+ * a silent hidden-select sync for direct mode.
+ */
+function initModelDropdown(wrapper, folder, config) {
+  const sel = wrapper.querySelector('#simple-model-sel');
+  sel.innerHTML = '';
+  for (const m of config.models) {
+    const opt = new Option(m.displayName, m.id);
+    opt.dataset.provider = m.provider;
+    sel.add(opt);
+  }
+  if (config.activeModel) {
+    const match = [...sel.options].find(
+      (o) => o.value === config.activeModel.id && o.dataset.provider === config.activeModel.provider,
+    );
+    if (match) sel.value = match.value;
+  }
+
+  const applySelection = () => {
+    const opt = sel.selectedOptions[0];
+    if (!opt) return;
+    syncHiddenModelSelects(wrapper, opt.dataset.provider, opt.value);
+    setBubbleLabels(wrapper, wrapper.querySelector('#simple-agent-name').value.trim() || 'Your agent', opt.textContent);
+  };
+  applySelection(); // initial labels + hidden-select state
+
+  sel.addEventListener('change', async () => {
+    const opt = sel.selectedOptions[0];
+    if (!opt) return;
+    applySelection();
+    try {
+      await fetch(`/api/drafts/${folder}/active-model`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ modelProvider: opt.dataset.provider, model: opt.value }),
+      });
+    } catch {
+      /* next agent send will surface the failure */
+    }
+  });
 }
