@@ -127,7 +127,8 @@ export function handlePostBudgets(
   }
   if ('perAgent' in body) {
     const pa = body.perAgent;
-    if (pa == null || typeof pa !== 'object') return { status: 400, body: { error: 'perAgent must be an object' } };
+    if (pa == null || typeof pa !== 'object' || Array.isArray(pa))
+      return { status: 400, body: { error: 'perAgent must be an object' } };
     const out: Record<string, number> = { ...next.perAgent };
     for (const [folder, v] of Object.entries(pa as Record<string, unknown>)) {
       if (v === null) {

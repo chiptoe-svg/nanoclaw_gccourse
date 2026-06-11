@@ -151,7 +151,9 @@ describe('handlePostBudgets', () => {
     const { handlePostBudgets } = await import('./cost-budgets.js');
     expect(handlePostBudgets(ownerSession(), { defaultMonthlyUsd: -1 }).status).toBe(400);
     expect(handlePostBudgets(ownerSession(), { warnFraction: 1.5 }).status).toBe(400);
+    expect(handlePostBudgets(ownerSession(), { warnFraction: 0 }).status).toBe(400);
     expect(handlePostBudgets(ownerSession(), { perAgent: { user_91: -5 } }).status).toBe(400);
+    expect(handlePostBudgets(ownerSession(), { perAgent: [10, 20] } as any).status).toBe(400);
   });
   it('round-trips a valid write', async () => {
     const { handlePostBudgets, readCostBudgets } = await import('./cost-budgets.js');
