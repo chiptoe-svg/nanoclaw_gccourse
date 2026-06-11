@@ -161,7 +161,7 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `simple-my-agent-tab`
-- **Last tag:** `phase-c-complete-2026-05-28` (124 commits ahead)
+- **Last tag:** `phase-c-complete-2026-05-28` (125 commits ahead)
 
 ### Working tree
 
@@ -171,13 +171,13 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 M  src/channels/playground/public/app.js
 M  src/channels/playground/public/index.html
 M  src/channels/playground/public/style.css
-A  src/channels/playground/public/tabs/simple.js
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+986f42c feat(playground): My Agent simple tab skeleton — registration, layout, embedded chat, CSS hiding
 b501b6c feat(playground): wire simple-config, name, and simple-restart routes
 e395217 fix(playground): reject control/invisible chars in agent names; tighten 400-path test
 cb9cd10 feat(playground): agent-name PUT + simple-restart handlers
@@ -192,9 +192,8 @@ ce180c6 fix(status): surface budgets-fetch failure; drop double loadStatus; prom
 8b041fa feat(status): scenario roster + spend/budget columns + budget editor + add-participant
 886dcbb fix(cost): reject perAgent array in POST validation; test warnFraction=0
 b480065 feat(cost): scenario-aware GET/POST /api/budgets (members + cost + budget)
-2bf08f0 fix(cost): guard perAgent against array json in readCostBudgets
 ```
 
 ### Last refresh
 
-2026-06-11T22:05:58Z
+2026-06-11T22:10:03Z

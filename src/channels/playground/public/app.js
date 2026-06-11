@@ -11,32 +11,8 @@ import { mountBenchmarks } from './tabs/benchmarks.js';
 import { mountStatus } from './tabs/status.js';
 import { initDraftBanner } from './draft-banner.js';
 
-const TABS = [
-  'home',
-  'simple',
-  'chat',
-  'persona',
-  'skills',
-  'models',
-  'agents',
-  'sources',
-  'retrieval',
-  'benchmarks',
-  'status',
-];
-const mounters = {
-  home: mountHome,
-  simple: mountSimple,
-  chat: mountChat,
-  persona: mountPersona,
-  skills: mountSkills,
-  models: mountModels,
-  agents: mountAgents,
-  sources: mountSources,
-  retrieval: mountRetrieval,
-  benchmarks: mountBenchmarks,
-  status: mountStatus,
-};
+const TABS = ['home', 'simple', 'chat', 'persona', 'skills', 'models', 'agents', 'sources', 'retrieval', 'benchmarks', 'status'];
+const mounters = { home: mountHome, simple: mountSimple, chat: mountChat, persona: mountPersona, skills: mountSkills, models: mountModels, agents: mountAgents, sources: mountSources, retrieval: mountRetrieval, benchmarks: mountBenchmarks, status: mountStatus };
 const mounted = {};
 let allowedTabs = TABS.slice();
 
@@ -59,10 +35,7 @@ function applyClassControls(classControls, user) {
   const activeClass = classControls.classes['default'];
   window.__pg.classControls = classControls;
   window.__pg.activeClass = activeClass;
-  allowedTabs =
-    user.role === 'owner' || user.role === 'ta'
-      ? TABS
-      : TABS.filter((t) => activeClass.tabsVisibleToStudents.includes(t));
+  allowedTabs = (user.role === 'owner' || user.role === 'ta') ? TABS : TABS.filter((t) => activeClass.tabsVisibleToStudents.includes(t));
   for (const t of TABS) {
     const btn = document.querySelector(`[data-tab="${t}"]`);
     if (btn) btn.hidden = !allowedTabs.includes(t);
@@ -111,9 +84,9 @@ async function init() {
         tabsVisibleToStudents: ['home', 'chat', 'persona', 'skills', 'models', 'agents'],
         authModesAvailable: ['api-key', 'oauth', 'claude-code-oauth'],
         providers: {
-          codex: { allow: true, provideDefault: true, allowByo: true },
-          claude: { allow: true, provideDefault: false, allowByo: true },
-          local: { allow: true, provideDefault: true, allowByo: false },
+          codex:  { allow: true, provideDefault: true,  allowByo: true  },
+          claude: { allow: true, provideDefault: false, allowByo: true  },
+          local:  { allow: true, provideDefault: true,  allowByo: false },
         },
       },
     },
@@ -155,9 +128,7 @@ async function init() {
   es.addEventListener('class-controls-changed', (e) => {
     try {
       applyClassControls(JSON.parse(e.data), window.__pg.user);
-    } catch {
-      /* malformed push — ignore */
-    }
+    } catch { /* malformed push — ignore */ }
   });
 }
 
