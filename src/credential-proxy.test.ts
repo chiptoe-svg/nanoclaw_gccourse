@@ -26,6 +26,7 @@ import {
   userCredsHook,
   serializeResolvedCredsError,
   resolveOmlxKey,
+  resolveProxyRoute,
 } from './credential-proxy.js';
 
 function makeRequest(
@@ -95,7 +96,7 @@ describe('credential-proxy', () => {
       proxyPort,
       {
         method: 'POST',
-        path: '/v1/messages',
+        path: '/anthropic/v1/messages',
         headers: {
           'content-type': 'application/json',
           'x-api-key': 'placeholder',
@@ -116,7 +117,7 @@ describe('credential-proxy', () => {
       proxyPort,
       {
         method: 'POST',
-        path: '/api/oauth/claude_cli/create_api_key',
+        path: '/anthropic/api/oauth/claude_cli/create_api_key',
         headers: {
           'content-type': 'application/json',
           authorization: 'Bearer placeholder',
@@ -138,7 +139,7 @@ describe('credential-proxy', () => {
       proxyPort,
       {
         method: 'POST',
-        path: '/v1/messages',
+        path: '/anthropic/v1/messages',
         headers: {
           'content-type': 'application/json',
           'x-api-key': 'temp-key-from-exchange',
@@ -158,7 +159,7 @@ describe('credential-proxy', () => {
       proxyPort,
       {
         method: 'POST',
-        path: '/v1/messages',
+        path: '/anthropic/v1/messages',
         headers: {
           'content-type': 'application/json',
           connection: 'keep-alive',
@@ -187,7 +188,7 @@ describe('credential-proxy', () => {
       proxyPort,
       {
         method: 'POST',
-        path: '/v1/messages',
+        path: '/anthropic/v1/messages',
         headers: {
           'content-type': 'application/json',
           'x-api-key': 'placeholder',
@@ -217,7 +218,7 @@ describe('credential-proxy', () => {
       proxyPort,
       {
         method: 'POST',
-        path: '/api/oauth/claude_cli/create_api_key',
+        path: '/anthropic/api/oauth/claude_cli/create_api_key',
         headers: {
           'content-type': 'application/json',
           authorization: 'Bearer placeholder',
@@ -238,7 +239,7 @@ describe('credential-proxy', () => {
       proxyPort,
       {
         method: 'POST',
-        path: '/v1/messages',
+        path: '/anthropic/v1/messages',
         headers: { 'content-type': 'application/json', 'x-api-key': 'placeholder' },
       },
       '{}',
@@ -262,7 +263,7 @@ describe('credential-proxy', () => {
       proxyPort,
       {
         method: 'POST',
-        path: '/v1/messages',
+        path: '/anthropic/v1/messages',
         headers: { 'content-type': 'application/json' },
       },
       '{}',
@@ -341,6 +342,35 @@ describe('credential-proxy OMLX_API_KEY default', () => {
   });
 });
 
+describe('resolveProxyRoute', () => {
+  it('routes the new /anthropic prefix and strips it', () => {
+    expect(resolveProxyRoute('/anthropic/v1/messages')).toEqual({ route: 'anthropic', upstreamPath: '/v1/messages' });
+  });
+  it('routes openai / openai-platform / omlx / clemson with prefix stripped', () => {
+    expect(resolveProxyRoute('/openai/v1/responses')).toEqual({ route: 'openai', upstreamPath: '/v1/responses' });
+    expect(resolveProxyRoute('/openai-platform/v1/chat/completions')).toEqual({
+      route: 'openai-platform',
+      upstreamPath: '/v1/chat/completions',
+    });
+    expect(resolveProxyRoute('/omlx/v1/chat/completions')).toEqual({
+      route: 'omlx',
+      upstreamPath: '/v1/chat/completions',
+    });
+    expect(resolveProxyRoute('/clemson/v1/responses')).toEqual({ route: 'clemson', upstreamPath: '/v1/responses' });
+  });
+  it('routes googleapis (kept for the allowlist gate to reject)', () => {
+    expect(resolveProxyRoute('/googleapis/drive/v3/files')).toEqual({
+      route: 'googleapis',
+      upstreamPath: '/drive/v3/files',
+    });
+  });
+  it('returns null for the bare path and unrecognized prefixes (no catch-all)', () => {
+    expect(resolveProxyRoute('/v1/messages')).toBeNull();
+    expect(resolveProxyRoute('/')).toBeNull();
+    expect(resolveProxyRoute('/foo/bar')).toBeNull();
+  });
+});
+
 describe('credential-proxy payload log', () => {
   let proxyServer: http.Server;
   let upstreamServer: http.Server;
@@ -377,7 +407,7 @@ describe('credential-proxy payload log', () => {
       proxyPort,
       {
         method: 'POST',
-        path: '/v1/messages',
+        path: '/anthropic/v1/messages',
         headers: {
           'x-nanoclaw-agent-group': 'ag1',
           'x-nanoclaw-session-id': 'sess1',
@@ -417,7 +447,7 @@ describe('credential-proxy payload log', () => {
       proxyPort,
       {
         method: 'POST',
-        path: '/v1/messages',
+        path: '/anthropic/v1/messages',
         headers: {
           'x-nanoclaw-agent-group': 'ag1',
           'x-nanoclaw-session-id': 'sess1',
@@ -452,7 +482,7 @@ describe('credential-proxy payload log', () => {
       proxyPort,
       {
         method: 'POST',
-        path: '/v1/messages',
+        path: '/anthropic/v1/messages',
         headers: {
           'x-nanoclaw-agent-group': 'ag1',
           'x-nanoclaw-session-id': 'sess1',

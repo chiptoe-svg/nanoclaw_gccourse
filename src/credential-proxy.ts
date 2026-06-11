@@ -87,6 +87,30 @@ export function resolveOmlxKey(): string {
   return process.env.OMLX_API_KEY ?? 'godfrey';
 }
 
+export type ProxyRoute = 'anthropic' | 'openai' | 'openai-platform' | 'omlx' | 'clemson' | 'googleapis';
+
+/**
+ * Map a raw proxy request path to its provider route + the upstream path
+ * (prefix stripped). Returns null for the bare path / any unrecognized prefix —
+ * there is NO provider catch-all; null callers must fail closed (403).
+ */
+export function resolveProxyRoute(rawUrl: string): { route: ProxyRoute; upstreamPath: string } | null {
+  const prefixes: Array<[ProxyRoute, string]> = [
+    ['anthropic', '/anthropic'],
+    ['openai-platform', '/openai-platform'],
+    ['openai', '/openai'],
+    ['omlx', '/omlx'],
+    ['clemson', '/clemson'],
+    ['googleapis', '/googleapis'],
+  ];
+  for (const [route, prefix] of prefixes) {
+    if (rawUrl === prefix || rawUrl.startsWith(prefix + '/')) {
+      return { route, upstreamPath: rawUrl.slice(prefix.length) || '/' };
+    }
+  }
+  return null;
+}
+
 export function serializeResolvedCredsError(
   result: Extract<ResolvedCreds, { kind: 'connect_required' | 'forbidden' }>,
 ): { status: number; body: Record<string, unknown> } {
@@ -445,16 +469,32 @@ export function startCredentialProxy(port: number, host = '127.0.0.1', payloadLo
       req.on('end', async () => {
         const body = Buffer.concat(chunks);
 
-        // Route by path prefix:
-        //   /openai/*       → OpenAI (strip prefix, inject Authorization)
-        //   /googleapis/*   → Google APIs (strip prefix, inject OAuth Bearer)
-        //   everything else → Anthropic (existing behaviour)
+        // Route by path prefix — every provider is reached by an explicit prefix:
+        //   /anthropic/*        → Anthropic API (strip prefix, inject x-api-key or OAuth Bearer)
+        //   /openai/*           → OpenAI API via ChatGPT/Codex OAuth (strip prefix, inject Authorization)
+        //   /openai-platform/*  → OpenAI API via direct Platform API key (strip prefix, inject Authorization)
+        //   /omlx/*             → Local OpenAI-compatible server (strip prefix, inject Bearer OMLX_API_KEY)
+        //   /clemson/*          → Clemson RCD-hosted LLM endpoint (strip prefix, inject CAMPUS_LLM_API_KEY)
+        //   /googleapis/*       → Google APIs (strip prefix, inject OAuth Bearer) — gated off by empty allowlist in Task 3
+        // Unrecognized or bare paths (e.g. /v1/messages without a prefix) fail closed with 403.
         const rawUrl = req.url || '/';
-        const isOpenAIPlatform = rawUrl.startsWith('/openai-platform/') || rawUrl === '/openai-platform';
-        const isOpenAI = !isOpenAIPlatform && (rawUrl.startsWith('/openai/') || rawUrl === '/openai');
-        const isOmlx = rawUrl.startsWith('/omlx/') || rawUrl === '/omlx';
-        const isClemson = rawUrl.startsWith('/clemson/') || rawUrl === '/clemson';
-        const isGoogle = rawUrl.startsWith('/googleapis/') || rawUrl === '/googleapis';
+        const resolved = resolveProxyRoute(rawUrl);
+        if (!resolved) {
+          log.warn('credential-proxy: egress blocked (unrecognized route)', {
+            rawUrl,
+            src: req.socket.remoteAddress,
+          });
+          res.writeHead(403, { 'content-type': 'application/json' });
+          res.end(JSON.stringify({ error: 'endpoint not allowed by nanoclaw egress policy' }));
+          return;
+        }
+        const { route, upstreamPath } = resolved;
+        const isOpenAIPlatform = route === 'openai-platform';
+        const isOpenAI = route === 'openai';
+        const isOmlx = route === 'omlx';
+        const isClemson = route === 'clemson';
+        const isGoogle = route === 'googleapis';
+        const isAnthropic = route === 'anthropic';
 
         // Per-call attribution: which agent group is calling? Used by the
         // per-student GWS resolver below; per-student Anthropic / OpenAI
@@ -472,18 +512,7 @@ export function startCredentialProxy(port: number, host = '127.0.0.1', payloadLo
               ? omlxUpstream
               : isClemson
                 ? clemsonUpstream
-                : anthropicUpstream;
-        const upstreamPath = isGoogle
-          ? rawUrl.replace(/^\/googleapis/, '') || '/'
-          : isOpenAIPlatform
-            ? rawUrl.replace(/^\/openai-platform/, '') || '/'
-            : isOpenAI
-              ? rawUrl.replace(/^\/openai/, '') || '/'
-              : isOmlx
-                ? rawUrl.replace(/^\/omlx/, '') || '/'
-                : isClemson
-                  ? rawUrl.replace(/^\/clemson/, '') || '/'
-                  : rawUrl;
+                : anthropicUpstream; // route === 'anthropic'
         const isHttps = upstreamUrl.protocol === 'https:';
         const makeRequest = requestFor(isHttps);
 
@@ -539,7 +568,7 @@ export function startCredentialProxy(port: number, host = '127.0.0.1', payloadLo
 
         // ── per-user-provider-auth:proxy-invocation START ──────────────────────
         let studentCredsApplied = false;
-        if (agentGroupId && (isOpenAI || isOpenAIPlatform || (!isGoogle && !isOmlx && !isClemson))) {
+        if (agentGroupId && (isOpenAI || isOpenAIPlatform || isAnthropic)) {
           // NOTE: 'codex'/'openai-platform'/'claude' here are AUTH provider IDs
           // (matching what codex-spec.ts / openai-platform-spec.ts / claude-spec.ts
           // register in auth-registry.ts), NOT the agent harness provider

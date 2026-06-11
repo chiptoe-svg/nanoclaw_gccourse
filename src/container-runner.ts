@@ -540,7 +540,7 @@ async function buildContainerArgs(
   //               proxy injects real OAuth token on that exchange request.
   // Native credential proxy: route container API calls to host:3001 with
   // placeholder credentials. Proxy substitutes real keys/OAuth tokens.
-  args.push('-e', `ANTHROPIC_BASE_URL=http://${CONTAINER_HOST_GATEWAY}:${CREDENTIAL_PROXY_PORT}`);
+  args.push('-e', `ANTHROPIC_BASE_URL=http://${CONTAINER_HOST_GATEWAY}:${CREDENTIAL_PROXY_PORT}/anthropic`);
   // OpenAI traffic routes through one of two proxy prefixes per the group's
   // active provider: `codex` (cloud OpenAI) → /openai/v1, `local`
   // (mlx-omni-server) → /omlx/v1. The proxy strips the prefix and substitutes

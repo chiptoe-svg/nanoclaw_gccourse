@@ -154,21 +154,23 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `agent-egress-control`
-- **Last tag:** `phase-c-complete-2026-05-28` (77 commits ahead)
+- **Last tag:** `phase-c-complete-2026-05-28` (78 commits ahead)
 
 ### Working tree
 
 ```
 ## agent-egress-control
  M config/playground-seats.json
-M  container/agent-runner/src/tools/fetch.test.ts
-M  container/agent-runner/src/tools/fetch.ts
+M  src/container-runner.ts
+M  src/credential-proxy.test.ts
+M  src/credential-proxy.ts
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+5cd6454 fix(fetch_url): block hex IPv4-mapped IPv6, skip DNS when aborted, test happy-path redirect
 6247aeb feat(fetch_url): block internal/loopback/link-local egress + re-validate redirects
 68c3376 docs(plan): agent egress control implementation plan
 3b95be6 docs(spec): egress control — remove proxy catch-all, explicit /anthropic prefix, fail-closed default
@@ -183,9 +185,8 @@ ce0c5c4 feat(web-search): pluggable backends (brave + searxng) via WEB_SEARCH_PR
 290f45e feat(web-search): install-wide provider config (data/config/web-search.json)
 4ed94ef feat(searxng): managed self-hosted SearXNG service for web_search
 900bc40 docs(plan): pluggable web search (Brave + SearXNG) implementation plan
-e51c42f docs(spec): pluggable web search (Brave + SearXNG, owner-selectable) design
 ```
 
 ### Last refresh
 
-2026-06-11T03:58:25Z
+2026-06-11T04:03:39Z
