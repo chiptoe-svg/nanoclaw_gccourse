@@ -111,6 +111,7 @@ Pointers, not duplications. Read the relevant one when you're going deep.
 
 Append-only, newest first. One line per decision: *what + 1-line why*. Prune (move to archive) when older than ~6 months.
 
+- **2026-06-11** — **Owner Status/Health tab shipped + deployed + live-verified** (merged to main, `395a2ad`..`ea2e2b4`; spec/plan `docs/superpowers/{specs,plans}/2026-06-11-status-health-tab.*`). New owner/ta-only **Status** tab (`public/tabs/status.js`; added to `app.js` `TABS`+`mounters` + `index.html`; absent from `tabsVisibleToStudents` → owner-only, triple-gated with server-side `isOwnerOrAdmin` on the API). **`GET /api/status`** (`api/status.ts`) → host summary (gateway · active-container count · version) + per-agent health roll-up `running`/`stale`/`idle`/`never` from **`sessions.container_status`** + heartbeat-file mtime vs `ABSOLUTE_CEILING_MS` (NOT the outbound.db `container_state` table — tool-in-flight info), `lastActivityAt` from `sessions.last_active`; **closed sessions excluded** from health+activeSessions (only-closed → `idle`, none-ever → `never`). **`POST /api/status/restart {folder}`** wraps `restartAgentGroupContainers` (per-agent only; **no host/gateway restart from the UI** — would self-kill the page server). 5s auto-refresh while visible. Config-editing stays in the existing agents/models/persona/skills tabs (out of scope). Final review APPROVED; host 1193 tests green. **Live-verified:** `/api/status` returns correct health (template=`never`, idle agents=`idle` with last-activity), v2.0.46. Tab deploys on browser refresh; API loaded via host restart. (2 of 3 picked gap items done — Live trace cards + Status/Health; **Cost governance** remains.)
 - **2026-06-11** — **Richer live trace cards shipped** (merged to main, `badae79`..`8bebfb5`; spec/plan `docs/superpowers/{specs,plans}/2026-06-11-richer-trace-cards.*`). The Chat tab's live trace pane (`src/channels/playground/public/tabs/chat.js`) now renders each tool use as ONE card keyed by `toolCallId` (was two: a `contentIndex`-keyed toolcall card + a separate exec card), with a ✓/✗ **success/error badge** (driven by the native `tool_execution_end.isError`, NanoClaw tool error-string prefixes as fallback via `classifyToolResult`) and **tool-aware previews** (`previewForToolArgs`/`previewForToolResult` — query/url/cmd → result-count/error, deferring to the existing `formatTracePreview`). Pure client-side; no backend/SSE/DB/container change — the host serves the JS from `src/…/public/` directly, so it deploys on a browser hard-refresh (no restart/rebuild). **Also closed the renderer's test gap:** exported `appendPiEvent` + the helpers and added the FIRST automated tests for the trace renderer (`chat-trace.test.ts`, 20 tests, vitest + `happy-dom`). Per-tool DURATION deliberately dropped (the per-turn footer already sums latency); persistence/replay + cross-agent view were out of scope (other gap-analysis options, not chosen). Final review APPROVED-WITH-NITS. Host 1178 tests green.
 
 - **2026-06-11** — **Agent egress control shipped + deployed + live-verified** (merged to main, `6247aeb`..`5f4d676`; spec/plan `docs/superpowers/{specs,plans}/2026-06-10-agent-egress-control.*`). Closes a proven SSRF/credential-misuse hole: an agent (it has a `bash` tool + `curl`) could `curl http://192.168.64.1:3001/openai/v1/models` → 200, **using the org's real OpenAI key**, because the credential proxy pinned upstream HOST by path-prefix but not path/method. **Three app/proxy-layer controls (network-layer egress — bash/curl to LAN/internet — is explicitly OUT OF SCOPE, deferred):** (1) `fetch_url` (`container/agent-runner/src/tools/fetch.ts`) now rejects loopback/RFC-1918/link-local/CGNAT/cloud-metadata + IPv4-mapped-IPv6 (incl. hex form) and re-validates every redirect hop, fail-closed on DNS. (2) Credential proxy (`src/credential-proxy.ts`) — `resolveProxyRoute` gives every provider an EXPLICIT prefix incl. a new `/anthropic`; **no catch-all** (unrecognized/bare path → 403); a per-route `EGRESS_ALLOWLIST` + `isEgressAllowed` gate (checked before ANY credential injection/payload log) permits only `POST /v1/messages` (+ the anthropic OAuth token-exchange `/api/oauth/claude_cli/create_api_key`) / `POST /v1/responses` / `POST /v1/chat/completions`; `/googleapis` allowlist is **empty** (dead route — the GWS relay calls Google directly — so it 403s, closing the Google-OAuth vector). (3) `container-runner.ts` points `ANTHROPIC_BASE_URL` at the `/anthropic` prefix. Final opus review APPROVED-WITH-NITS (nits = non-routable exotic IPv6 in fetch_url, optional follow-up). **Deploy-discovered regression, fixed (`5f4d676`):** `pi-model.ts` reused `ANTHROPIC_BASE_URL` *verbatim* as the omlx/clemson proxy origin, so the new `/anthropic` suffix leaked → `…/anthropic/omlx/v1/…` → 403; fixed by stripping to origin (`deriveProxyOrigin`). **Live-verified:** `/openai/v1/models` from a container → 403 (was 200); a real openai-codex agent replied end-to-end (`/openai/v1/responses` allowed); owner_01 (local) routes to `/omlx/v1` again (its 502 is the OMLX backend being down — pre-existing, unrelated). Host 1158 tests / agent-runner 182 green throughout.
@@ -158,22 +159,22 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 
 ### Branch
 
-- **Current:** `status-health-tab`
-- **Last tag:** `phase-c-complete-2026-05-28` (104 commits ahead)
+- **Current:** `main`
+- **Last tag:** `phase-c-complete-2026-05-28` (105 commits ahead)
 
 ### Working tree
 
 ```
-## status-health-tab
+## main...origin/main [ahead 43]
  M config/playground-seats.json
-M  src/channels/playground/public/style.css
-M  src/channels/playground/public/tabs/status.js
+M  state.md
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+ea2e2b4 fix(status): scope tab CSS (don't clobber existing .status-badge); surface restart failures; idempotent click wiring; drop dead HEALTH_LABEL
 616cb69 feat(status): owner-only Status tab (host summary + agent health table + restart)
 3424bda test(status): assert restart called with group.id; clear mock state; cover restarted:0
 d854ad1 feat(status): POST /api/status/restart + route wiring
@@ -188,9 +189,8 @@ e0d0b37 fix(trace): clear opposite status class on re-fire; badge title; CSS spe
 db5db62 feat(trace): success/error status badge on tool cards (isError + fallback)
 6dfacd4 fix(trace): no-id card rekey, preserve args preview on exec update, label cleanup + tests
 73953c0 feat(trace): unify tool call + execution into one card keyed by toolCallId
-a5f3dce fix(trace): tighten error regex to Error: prefix; guard text-array arm; expand helper tests
 ```
 
 ### Last refresh
 
-2026-06-11T13:09:30Z
+2026-06-11T13:26:12Z
