@@ -243,7 +243,7 @@ export function syncHiddenModelSelects(wrapper, provider, modelId) {
 
 /** Bubble headers via CSS vars — see the .simple-mode bubble rules in style.css. */
 export function setBubbleLabels(wrapper, agentName, modelLabel) {
-  const esc = (s) => String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  const esc = (s) => String(s).replace(/[\r\n\u2028\u2029]/g, ' ').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
   wrapper.style.setProperty('--agent-label', `"🤖 ${esc(agentName)} — your agent"`);
   wrapper.style.setProperty('--model-label', `"⚡ ${esc(modelLabel)} — model only (no skills, no personality)"`);
 }
@@ -269,10 +269,17 @@ function initModelDropdown(wrapper, folder, config) {
     sel.add(opt);
   }
   if (config.activeModel) {
-    const match = [...sel.options].find(
+    let match = [...sel.options].find(
       (o) => o.value === config.activeModel.id && o.dataset.provider === config.activeModel.provider,
     );
-    if (match) sel.value = match.value;
+    if (!match) {
+      // Active model isn't in the template's choices (template changed after
+      // this agent was set up) — add it so the dropdown reflects reality.
+      match = new Option(config.activeModel.id, config.activeModel.id);
+      match.dataset.provider = config.activeModel.provider;
+      sel.add(match);
+    }
+    sel.value = match.value;
   }
 
   const applySelection = () => {
@@ -295,7 +302,7 @@ function initModelDropdown(wrapper, folder, config) {
         body: JSON.stringify({ modelProvider: opt.dataset.provider, model: opt.value }),
       });
     } catch {
-      /* next agent send will surface the failure */
+      /* silent fail — the next agent reply shows the model actually used */
     }
   });
 }

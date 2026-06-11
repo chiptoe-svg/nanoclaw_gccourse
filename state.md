@@ -161,14 +161,13 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `simple-my-agent-tab`
-- **Last tag:** `phase-c-complete-2026-05-28` (129 commits ahead)
+- **Last tag:** `phase-c-complete-2026-05-28` (130 commits ahead)
 
 ### Working tree
 
 ```
 ## simple-my-agent-tab
  M config/playground-seats.json
-M  src/channels/playground/public/style.css
 M  src/channels/playground/public/tabs/simple.js
 M  src/channels/playground/public/tabs/simple.test.ts
 ?? .codegraph/
@@ -177,6 +176,7 @@ M  src/channels/playground/public/tabs/simple.test.ts
 ### Recent commits (last 15)
 
 ```
+bd49bb2 feat(playground): simple tab model dropdown, hidden-select sync, labeled reply bubbles
 c8e178b fix(playground): guard simple-tab Save against double-click and lost name-save failures
 9de9da9 feat(playground): simple tab side panel — skills checklist, persona, toggle, save
 54bacb6 fix(playground): hide chat toolbar/trace in simple mode; use design tokens
@@ -191,9 +191,8 @@ acdd91e refactor(playground): export killGroupContainer with reason param
 7386c62 docs(plans): My Agent simple tab implementation plan
 93afd88 docs(spec): My Agent simple tab — embedded chat + use-agent toggle + template-driven skills/persona/models
 b597d60 docs(state): record cost governance + scenario-aware Status roster shipped + live-verified
-9d0d490 refactor(home): drop classroom roster + add-student cards (superseded by Status roster)
 ```
 
 ### Last refresh
 
-2026-06-11T22:28:06Z
+2026-06-11T22:36:08Z

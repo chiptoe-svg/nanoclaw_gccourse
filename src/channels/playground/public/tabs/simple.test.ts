@@ -129,4 +129,11 @@ describe('setBubbleLabels', () => {
     expect(wrapper.style.getPropertyValue('--agent-label')).toBe('"🤖 Jane\\"Bot — your agent"');
     expect(wrapper.style.getPropertyValue('--model-label')).toBe('"⚡ m\\"x — model only (no skills, no personality)"');
   });
+
+  it('strips line terminators so a label cannot break the CSS string', () => {
+    const wrapper = document.createElement('div');
+    setBubbleLabels(wrapper, 'Jane\nBot', 'm\rx');
+    expect(wrapper.style.getPropertyValue('--agent-label')).toBe('"🤖 Jane Bot — your agent"');
+    expect(wrapper.style.getPropertyValue('--model-label')).toBe('"⚡ m x — model only (no skills, no personality)"');
+  });
 });
