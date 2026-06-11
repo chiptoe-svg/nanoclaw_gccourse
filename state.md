@@ -160,20 +160,21 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `cost-governance`
-- **Last tag:** `phase-c-complete-2026-05-28` (113 commits ahead)
+- **Last tag:** `phase-c-complete-2026-05-28` (114 commits ahead)
 
 ### Working tree
 
 ```
 ## cost-governance
  M config/playground-seats.json
-M  src/channels/playground/public/tabs/status.js
+M  src/channels/playground/public/tabs/home.js
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+ce180c6 fix(status): surface budgets-fetch failure; drop double loadStatus; prompt-based per-agent budget (survives re-render)
 8b041fa feat(status): scenario roster + spend/budget columns + budget editor + add-participant
 886dcbb fix(cost): reject perAgent array in POST validation; test warnFraction=0
 b480065 feat(cost): scenario-aware GET/POST /api/budgets (members + cost + budget)
@@ -188,9 +189,8 @@ ea2e2b4 fix(status): scope tab CSS (don't clobber existing .status-badge); surfa
 d854ad1 feat(status): POST /api/status/restart + route wiring
 ff2a764 fix(status): classify health from active sessions only; stat heartbeat once; export AgentStatus; test boundaries
 395a2ad feat(status): health-classifier + GET /api/status (owner-gated)
-123a92a docs(plan): owner Status/Health tab plan + spec correction (sessions.container_status source)
 ```
 
 ### Last refresh
 
-2026-06-11T15:35:52Z
+2026-06-11T15:38:13Z
