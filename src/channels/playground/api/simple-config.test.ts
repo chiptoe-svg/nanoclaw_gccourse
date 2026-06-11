@@ -214,13 +214,17 @@ describe('handlePutAgentName', () => {
   });
 
   it('400s on empty, whitespace-only, too-long, or non-string names', async () => {
-    mockWriteDeps();
+    const { updateScalars, updateGroup } = mockWriteDeps();
     const { handlePutAgentName } = await import('./simple-config.js');
     expect(handlePutAgentName('user_01', { name: '' }).status).toBe(400);
     expect(handlePutAgentName('user_01', { name: '   ' }).status).toBe(400);
     expect(handlePutAgentName('user_01', { name: 'x'.repeat(41) }).status).toBe(400);
     expect(handlePutAgentName('user_01', { name: 42 }).status).toBe(400);
     expect(handlePutAgentName('user_01', {}).status).toBe(400);
+    expect(handlePutAgentName('user_01', { name: 'Agent\x00Name' }).status).toBe(400);
+    expect(handlePutAgentName('user_01', { name: 'evil‮name' }).status).toBe(400);
+    expect(updateScalars).not.toHaveBeenCalled();
+    expect(updateGroup).not.toHaveBeenCalled();
   });
 
   it('404s on an unknown folder', async () => {

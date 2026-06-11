@@ -158,6 +158,11 @@ export function handlePutAgentName(
   if (name.length < 1 || name.length > 40) {
     return { status: 400, body: { error: 'name must be 1–40 characters' } };
   }
+  // Students write this straight into the system prompt + roster — reject
+  // control chars and invisible/direction-override Unicode.
+  if (/[\x00-\x1f\x7f​-‏‪-‮⁠﻿]/.test(name)) {
+    return { status: 400, body: { error: 'name contains invalid characters' } };
+  }
   try {
     const group = getAgentGroupByFolder(draftFolder);
     if (!group) return { status: 404, body: { error: `Agent group not found: ${draftFolder}` } };

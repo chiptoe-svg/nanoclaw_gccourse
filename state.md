@@ -161,7 +161,7 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `simple-my-agent-tab`
-- **Last tag:** `phase-c-complete-2026-05-28` (121 commits ahead)
+- **Last tag:** `phase-c-complete-2026-05-28` (122 commits ahead)
 
 ### Working tree
 
@@ -176,6 +176,7 @@ M  src/channels/playground/api/simple-config.ts
 ### Recent commits (last 15)
 
 ```
+cb9cd10 feat(playground): agent-name PUT + simple-restart handlers
 2e1e739 fix(playground): simple-config — YAML block-scalar description fallback, single skills readdir, empty-model contract test
 e0303ac feat(playground): GET /api/simple-config handler — template skill shortlist + model choices
 acdd91e refactor(playground): export killGroupContainer with reason param
@@ -190,9 +191,8 @@ b480065 feat(cost): scenario-aware GET/POST /api/budgets (members + cost + budge
 2bf08f0 fix(cost): guard perAgent against array json in readCostBudgets
 ae94cff feat(cost): budget config + evaluator (pure, tested)
 2db72ff docs(plan): cost governance + scenario-aware Status roster implementation plan
-410b3eb docs(spec): cost governance (alert-only) + scenario-aware Status roster
 ```
 
 ### Last refresh
 
-2026-06-11T21:52:32Z
+2026-06-11T21:56:42Z
