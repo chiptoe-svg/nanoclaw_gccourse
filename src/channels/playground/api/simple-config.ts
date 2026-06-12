@@ -13,7 +13,7 @@
 import fs from 'fs';
 import path from 'path';
 
-import { CONTAINER_DIR } from '../../../config.js';
+import { CONTAINER_DIR, DATA_DIR } from '../../../config.js';
 import { materializeContainerJson } from '../../../container-config.js';
 import { getAgentGroupByFolder, updateAgentGroup } from '../../../db/agent-groups.js';
 import { updateContainerConfigScalars } from '../../../db/container-configs.js';
@@ -23,6 +23,7 @@ import type { ApiResult } from './me.js';
 import { killGroupContainer } from './agent-library-handlers.js';
 
 const SKILLS_DIR = path.join(CONTAINER_DIR, 'skills');
+const LIBRARY_CACHE_DIR = path.join(DATA_DIR, 'playground', 'library-cache');
 
 export interface SimpleSkill {
   name: string;
@@ -73,13 +74,21 @@ function listContainerSkills(): string[] {
 }
 
 /**
- * First sentence of the SKILL.md frontmatter `description`. Falls back to
- * the humanized name when the file or frontmatter is missing (pdf-reader
- * ships without frontmatter).
+ * First sentence of the skill's SKILL.md — the frontmatter `description`
+ * when present, otherwise the first body paragraph (pdf-reader and
+ * rag-pdf-ingest ship without frontmatter). Built-ins are checked first,
+ * then the library-cache categories (the `pdf` shortlist entry lives
+ * there). Falls back to the humanized name.
  */
 function skillDescription(name: string): string {
-  try {
-    const md = fs.readFileSync(path.join(SKILLS_DIR, name, 'SKILL.md'), 'utf8');
+  const roots = [SKILLS_DIR, ...['skills', 'template', 'spec'].map((c) => path.join(LIBRARY_CACHE_DIR, c))];
+  for (const root of roots) {
+    let md: string;
+    try {
+      md = fs.readFileSync(path.join(root, name, 'SKILL.md'), 'utf8');
+    } catch {
+      continue; // not in this root — try the next
+    }
     const fm = md.match(/^---\n([\s\S]*?)\n---/);
     if (fm) {
       for (const line of fm[1]!.split('\n')) {
@@ -87,15 +96,25 @@ function skillDescription(name: string): string {
         if (m) {
           const raw = m[1]!.trim();
           // YAML block scalar (>-, |, etc.) — the content is on subsequent
-          // indented lines we don't parse; fall through to the name fallback.
+          // indented lines we don't parse; fall through to the body text.
           if (raw === '>-' || raw === '>' || raw === '|-' || raw === '|') break;
           const sentence = raw.match(/^.*?[.!?](?=\s|$)/);
           return sentence ? sentence[0]! : raw;
         }
       }
     }
-  } catch {
-    /* unreadable SKILL.md — fall through to the name */
+    // No usable frontmatter description — first sentence of the first
+    // non-heading body paragraph.
+    const body = fm ? md.slice(fm[0].length) : md;
+    const para = body
+      .split(/\n\s*\n/)
+      .map((p) => p.trim())
+      .find((p) => p && !p.startsWith('#'));
+    if (para) {
+      const joined = para.replace(/\s+/g, ' ');
+      const sentence = joined.match(/^.*?[.!?](?=\s|$)/);
+      return sentence ? sentence[0]! : joined;
+    }
   }
   return humanizeSkillTitle(name);
 }

@@ -168,6 +168,8 @@ export function mountSimple(el) {
     <div class="simple-mode">
       <div class="simple-topbar">
         <label>model <select id="simple-model-sel"></select></label>
+        <button type="button" id="simple-clear-chat" class="btn btn-ghost"
+                title="Clear the chat window — your agent still remembers the conversation">clear chat</button>
       </div>
       <div class="simple-layout">
         <div class="simple-stack">
@@ -208,6 +210,11 @@ export function mountSimple(el) {
   mountChat(el.querySelector('.simple-chat-host'));
   adoptTracePanel(wrapper); // after mountChat: handlers wired, references captured
   wireTraceRollup(wrapper);
+  // The chat toolbar (with its Clear button) is display:none on this tab —
+  // the topbar button delegates to the same wired handler.
+  el.querySelector('#simple-clear-chat').addEventListener('click', () => {
+    el.querySelector('#chat-clear')?.click();
+  });
 
   initPanel(wrapper, folder);
 }

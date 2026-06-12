@@ -2,6 +2,11 @@ import { showDraftBanner } from '../draft-banner.js';
 import { PROVIDER_GROUPS } from '../provider-groups.js';
 
 let sse = null; // single EventSource per agent
+// Highest outbound seq the user has cleared away (persisted per folder so a
+// reload doesn't refill the window from /recent). Module-level so both the
+// clear handler (wireChatForm) and catch-up (wireSse) see the same value.
+let clearedSeq = 0;
+const clearedSeqKey = (folder) => `pg-chat-cleared-seq:${folder}`;
 
 /**
  * Re-fetch the Chat tab's provider/model dropdowns. Called by the tab
@@ -36,6 +41,7 @@ export function mountChat(el) {
           <option value="high">high</option>
         </select>
       </label>
+      <button type="button" id="chat-clear" class="btn btn-ghost" title="Clear the chat window — the agent still remembers the conversation">Clear</button>
       <a id="export-btn" class="btn btn-ghost" title="Download your agent as a zip — works in Claude Code, OpenAI Codex, Gemini CLI, and more">Export ↓</a>
     </div>
     <div class="chat-layout">
@@ -303,8 +309,10 @@ function wireSse(el, folder) {
   // Highest agent-reply seq already rendered. The host's SSE pushes are
   // fire-and-forget — any reply that lands while the EventSource is in
   // its reconnect window is gone. On mount AND on every SSE reconnect
-  // we hit /recent to catch up to anything we missed.
-  let lastSeenSeq = 0;
+  // we hit /recent to catch up to anything we missed. Starts at the
+  // cleared-watermark so messages the user cleared away stay gone.
+  clearedSeq = Number(localStorage.getItem(clearedSeqKey(folder))) || 0;
+  let lastSeenSeq = clearedSeq;
   const catchUpFromRecent = async () => {
     try {
       const r = await fetch(
@@ -314,7 +322,7 @@ function wireSse(el, folder) {
       if (!r.ok) return;
       const { messages } = await r.json();
       for (const m of messages || []) {
-        if (m.seq <= lastSeenSeq) continue;
+        if (m.seq <= lastSeenSeq || m.seq <= clearedSeq) continue;
         lastSeenSeq = m.seq;
         // Reconstruct file download URLs from content.files + id (live SSE
         // already arrives with files: [{filename, url}]; /recent only has
@@ -574,6 +582,29 @@ function wireChatForm(el, folder) {
       renderChips();
     } catch {
       appendSystemNote(log, 'Send failed — check connection.');
+    }
+  });
+
+  // Clear the chat WINDOW (both modes' bubbles). Direct mode genuinely
+  // forgets — its history is the client-side array we empty here. Agent
+  // mode is visual-only: the agent's server-side conversation is untouched.
+  // The seq watermark keeps cleared messages from refilling via /recent on
+  // reload or SSE reconnect.
+  el.querySelector('#chat-clear').addEventListener('click', async () => {
+    log.replaceChildren();
+    directHistory.length = 0;
+    try {
+      const r = await fetch(`/api/drafts/${folder}/recent?limit=1`, { credentials: 'same-origin' });
+      if (r.ok) {
+        const { messages } = await r.json();
+        const seq = messages?.[0]?.seq ?? 0;
+        if (seq > clearedSeq) {
+          clearedSeq = seq;
+          localStorage.setItem(clearedSeqKey(folder), String(seq));
+        }
+      }
+    } catch {
+      /* watermark is best-effort — the window is cleared regardless */
     }
   });
 }

@@ -1700,6 +1700,9 @@ select.model-changed {
   background: var(--surface-alt);
   font-size: 13px;
 }
+#simple-clear-chat {
+  margin-left: auto;
+}
 
 .simple-layout {
   display: flex;
