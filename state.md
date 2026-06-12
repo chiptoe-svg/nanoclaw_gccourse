@@ -111,6 +111,7 @@ Pointers, not duplications. Read the relevant one when you're going deep.
 
 Append-only, newest first. One line per decision: *what + 1-line why*. Prune (move to archive) when older than ~6 months.
 
+- **2026-06-12** — **Simple tab layering: agent above the model.** The My Agent tab now renders agent mode as an elevated green card (slim `🤖 <name>` header) with a model strip peeking beneath (`⚡ <model> — underneath`), panel fused at the same elevation; toggling the agent off animates the layer away (`.agent-off` class on the wrapper, pure CSS, ~300ms + reduced-motion guard) onto a flat gray dashed model card with a sunken panel. `setLayerLabels` rides the existing `applySelection`/`saveName`/toggle paths. Verification also fixed the simple tab's height chain (`#tab-simple:not([hidden])` flex guard, mirroring `#tab-chat`) so `#chat-log` scrolls inside the card instead of growing the page. No chat.js changes. Spec: docs/superpowers/specs/2026-06-11-simple-tab-layering-design.md.
 - **2026-06-11** — **"My Agent" simple beginner tab.** New `simple` playground tab: embedded real chat (`mountChat` unchanged, `.simple-mode` CSS hides advanced chrome) + side panel (Use-agent toggle driving the hidden mode buttons, editable agent name, template-curated skill checklist with ⓘ descriptions, persona, Save→restart) + left model dropdown fed by the default-participant template's `allowed_models`. Three new endpoints: `GET /api/simple-config`, `PUT /api/drafts/:folder/name` (writes `assistant_name` + group name), `POST /api/simple-restart` (exported `killGroupContainer`). Agent replies green/labeled, model-only replies blue-gray/dashed via CSS vars. Tab strip auto-hides when a student has exactly one visible tab. Instructor curates via the template slot + `tabsVisibleToStudents`. Spec: docs/superpowers/specs/2026-06-11-simple-my-agent-tab-design.md.
 - **2026-06-11** — **Cost governance (alert-only) + scenario-aware Status roster shipped + deployed + live-verified** (branch `cost-governance`, `ae94cff`..`9d0d490`; spec/plan `docs/superpowers/{specs,plans}/2026-06-11-cost-governance.*`). Gives the owner per-agent **monthly budgets with at-a-glance ok/approaching/over badges** (ALERT-ONLY — no blocking; the credential-proxy enforce path was the declined option). New `api/cost-budgets.ts`: `config/cost-budgets.json` `{defaultMonthlyUsd, warnFraction(0.8), perAgent:{[folder]:usd}}` (read/write the `class-controls.json` pattern; `!Array.isArray` guards on `perAgent` in BOTH read + POST-validate), pure `evaluateBudget(cost,budget,warn)` → `none`(null budget)/`ok`/`approaching`(≥budget·warn)/`over`(≥budget). **`GET /api/budgets`** (owner-gated) is **scenario-agnostic** — rows = `getAllAgentGroups()` ∩ `roleForFolder(folder)!==null` (members only → `_default_participant` template drops out), labeled via `roleProfile(role).label`/`memberName`, model/provider from `getContainerConfig`, `costUsdThisMonth` from `aggregateAgentUsage(g.id).thisMonth.costUsd`. **`POST /api/budgets`** validates (≥0/null, warnFraction (0,1], perAgent object-not-array) → `writeCostBudgets`. **Status tab became the fleet roster** (`public/tabs/status.js`): Role + Spend/Budget columns merged from `/api/budgets` (30s poll, separate from the 5s health poll to keep the DB cost-scan off the fast loop), badge, per-agent budget via `prompt()`-based Set button (survives the 5s re-render — an inline `<input>` got wiped), install-wide default$/warn% editor, **Add-a-participant relocated here from Home** (`POST /api/admin/students` → scenario-aware `provisionMember`). **Home cleanup** (`home.js`): removed the classroom `class-config` roster + add-student cards (superseded by the scenario roster — the seminar's `class-config` was empty so the old Home card showed "No student agents"); KEPT the per-user own-usage card (students' only cost view — they never see owner-only Status) + config cards. Boundaries: no enforcement, no notifications (UI badge only), calendar-month only, no charts. Final opus review APPROVED-WITH-NITS (lone nit moot — budgets⊆status). Host 1206 tests green, build clean. **Live-verified:** `GET /api/budgets?seat=owner_01` returned the seminar roster (Organizer + 3 Participants, costs computed, template excluded). Deployed via host restart of `com.nanoclaw-v2-581fefa4`; tab JS deploys on browser refresh. (Completes the 3 picked gap items: Live trace cards + Status/Health + Cost governance.)
 - **2026-06-11** — **Owner Status/Health tab shipped + deployed + live-verified** (merged to main, `395a2ad`..`ea2e2b4`; spec/plan `docs/superpowers/{specs,plans}/2026-06-11-status-health-tab.*`). New owner/ta-only **Status** tab (`public/tabs/status.js`; added to `app.js` `TABS`+`mounters` + `index.html`; absent from `tabsVisibleToStudents` → owner-only, triple-gated with server-side `isOwnerOrAdmin` on the API). **`GET /api/status`** (`api/status.ts`) → host summary (gateway · active-container count · version) + per-agent health roll-up `running`/`stale`/`idle`/`never` from **`sessions.container_status`** + heartbeat-file mtime vs `ABSOLUTE_CEILING_MS` (NOT the outbound.db `container_state` table — tool-in-flight info), `lastActivityAt` from `sessions.last_active`; **closed sessions excluded** from health+activeSessions (only-closed → `idle`, none-ever → `never`). **`POST /api/status/restart {folder}`** wraps `restartAgentGroupContainers` (per-agent only; **no host/gateway restart from the UI** — would self-kill the page server). 5s auto-refresh while visible. Config-editing stays in the existing agents/models/persona/skills tabs (out of scope). Final review APPROVED; host 1193 tests green. **Live-verified:** `/api/status` returns correct health (template=`never`, idle agents=`idle` with last-activity), v2.0.46. Tab deploys on browser refresh; API loaded via host restart. (2 of 3 picked gap items done — Live trace cards + Status/Health; **Cost governance** remains.)
@@ -162,20 +163,21 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `simple-tab-layering`
-- **Last tag:** `phase-c-complete-2026-05-28` (138 commits ahead)
+- **Last tag:** `phase-c-complete-2026-05-28` (139 commits ahead)
 
 ### Working tree
 
 ```
 ## simple-tab-layering
  M config/playground-seats.json
-M  src/channels/playground/public/style.css
+M  state.md
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+8948ed8 fix(simple-tab): constrain height chain so chat scrolls inside the agent card
 64c2527 feat(simple-tab): layer labels track model change and rename
 5159c81 feat(simple-tab): agent-card stack DOM + layering CSS
 d87aa3f feat(simple-tab): layer labels + .agent-off toggle class
@@ -190,9 +192,8 @@ c8e178b fix(playground): guard simple-tab Save against double-click and lost nam
 54bacb6 fix(playground): hide chat toolbar/trace in simple mode; use design tokens
 4064a8e chore(playground): undo collateral prettier reformat of public assets — keep diffs minimal
 986f42c feat(playground): My Agent simple tab skeleton — registration, layout, embedded chat, CSS hiding
-b501b6c feat(playground): wire simple-config, name, and simple-restart routes
 ```
 
 ### Last refresh
 
-2026-06-12T12:28:43Z
+2026-06-12T12:29:18Z
