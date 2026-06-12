@@ -44,8 +44,21 @@ export interface SimpleConfigResponse {
   activeModel: { provider: string; id: string } | null;
 }
 
+/**
+ * Student-facing titles for skills whose directory names don't read well in
+ * the beginner panel (instructor-curated; everything else is humanized).
+ */
+const SKILL_TITLE_OVERRIDES: Record<string, string> = {
+  'agent-browser': 'Web Search',
+  'pdf-reader': 'PDF-reader',
+  pdf: 'PDF-read/write',
+  'rag-pdf-ingest': 'PDF-Rag ingest',
+};
+
 /** `image-gen` → "Image gen". Kebab/snake → spaces, first letter capitalized. */
 export function humanizeSkillTitle(name: string): string {
+  const override = SKILL_TITLE_OVERRIDES[name];
+  if (override) return override;
   const words = name.replace(/[-_]+/g, ' ').trim();
   return words.charAt(0).toUpperCase() + words.slice(1);
 }

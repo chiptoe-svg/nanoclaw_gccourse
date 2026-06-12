@@ -44,6 +44,14 @@ export function renderSkillRows(container, skills) {
     desc.className = 'simple-skill-desc';
     desc.hidden = true;
     desc.textContent = s.description || '';
+    // Peek inside the skill — file list + source in a new tab (skill-view.html).
+    const view = document.createElement('a');
+    view.className = 'simple-skill-view';
+    view.href = `skill-view.html?skill=${encodeURIComponent(s.name)}`;
+    view.target = '_blank';
+    view.rel = 'noopener';
+    view.textContent = "See what's inside (the actual files) ↗";
+    desc.appendChild(view);
 
     info.addEventListener('click', () => {
       const wasHidden = desc.hidden;

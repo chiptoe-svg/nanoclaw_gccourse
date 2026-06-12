@@ -1759,8 +1759,15 @@ select.model-changed {
   font-size: 12px;
 }
 
+#simple-skills {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 10px;
+}
 .simple-skill-row {
   margin: 3px 0;
+  min-width: 0; /* let long titles shrink inside the grid cell */
+  white-space: nowrap; /* keep the ⓘ beside the title; overflow rides the column gap */
 }
 .simple-info-btn {
   border: none;
@@ -1778,6 +1785,13 @@ select.model-changed {
   margin: 4px 0;
   color: #445;
   font-size: 12px;
+  white-space: normal; /* prose wraps even though the row itself is nowrap */
+}
+.simple-skill-view {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  color: #4a5a96;
 }
 
 #simple-persona {

@@ -68,8 +68,8 @@ describe('handleGetSimpleConfig', () => {
       },
       {
         name: 'pdf-reader',
-        title: 'Pdf reader',
-        description: 'Pdf reader',
+        title: 'PDF-reader',
+        description: 'PDF-reader',
         enabled: false,
       },
     ]);
@@ -181,8 +181,15 @@ describe('humanizeSkillTitle', () => {
   it('kebab → spaced, first letter capitalized', async () => {
     const { humanizeSkillTitle } = await import('./simple-config.js');
     expect(humanizeSkillTitle('image-gen')).toBe('Image gen');
-    expect(humanizeSkillTitle('rag-pdf-ingest')).toBe('Rag pdf ingest');
     expect(humanizeSkillTitle('wiki')).toBe('Wiki');
+  });
+
+  it('curated overrides win over humanization', async () => {
+    const { humanizeSkillTitle } = await import('./simple-config.js');
+    expect(humanizeSkillTitle('agent-browser')).toBe('Web Search');
+    expect(humanizeSkillTitle('pdf-reader')).toBe('PDF-reader');
+    expect(humanizeSkillTitle('pdf')).toBe('PDF-read/write');
+    expect(humanizeSkillTitle('rag-pdf-ingest')).toBe('PDF-Rag ingest');
   });
 });
 
