@@ -1912,7 +1912,24 @@ select.model-changed {
   background: #fdfffe;
   box-shadow: 0 3px 10px rgba(46, 125, 70, 0.18);
   overflow: hidden; /* clean rounded corners; chat modals live in #modal-root, so nothing is clipped */
-  transition: border-color 0.3s ease, box-shadow 0.3s ease, background-color 0.3s ease, padding-bottom 0.3s ease, margin 0.3s ease;
+  /* No geometry/color transitions — the two states are different LAYERS,
+     not one morphing box. Toggling swaps the animation name below, which
+     restarts the matching entrance: ON = the agent card lands on top of
+     the chat window (settling scale + shadow); OFF = the card lifts away
+     and the base window fades back in whole. */
+  animation: simple-agent-land 0.3s ease;
+}
+@keyframes simple-agent-land {
+  from {
+    opacity: 0;
+    transform: scale(1.02);
+    box-shadow: 0 14px 30px rgba(46, 125, 70, 0.35);
+  }
+}
+@keyframes simple-window-reveal {
+  from {
+    opacity: 0;
+  }
 }
 .simple-card-header {
   font-size: 11px;
@@ -1921,7 +1938,6 @@ select.model-changed {
   padding: 4px 10px;
   border-bottom: 1px solid #bfe3c9;
   min-height: 1em;
-  transition: color 0.3s ease, border-color 0.3s ease;
 }
 .simple-model-strip {
   font-size: 11px;
@@ -1934,7 +1950,6 @@ select.model-changed {
   padding: 3px 10px;
   overflow: hidden;
   max-height: 2em;
-  transition: max-height 0.3s ease, padding 0.3s ease, opacity 0.3s ease;
 }
 
 /* Panel fused to the agent card: same elevation, same green framing. */
@@ -1957,6 +1972,7 @@ select.model-changed {
   background: #fdfdff;
   box-shadow: 0 3px 10px rgba(74, 90, 150, 0.16);
   padding-bottom: 22px; /* = .simple-model-strip rendered height (max-height: 2em at 11px) */
+  animation: simple-window-reveal 0.3s ease;
 }
 .simple-mode.agent-off .simple-card-header {
   color: #4a5a96;

@@ -164,12 +164,12 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `main`
-- **Last tag:** `phase-c-complete-2026-05-28` (159 commits ahead)
+- **Last tag:** `phase-c-complete-2026-05-28` (160 commits ahead)
 
 ### Working tree
 
 ```
-## main...origin/main [ahead 19]
+## main...origin/main [ahead 20]
  M config/playground-seats.json
 M  src/channels/playground/public/style.css
 ?? .codegraph/
@@ -178,6 +178,7 @@ M  src/channels/playground/public/style.css
 ### Recent commits (last 15)
 
 ```
+fb84887 fix(playground): base chat window matches the strip's footprint exactly
 a8fa515 fix(playground): model window is the base layer; agent card lays on top
 9af4a05 fix(playground): restore the card-over-strip layering hint
 27536c3 fix(playground): use-agent toggle keeps the window's exact shape
@@ -192,9 +193,8 @@ eb31efc feat(playground): demo model menu — friendly names + group-prefixed la
 de154a6 fix(playground): list the simple (My Agent) tab in the student-tabs checklist
 e459b49 docs(state): trace roll-up decision-log entry
 8a3a2f9 fix(playground): collapse panel bottom padding + rollup-btn focus affordance
-c2aea77 feat(playground): trace roll-up CSS — peek strip, .trace-open collapse, side-stack height chain
 ```
 
 ### Last refresh
 
-2026-06-12T17:54:37Z
+2026-06-12T17:59:50Z
