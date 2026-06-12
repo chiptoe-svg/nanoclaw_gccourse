@@ -1912,7 +1912,7 @@ select.model-changed {
   background: #fdfffe;
   box-shadow: 0 3px 10px rgba(46, 125, 70, 0.18);
   overflow: hidden; /* clean rounded corners; chat modals live in #modal-root, so nothing is clipped */
-  transition: border-color 0.3s ease, box-shadow 0.3s ease, background-color 0.3s ease, padding-bottom 0.3s ease;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease, background-color 0.3s ease, padding-bottom 0.3s ease, margin 0.3s ease;
 }
 .simple-card-header {
   font-size: 11px;
@@ -1945,12 +1945,14 @@ select.model-changed {
   transition: border-color 0.3s ease, box-shadow 0.3s ease, background-color 0.3s ease, padding-bottom 0.3s ease;
 }
 
-/* OFF — the agent card lifts away, revealing the base window whole: the
-   strip collapses while the card extends down by the strip's footprint, so
-   the window's bottom edge (and the input row) stay put. Solid blue-family
-   border + white surface — you're talking straight to the model, fully
-   usable, NOT disabled. */
+/* OFF — the agent card lifts away, revealing the base window whole. Its
+   footprint is exactly the strip's: same 10px horizontal inset, same bottom
+   edge (strip collapses + card pads down by the strip's rendered height —
+   they cancel, so the bottom-left corner and the input row never move).
+   Solid blue-family border + white surface — you're talking straight to
+   the model, fully usable, NOT disabled. */
 .simple-mode.agent-off .simple-agent-card {
+  margin: 0 10px; /* the base window = the layer the strip peeks from */
   border-color: #aab4d4;
   background: #fdfdff;
   box-shadow: 0 3px 10px rgba(74, 90, 150, 0.16);
