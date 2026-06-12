@@ -177,6 +177,7 @@ export function initPanel(wrapper, folder) {
       if (r.ok) {
         lastSavedName = name;
         setBubbleLabels(wrapper, name, currentModelLabel(wrapper)); // Task 7
+        setLayerLabels(wrapper, name, currentModelLabel(wrapper) || 'model');
         return true;
       } else {
         statusEl.textContent = "Couldn't save the name — try again.";
@@ -313,7 +314,9 @@ export function initModelDropdown(wrapper, folder, config) {
     const opt = sel.selectedOptions[0];
     if (!opt) return;
     syncHiddenModelSelects(wrapper, opt.dataset.provider, opt.value);
-    setBubbleLabels(wrapper, wrapper.querySelector('#simple-agent-name').value.trim() || 'Your agent', opt.textContent);
+    const agentName = wrapper.querySelector('#simple-agent-name').value.trim() || 'Your agent';
+    setBubbleLabels(wrapper, agentName, opt.textContent);
+    setLayerLabels(wrapper, agentName, opt.textContent);
   };
   applySelection(); // initial labels + hidden-select state
 

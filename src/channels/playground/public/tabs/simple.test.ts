@@ -160,6 +160,8 @@ function buildPanelWrapper() {
     <select id="simple-model-sel"></select>
     <select id="provider-sel"></select>
     <select id="model-sel"></select>
+    <div class="simple-card-header"></div>
+    <div class="simple-model-strip"></div>
   `;
   return wrapper;
 }
@@ -295,6 +297,11 @@ describe('initModelDropdown — model change', () => {
     // Hidden selects should be synced: openai-codex maps to PROVIDER_GROUP id 'openai'.
     expect((wrapper.querySelector('#provider-sel') as HTMLSelectElement).value).toBe('openai');
     expect((wrapper.querySelector('#model-sel') as HTMLSelectElement).value).toBe('gpt-5.5');
+
+    // Layer labels track the dropdown: strip shows the new model,
+    // ON-state header shows the agent name.
+    expect(wrapper.querySelector('.simple-model-strip')!.textContent).toBe('⚡ GPT-5.5 — underneath');
+    expect(wrapper.querySelector('.simple-card-header')!.textContent).toBe('🤖 TestBot');
   });
 });
 

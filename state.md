@@ -162,21 +162,22 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `simple-tab-layering`
-- **Last tag:** `phase-c-complete-2026-05-28` (136 commits ahead)
+- **Last tag:** `phase-c-complete-2026-05-28` (137 commits ahead)
 
 ### Working tree
 
 ```
 ## simple-tab-layering
  M config/playground-seats.json
-M  src/channels/playground/public/style.css
 M  src/channels/playground/public/tabs/simple.js
+M  src/channels/playground/public/tabs/simple.test.ts
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+5159c81 feat(simple-tab): agent-card stack DOM + layering CSS
 d87aa3f feat(simple-tab): layer labels + .agent-off toggle class
 4d0b2e4 docs(plan): simple-tab layering implementation plan
 63c32d0 docs(spec): agent-above-model layering for the simple tab
@@ -191,9 +192,8 @@ c8e178b fix(playground): guard simple-tab Save against double-click and lost nam
 986f42c feat(playground): My Agent simple tab skeleton — registration, layout, embedded chat, CSS hiding
 b501b6c feat(playground): wire simple-config, name, and simple-restart routes
 e395217 fix(playground): reject control/invisible chars in agent names; tighten 400-path test
-cb9cd10 feat(playground): agent-name PUT + simple-restart handlers
 ```
 
 ### Last refresh
 
-2026-06-12T12:12:12Z
+2026-06-12T12:17:26Z
