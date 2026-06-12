@@ -164,22 +164,21 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `main`
-- **Last tag:** `phase-c-complete-2026-05-28` (150 commits ahead)
+- **Last tag:** `phase-c-complete-2026-05-28` (151 commits ahead)
 
 ### Working tree
 
 ```
-## main...origin/main [ahead 10]
+## main...origin/main [ahead 11]
  M config/playground-seats.json
-A  plans/mode-split-transcripts.md
 M  src/channels/playground/public/style.css
-M  src/channels/playground/public/tabs/chat.js
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+3e59b6d feat(playground): split agent and model-only chats into separate transcripts
 661fa4c fix(playground): keep chat card fixed when simple-tab agent is toggled
 2d27f9c fix(playground): preserve query string on the / -> /playground/ redirect
 de154a6 fix(playground): list the simple (My Agent) tab in the student-tabs checklist
@@ -194,9 +193,8 @@ b898069 docs(plan): simple-tab trace roll-up implementation plan
 8948ed8 fix(simple-tab): constrain height chain so chat scrolls inside the agent card
 64c2527 feat(simple-tab): layer labels track model change and rename
 5159c81 feat(simple-tab): agent-card stack DOM + layering CSS
-d87aa3f feat(simple-tab): layer labels + .agent-off toggle class
 ```
 
 ### Last refresh
 
-2026-06-12T14:45:28Z
+2026-06-12T14:48:31Z
