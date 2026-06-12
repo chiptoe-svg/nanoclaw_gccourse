@@ -1730,6 +1730,14 @@ select.model-changed {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 12px;
+  /* Fixed height: fill the side stack so the panel's bottom edge lines up
+     with the agent card's (the trace strip below mirrors the model strip).
+     Content scales to fit (persona textarea flexes) — the panel never
+     resizes with content. */
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto; /* basis auto, NOT 0% — trace-open sets flex-grow: 0 and the panel must fall back to content height (the header), not collapse to nothing */
+  min-height: 0;
 }
 
 .simple-panel-header {
@@ -1837,6 +1845,10 @@ select.model-changed {
 #simple-persona {
   width: 100%;
   box-sizing: border-box;
+  /* Scales to fill the fixed-height panel (see .simple-panel-body). */
+  flex: 1;
+  min-height: 60px;
+  resize: none;
 }
 #simple-save {
   margin-top: 10px;
@@ -1957,7 +1969,8 @@ select.model-changed {
   border-color: #bfe3c9;
   background: #fdfffe;
   box-shadow: 0 3px 10px rgba(46, 125, 70, 0.18);
-  transition: border-color 0.3s ease, box-shadow 0.3s ease, background-color 0.3s ease, padding-bottom 0.3s ease;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease, background-color 0.3s ease, padding-bottom 0.3s ease,
+    flex-grow 0.3s ease;
 }
 
 /* OFF — the agent card lifts away, revealing the base window whole. Its
@@ -2001,9 +2014,16 @@ select.model-changed {
    modes; the strip stays neutral gray (no .agent-off collapse — unlike the
    model strip, the trace exists in both modes). */
 .simple-panel-body {
-  /* Cap must comfortably exceed the tallest real panel (skills list +
-     persona textarea) or the collapse animation jumps. */
-  max-height: 600px;
+  /* Body fills the fixed-height panel; the persona textarea (flex: 1)
+     absorbs the slack. */
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  /* Collapse cap, not a size: must comfortably exceed the body's
+     flex-allocated height or it clamps short of the panel bottom and the
+     collapse animation jumps. */
+  max-height: 80vh;
   overflow: hidden;
   transition: max-height 0.3s ease;
 }
@@ -2039,6 +2059,7 @@ select.model-changed {
 }
 .simple-mode.trace-open .simple-panel {
   padding-bottom: 0;
+  flex-grow: 0; /* roll up to header height; the trace host takes the column */
 }
 .simple-mode.trace-open .simple-trace-strip {
   max-height: 0;
@@ -2053,6 +2074,7 @@ select.model-changed {
   flex: 1;
   min-height: 0; /* height chain: host → .trace-panel (flex:1) → .trace-log (overflow-y: auto) */
   margin-top: 8px;
+  margin-bottom: 22px; /* = model-strip footprint, so the open trace's bottom edge matches the agent card's */
   border: 1px solid var(--border);
   border-radius: 8px;
   overflow: hidden; /* clean rounded corners over the square trace panel */
@@ -2067,5 +2089,6 @@ select.model-changed {
   .simple-panel-body,
   .simple-trace-strip {
     transition: none;
+    animation: none;
   }
 }

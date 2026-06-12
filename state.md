@@ -164,12 +164,12 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `main`
-- **Last tag:** `phase-c-complete-2026-05-28` (160 commits ahead)
+- **Last tag:** `phase-c-complete-2026-05-28` (161 commits ahead)
 
 ### Working tree
 
 ```
-## main...origin/main [ahead 20]
+## main...origin/main [ahead 21]
  M config/playground-seats.json
 M  src/channels/playground/public/style.css
 ?? .codegraph/
@@ -178,6 +178,7 @@ M  src/channels/playground/public/style.css
 ### Recent commits (last 15)
 
 ```
+faa2bed fix(playground): agent toggle reads as a layer landing, not a morph
 fb84887 fix(playground): base chat window matches the strip's footprint exactly
 a8fa515 fix(playground): model window is the base layer; agent card lays on top
 9af4a05 fix(playground): restore the card-over-strip layering hint
@@ -192,9 +193,8 @@ eb31efc feat(playground): demo model menu — friendly names + group-prefixed la
 2d27f9c fix(playground): preserve query string on the / -> /playground/ redirect
 de154a6 fix(playground): list the simple (My Agent) tab in the student-tabs checklist
 e459b49 docs(state): trace roll-up decision-log entry
-8a3a2f9 fix(playground): collapse panel bottom padding + rollup-btn focus affordance
 ```
 
 ### Last refresh
 
-2026-06-12T17:59:50Z
+2026-06-12T18:28:50Z
