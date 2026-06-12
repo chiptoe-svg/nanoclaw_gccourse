@@ -532,9 +532,10 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
   }
 
   // `/` → playground. The pre-v3 landing page is retired; the Home tab inside
-  // the playground is the new orientation surface.
+  // the playground is the new orientation surface. Preserve the query string —
+  // bypass-mode seat links (`/?seat=user_01`) rely on it surviving the hop.
   if (method === 'GET' && url.pathname === '/') {
-    res.writeHead(302, { location: '/playground/' });
+    res.writeHead(302, { location: `/playground/${url.search}` });
     res.end();
     return;
   }

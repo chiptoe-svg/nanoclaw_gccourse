@@ -171,13 +171,14 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ```
 ## main...origin/main [ahead 8]
  M config/playground-seats.json
+M  src/channels/playground/server.ts
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
-41c870c fix(playground): list the simple (My Agent) tab in the student-tabs checklist
+de154a6 fix(playground): list the simple (My Agent) tab in the student-tabs checklist
 e459b49 docs(state): trace roll-up decision-log entry
 8a3a2f9 fix(playground): collapse panel bottom padding + rollup-btn focus affordance
 c2aea77 feat(playground): trace roll-up CSS — peek strip, .trace-open collapse, side-stack height chain
@@ -196,4 +197,4 @@ d87aa3f feat(simple-tab): layer labels + .agent-off toggle class
 
 ### Last refresh
 
-2026-06-12T14:16:13Z
+2026-06-12T14:21:54Z
