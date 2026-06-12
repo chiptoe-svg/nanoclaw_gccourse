@@ -111,6 +111,7 @@ Pointers, not duplications. Read the relevant one when you're going deep.
 
 Append-only, newest first. One line per decision: *what + 1-line why*. Prune (move to archive) when older than ~6 months.
 
+- **2026-06-12** — **Simple tab trace roll-up: panel rolls up to reveal the live trace.** The My Agent tab's side panel now rolls up (chevron in the panel header, `aria-expanded`; or clicking the new `🔍 trace — underneath` peek strip) via a `.trace-open` class on the wrapper, collapsing the panel body + strip (max-height 0.3s + reduced-motion guard) to reveal the Chat tab's trace panel on the same plane as the chat — the **live `.trace-panel` that `mountChat` already builds is re-parented** into a new `.simple-trace-host` (`adoptTracePanel`, simple.js) instead of duplicating trace logic; the old `.simple-mode .trace-panel{display:none}` hide rule is gone. Enabler: chat.js trace-log lookups changed to **capture-once at wiring time** (wireChatForm/wireTraceClear aligned with wireSse) so a moved node keeps working — zero Chat-tab behavior change. Works in both agent ON/OFF modes (comparing bare-model vs agent traces is the pedagogical point); default rolled-down every load, no persistence, no drag-resize. Right column became `.simple-side-stack` (owns column sizing; panel lost `flex:1`/`min-width`/`align-self`). Live-verified 9-point matrix incl. same-plane geometry (host bottom == layout bottom), live agent + direct traces, Clear regression, internal trace-log scroll. Spec: docs/superpowers/specs/2026-06-12-simple-tab-trace-rollup-design.md.
 - **2026-06-12** — **Simple tab layering: agent above the model.** The My Agent tab now renders agent mode as an elevated green card (slim `🤖 <name>` header) with a model strip peeking beneath (`⚡ <model> — underneath`), panel fused at the same elevation; toggling the agent off animates the layer away (`.agent-off` class on the wrapper, pure CSS, ~300ms + reduced-motion guard) onto a flat gray dashed model card with a sunken panel. `setLayerLabels` rides the existing `applySelection`/`saveName`/toggle paths. Verification also fixed the simple tab's height chain (`#tab-simple:not([hidden])` flex guard, mirroring `#tab-chat`) so `#chat-log` scrolls inside the card instead of growing the page. No chat.js changes. Spec: docs/superpowers/specs/2026-06-11-simple-tab-layering-design.md.
 - **2026-06-11** — **"My Agent" simple beginner tab.** New `simple` playground tab: embedded real chat (`mountChat` unchanged, `.simple-mode` CSS hides advanced chrome) + side panel (Use-agent toggle driving the hidden mode buttons, editable agent name, template-curated skill checklist with ⓘ descriptions, persona, Save→restart) + left model dropdown fed by the default-participant template's `allowed_models`. Three new endpoints: `GET /api/simple-config`, `PUT /api/drafts/:folder/name` (writes `assistant_name` + group name), `POST /api/simple-restart` (exported `killGroupContainer`). Agent replies green/labeled, model-only replies blue-gray/dashed via CSS vars. Tab strip auto-hides when a student has exactly one visible tab. Instructor curates via the template slot + `tabsVisibleToStudents`. Spec: docs/superpowers/specs/2026-06-11-simple-my-agent-tab-design.md.
 - **2026-06-11** — **Cost governance (alert-only) + scenario-aware Status roster shipped + deployed + live-verified** (branch `cost-governance`, `ae94cff`..`9d0d490`; spec/plan `docs/superpowers/{specs,plans}/2026-06-11-cost-governance.*`). Gives the owner per-agent **monthly budgets with at-a-glance ok/approaching/over badges** (ALERT-ONLY — no blocking; the credential-proxy enforce path was the declined option). New `api/cost-budgets.ts`: `config/cost-budgets.json` `{defaultMonthlyUsd, warnFraction(0.8), perAgent:{[folder]:usd}}` (read/write the `class-controls.json` pattern; `!Array.isArray` guards on `perAgent` in BOTH read + POST-validate), pure `evaluateBudget(cost,budget,warn)` → `none`(null budget)/`ok`/`approaching`(≥budget·warn)/`over`(≥budget). **`GET /api/budgets`** (owner-gated) is **scenario-agnostic** — rows = `getAllAgentGroups()` ∩ `roleForFolder(folder)!==null` (members only → `_default_participant` template drops out), labeled via `roleProfile(role).label`/`memberName`, model/provider from `getContainerConfig`, `costUsdThisMonth` from `aggregateAgentUsage(g.id).thisMonth.costUsd`. **`POST /api/budgets`** validates (≥0/null, warnFraction (0,1], perAgent object-not-array) → `writeCostBudgets`. **Status tab became the fleet roster** (`public/tabs/status.js`): Role + Spend/Budget columns merged from `/api/budgets` (30s poll, separate from the 5s health poll to keep the DB cost-scan off the fast loop), badge, per-agent budget via `prompt()`-based Set button (survives the 5s re-render — an inline `<input>` got wiped), install-wide default$/warn% editor, **Add-a-participant relocated here from Home** (`POST /api/admin/students` → scenario-aware `provisionMember`). **Home cleanup** (`home.js`): removed the classroom `class-config` roster + add-student cards (superseded by the scenario roster — the seminar's `class-config` was empty so the old Home card showed "No student agents"); KEPT the per-user own-usage card (students' only cost view — they never see owner-only Status) + config cards. Boundaries: no enforcement, no notifications (UI badge only), calendar-month only, no charts. Final opus review APPROVED-WITH-NITS (lone nit moot — budgets⊆status). Host 1206 tests green, build clean. **Live-verified:** `GET /api/budgets?seat=owner_01` returned the seminar roster (Organizer + 3 Participants, costs computed, template excluded). Deployed via host restart of `com.nanoclaw-v2-581fefa4`; tab JS deploys on browser refresh. (Completes the 3 picked gap items: Live trace cards + Status/Health + Cost governance.)
@@ -163,20 +164,21 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `simple-tab-trace-rollup`
-- **Last tag:** `phase-c-complete-2026-05-28` (145 commits ahead)
+- **Last tag:** `phase-c-complete-2026-05-28` (146 commits ahead)
 
 ### Working tree
 
 ```
 ## simple-tab-trace-rollup
  M config/playground-seats.json
-M  src/channels/playground/public/style.css
+M  state.md
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+8a3a2f9 fix(playground): collapse panel bottom padding + rollup-btn focus affordance
 c2aea77 feat(playground): trace roll-up CSS — peek strip, .trace-open collapse, side-stack height chain
 7e28911 feat(playground): side-stack DOM + trace re-parent + roll-up wiring on simple tab
 0a7cce8 refactor(playground): capture chat trace element once at wiring time
@@ -191,9 +193,8 @@ d87aa3f feat(simple-tab): layer labels + .agent-off toggle class
 63c32d0 docs(spec): agent-above-model layering for the simple tab
 2262642 test(simple-tab): cover Save flow and model-change PUT in happy-dom
 c587b09 docs(state): decision-log entry for the My Agent simple tab
-f976147 fix(playground): harden simple-tab bubble labels and active-model preselect
 ```
 
 ### Last refresh
 
-2026-06-12T13:56:53Z
+2026-06-12T14:03:09Z
