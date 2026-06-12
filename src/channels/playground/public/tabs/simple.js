@@ -111,8 +111,9 @@ export function updateDirtyUi(wrapper, baseline) {
  * Flip between agent and direct-model chat by clicking the embedded chat's
  * hidden mode buttons (chat.js's setMode handles the rest). OFF also grays
  * the panel body — you can't edit an agent you're not talking to — and adds
- * .agent-off to the wrapper, which drives the layering CSS (same window
- * shape, recolored surfaces; see the layering block in style.css).
+ * .agent-off to the wrapper, which drives the layering CSS (the agent card
+ * lifts away, revealing the base model window whole; see the layering
+ * block in style.css).
  */
 export function applyUseAgentToggle(wrapper, useAgent) {
   const btn = wrapper.querySelector(useAgent ? '#mode-agent' : '#mode-direct');
@@ -367,20 +368,19 @@ export function setBubbleLabels(wrapper, agentName, modelLabel) {
 }
 
 /**
- * Layering chrome text — the slim header on the card and the strip beneath
- * it. The header names whichever layer you're talking to; the strip names
- * the one you're not (agent ON → the model underneath; .agent-off → the
- * agent standing by).
+ * Layering chrome text — the slim header on the card and the model strip
+ * peeking out beneath it (the strip is CSS-collapsed in .agent-off, when
+ * the base window stands alone). The header names whichever layer you're
+ * talking to (agent ON → the agent; .agent-off → the bare model).
  */
 export function setLayerLabels(wrapper, agentName, modelLabel) {
   const strip = wrapper.querySelector('.simple-model-strip');
   const header = wrapper.querySelector('.simple-card-header');
-  const off = wrapper.classList.contains('agent-off');
-  if (strip) {
-    strip.textContent = off ? `🤖 ${agentName} — standing by` : `⚡ ${modelLabel} — underneath`;
-  }
+  if (strip) strip.textContent = `⚡ ${modelLabel} — underneath`;
   if (header) {
-    header.textContent = off ? `⚡ ${modelLabel} — model only` : `🤖 ${agentName}`;
+    header.textContent = wrapper.classList.contains('agent-off')
+      ? `⚡ ${modelLabel} — model only`
+      : `🤖 ${agentName}`;
   }
 }
 

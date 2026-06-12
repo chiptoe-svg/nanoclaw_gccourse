@@ -1884,17 +1884,18 @@ select.model-changed {
   margin-bottom: 2px;
 }
 
-/* ── Layering: one window, two occupants ──
-   The left column is a fixed stack: card (slim header + chat) riding
-   above an inset strip — the strip's 10px margins + the card's drop
-   shadow are the "on top of a layer underneath" hint, mirroring the
-   panel/trace-strip pairing on the right. The geometry NEVER changes —
-   toggling the agent (applyUseAgentToggle adds .agent-off) only
-   recolors the surfaces and swaps the label text: ON = green agent
-   card over a grayed model strip; OFF = solid blue-family model card
-   (fully usable, not disabled) with the agent standing by in the strip.
-   Accent hexes are the deliberate bubble accent families (see the
-   bubble rules above), not tokens. */
+/* ── Layering: the model chat window is the base; the agent lays on top ──
+   OFF is the self-standing state: one solid blue-family window (fully
+   usable, not disabled) filling the whole stack. Toggling the agent ON
+   (applyUseAgentToggle removes .agent-off) lays the green agent card on
+   top of it: the card covers all but the base window's bottom sliver,
+   which peeks out as the inset model strip ("⚡ model — underneath",
+   mirroring the panel/trace-strip pairing on the right). The base
+   window's bottom edge never moves: in OFF the card extends down by the
+   strip's exact footprint (padding-bottom) while the strip collapses —
+   the two cancel, so the input row stays pinned too. Accent hexes are
+   the deliberate bubble accent families (see the bubble rules above),
+   not tokens. */
 .simple-stack {
   flex: 2.2;
   min-width: 0;
@@ -1911,7 +1912,7 @@ select.model-changed {
   background: #fdfffe;
   box-shadow: 0 3px 10px rgba(46, 125, 70, 0.18);
   overflow: hidden; /* clean rounded corners; chat modals live in #modal-root, so nothing is clipped */
-  transition: border-color 0.3s ease, box-shadow 0.3s ease, background-color 0.3s ease;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease, background-color 0.3s ease, padding-bottom 0.3s ease;
 }
 .simple-card-header {
   font-size: 11px;
@@ -1931,6 +1932,9 @@ select.model-changed {
   border-radius: 0 0 8px 8px;
   margin: 0 10px; /* narrower than the card — reads as the layer underneath (mirrors .simple-trace-strip) */
   padding: 3px 10px;
+  overflow: hidden;
+  max-height: 2em;
+  transition: max-height 0.3s ease, padding 0.3s ease, opacity 0.3s ease;
 }
 
 /* Panel fused to the agent card: same elevation, same green framing. */
@@ -1941,18 +1945,27 @@ select.model-changed {
   transition: border-color 0.3s ease, box-shadow 0.3s ease, background-color 0.3s ease, padding-bottom 0.3s ease;
 }
 
-/* OFF — same window, different occupant. The frame keeps its exact shape;
-   only the colors change hands: solid blue-family border + white surface
-   (you're talking straight to the model — fully usable, NOT disabled), and
-   setLayerLabels flips the strip to show the agent standing by. */
+/* OFF — the agent card lifts away, revealing the base window whole: the
+   strip collapses while the card extends down by the strip's footprint, so
+   the window's bottom edge (and the input row) stay put. Solid blue-family
+   border + white surface — you're talking straight to the model, fully
+   usable, NOT disabled. */
 .simple-mode.agent-off .simple-agent-card {
   border-color: #aab4d4;
   background: #fdfdff;
   box-shadow: 0 3px 10px rgba(74, 90, 150, 0.16);
+  padding-bottom: 22px; /* = .simple-model-strip rendered height (max-height: 2em at 11px) */
 }
 .simple-mode.agent-off .simple-card-header {
   color: #4a5a96;
   border-bottom-color: #aab4d4;
+}
+.simple-mode.agent-off .simple-model-strip {
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  opacity: 0;
+  border-width: 0;
 }
 .simple-mode.agent-off .simple-panel {
   border-color: var(--border);

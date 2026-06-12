@@ -164,20 +164,23 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `main`
-- **Last tag:** `phase-c-complete-2026-05-28` (157 commits ahead)
+- **Last tag:** `phase-c-complete-2026-05-28` (158 commits ahead)
 
 ### Working tree
 
 ```
-## main...origin/main [ahead 17]
+## main...origin/main [ahead 18]
  M config/playground-seats.json
 M  src/channels/playground/public/style.css
+M  src/channels/playground/public/tabs/simple.js
+M  src/channels/playground/public/tabs/simple.test.ts
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+9af4a05 fix(playground): restore the card-over-strip layering hint
 27536c3 fix(playground): use-agent toggle keeps the window's exact shape
 58a3687 feat(playground): real skill tooltips + clear-chat button
 52df527 feat(playground): unsaved-changes indicator on the simple tab
@@ -192,9 +195,8 @@ e459b49 docs(state): trace roll-up decision-log entry
 8a3a2f9 fix(playground): collapse panel bottom padding + rollup-btn focus affordance
 c2aea77 feat(playground): trace roll-up CSS — peek strip, .trace-open collapse, side-stack height chain
 7e28911 feat(playground): side-stack DOM + trace re-parent + roll-up wiring on simple tab
-0a7cce8 refactor(playground): capture chat trace element once at wiring time
 ```
 
 ### Last refresh
 
-2026-06-12T17:39:38Z
+2026-06-12T17:49:52Z
