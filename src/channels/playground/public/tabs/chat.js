@@ -399,7 +399,7 @@ function wireChatForm(el, folder) {
     modeAgentBtn.setAttribute('aria-selected', mode === 'agent');
     modeDirectBtn.classList.toggle('active', mode === 'direct');
     modeDirectBtn.setAttribute('aria-selected', mode === 'direct');
-    input.placeholder = mode === 'agent' ? 'ask your agent…' : 'direct LLM call — no agent, no skills, no tools';
+    input.placeholder = mode === 'agent' ? 'ask your agent…' : 'Ask anything';
     // Each mode keeps its own transcript: entries are tagged .from-direct at
     // creation, and these view classes drive the CSS filter (style.css) that
     // shows only the active mode's messages and trace turns. Classes go on

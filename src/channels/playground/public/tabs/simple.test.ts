@@ -432,7 +432,7 @@ describe('setLayerLabels / applyUseAgentToggle layering', () => {
     const wrapper = layeredWrapper();
     wrapper.classList.add('agent-off');
     setLayerLabels(wrapper, 'JaneBot', 'GPT-5.5');
-    expect(wrapper.querySelector('.simple-card-header')!.textContent).toBe('⚡ GPT-5.5 — model only');
+    expect(wrapper.querySelector('.simple-card-header')!.textContent).toBe('⚡ GPT-5.5');
     // The strip is CSS-collapsed in OFF mode; its text always names the model.
     expect(wrapper.querySelector('.simple-model-strip')!.textContent).toBe('⚡ GPT-5.5 — underneath');
   });
@@ -441,7 +441,7 @@ describe('setLayerLabels / applyUseAgentToggle layering', () => {
     const wrapper = layeredWrapper();
     applyUseAgentToggle(wrapper, false);
     expect(wrapper.classList.contains('agent-off')).toBe(true);
-    expect(wrapper.querySelector('.simple-card-header')!.textContent).toBe('⚡ GPT-5.5 — model only');
+    expect(wrapper.querySelector('.simple-card-header')!.textContent).toBe('⚡ GPT-5.5');
 
     applyUseAgentToggle(wrapper, true);
     expect(wrapper.classList.contains('agent-off')).toBe(false);

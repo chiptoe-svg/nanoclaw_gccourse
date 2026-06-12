@@ -379,7 +379,7 @@ export function setLayerLabels(wrapper, agentName, modelLabel) {
   if (strip) strip.textContent = `⚡ ${modelLabel} — underneath`;
   if (header) {
     header.textContent = wrapper.classList.contains('agent-off')
-      ? `⚡ ${modelLabel} — model only`
+      ? `⚡ ${modelLabel}`
       : `🤖 ${agentName}`;
   }
 }

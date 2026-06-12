@@ -164,20 +164,23 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `main`
-- **Last tag:** `phase-c-complete-2026-05-28` (164 commits ahead)
+- **Last tag:** `phase-c-complete-2026-05-28` (165 commits ahead)
 
 ### Working tree
 
 ```
-## main...origin/main [ahead 24]
+## main...origin/main [ahead 25]
  M config/playground-seats.json
-M  src/channels/playground/public/style.css
+M  src/channels/playground/public/tabs/chat.js
+M  src/channels/playground/public/tabs/simple.js
+M  src/channels/playground/public/tabs/simple.test.ts
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+f1ba19f feat(playground): base model window matches the trace window's look
 8e42bbb fix(playground): base-layer windows sit flat — no drop shadow
 3e57b64 feat(playground): trace window gets the base-layer treatment + bigger rollup glyph
 c3f4008 feat(playground): fixed-height simple panel matching the chat card
@@ -192,9 +195,8 @@ ca265ca feat(playground): weather skill + 2-col shortlist + skill source viewer
 eb31efc feat(playground): demo model menu — friendly names + group-prefixed labels
 4af228a fix(playground): agent-off reveals the model layer instead of restyling in place
 3e59b6d feat(playground): split agent and model-only chats into separate transcripts
-661fa4c fix(playground): keep chat card fixed when simple-tab agent is toggled
 ```
 
 ### Last refresh
 
-2026-06-12T18:45:44Z
+2026-06-12T19:10:51Z
