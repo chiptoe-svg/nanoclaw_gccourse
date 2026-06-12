@@ -1658,9 +1658,10 @@ select.model-changed {
 /* ── "My Agent" simple tab ── */
 
 /* Hide the chat tab's advanced chrome — the side panel drives the hidden
-   controls programmatically (see tabs/simple.js header comment). */
+   controls programmatically (see tabs/simple.js header comment). The trace
+   panel is NOT hidden: it is re-parented into .simple-trace-host
+   (adoptTracePanel) and shown/hidden by the roll-up rules below. */
 .simple-mode .chat-toolbar { display: none; }
-.simple-mode .trace-panel { display: none; }
 
 /* Constrain the height chain so the chat column flexes within the agent
    card and #chat-log scrolls internally (same :not([hidden]) guard as
@@ -1705,13 +1706,17 @@ select.model-changed {
   display: flex;
   flex-direction: column;
 }
-.simple-panel {
+.simple-side-stack {
   flex: 1;
   min-width: 220px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0; /* lets .simple-trace-host shrink/scroll within .simple-layout */
+}
+.simple-panel {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 12px;
-  align-self: flex-start;
 }
 
 .simple-panel-header {
@@ -1898,11 +1903,76 @@ select.model-changed {
   box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.08);
 }
 
+/* ── Trace roll-up: the panel rides above the trace ──
+   Mirrors the left column's layering metaphor on the right: the panel is
+   the agent's surface; a peek strip teaches that the trace machinery is
+   underneath. .trace-open on .simple-mode (applyTraceRollup) collapses the
+   panel body + strip and expands .simple-trace-host, which holds the chat
+   tab's re-parented .trace-panel (adoptTracePanel — same live node, so the
+   existing .trace-* rules apply untouched). Works in both agent ON and OFF
+   modes; the strip stays neutral gray (no .agent-off collapse — unlike the
+   model strip, the trace exists in both modes). */
+.simple-panel-body {
+  /* Cap must comfortably exceed the tallest real panel (skills list +
+     persona textarea) or the collapse animation jumps. */
+  max-height: 600px;
+  overflow: hidden;
+  transition: max-height 0.3s ease;
+}
+.simple-rollup-btn {
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--text-faint);
+  font-size: 13px;
+  padding: 0 2px;
+}
+.simple-trace-strip {
+  font-size: 11px;
+  color: var(--text-faint);
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-top: none;
+  border-radius: 0 0 8px 8px;
+  margin: 0 10px; /* narrower than the panel — reads as the layer underneath */
+  padding: 3px 10px;
+  overflow: hidden;
+  max-height: 2em;
+  cursor: pointer;
+  transition: max-height 0.3s ease, padding 0.3s ease, opacity 0.3s ease;
+}
+.simple-trace-host {
+  display: none;
+}
+.simple-mode.trace-open .simple-panel-body {
+  max-height: 0;
+}
+.simple-mode.trace-open .simple-trace-strip {
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  opacity: 0;
+  border-width: 0;
+}
+.simple-mode.trace-open .simple-trace-host {
+  display: flex; /* display swap doesn't animate — the body/strip collapse carries the motion */
+  flex-direction: column;
+  flex: 1;
+  min-height: 0; /* height chain: host → .trace-panel (flex:1) → .trace-log (overflow-y: auto) */
+  margin-top: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden; /* clean rounded corners over the square trace panel */
+  background: #fafafa; /* matches .trace-panel so the rounded frame reads as one surface */
+}
+
 @media (prefers-reduced-motion: reduce) {
   .simple-agent-card,
   .simple-card-header,
   .simple-model-strip,
-  .simple-mode .simple-panel {
+  .simple-mode .simple-panel,
+  .simple-panel-body,
+  .simple-trace-strip {
     transition: none;
   }
 }

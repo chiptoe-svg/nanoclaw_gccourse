@@ -163,21 +163,21 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `simple-tab-trace-rollup`
-- **Last tag:** `phase-c-complete-2026-05-28` (143 commits ahead)
+- **Last tag:** `phase-c-complete-2026-05-28` (144 commits ahead)
 
 ### Working tree
 
 ```
 ## simple-tab-trace-rollup
  M config/playground-seats.json
-M  src/channels/playground/public/tabs/simple.js
-M  src/channels/playground/public/tabs/simple.test.ts
+M  src/channels/playground/public/style.css
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+7e28911 feat(playground): side-stack DOM + trace re-parent + roll-up wiring on simple tab
 0a7cce8 refactor(playground): capture chat trace element once at wiring time
 b898069 docs(plan): simple-tab trace roll-up implementation plan
 5621af3 docs(spec): simple-tab trace roll-up design
@@ -192,9 +192,8 @@ d87aa3f feat(simple-tab): layer labels + .agent-off toggle class
 c587b09 docs(state): decision-log entry for the My Agent simple tab
 f976147 fix(playground): harden simple-tab bubble labels and active-model preselect
 bd49bb2 feat(playground): simple tab model dropdown, hidden-select sync, labeled reply bubbles
-c8e178b fix(playground): guard simple-tab Save against double-click and lost name-save failures
 ```
 
 ### Last refresh
 
-2026-06-12T13:42:38Z
+2026-06-12T13:49:21Z
