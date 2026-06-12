@@ -373,6 +373,10 @@ function wireChatForm(el, folder) {
   const form = el.querySelector('#chat-form');
   const input = el.querySelector('#chat-input');
   const log = el.querySelector('#chat-log');
+  // Captured once at wiring time, like wireSse does. The simple tab
+  // re-parents the trace panel OUT of this mount root (adoptTracePanel,
+  // simple.js), so an event-time el.querySelector would return null.
+  const trace = el.querySelector('#trace-log');
 
   // Chat mode toggle. Agent = existing playground flow (POST messages → SSE
   // back). Direct = POST /api/direct-chat with conversation history,
@@ -480,7 +484,6 @@ function wireChatForm(el, folder) {
       directHistory.push({ role: 'user', content: text });
       const provSel = el.querySelector('#provider-sel');
       const modelSel = el.querySelector('#model-sel');
-      const trace = el.querySelector('#trace-log');
       startNewTurn(trace);
       const traceLi = appendDirectTraceCall(trace, provSel.value, modelSel.value, directHistory.length);
       // Client-side timing — direct-chat.ts doesn't return latencyMs (it's a
@@ -522,7 +525,7 @@ function wireChatForm(el, folder) {
     }
 
     // Agent mode — start a new turn group in the trace pane.
-    startNewTurn(el.querySelector('#trace-log'));
+    startNewTurn(trace);
 
     // Read pending files to base64. Done at send time, not at attach time,
     // to avoid double-buffering for files the user might immediately remove.
@@ -594,8 +597,9 @@ function appendDirectReply(log, data) {
 }
 
 function wireTraceClear(el) {
+  // Capture-once at wiring time — see the note in wireChatForm.
+  const trace = el.querySelector('#trace-log');
   el.querySelector('#trace-clear-btn').addEventListener('click', () => {
-    const trace = el.querySelector('#trace-log');
     trace.innerHTML = '<li class="trace-empty">Trace cleared.</li>';
     trace._currentTurnUl = null;
     trace._piState = null;

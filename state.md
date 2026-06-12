@@ -162,21 +162,22 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 
 ### Branch
 
-- **Current:** `main`
-- **Last tag:** `phase-c-complete-2026-05-28` (141 commits ahead)
+- **Current:** `simple-tab-trace-rollup`
+- **Last tag:** `phase-c-complete-2026-05-28` (142 commits ahead)
 
 ### Working tree
 
 ```
-## main...origin/main [ahead 1]
+## simple-tab-trace-rollup
  M config/playground-seats.json
-A  docs/superpowers/plans/2026-06-12-simple-tab-trace-rollup.md
+M  src/channels/playground/public/tabs/chat.js
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+b898069 docs(plan): simple-tab trace roll-up implementation plan
 5621af3 docs(spec): simple-tab trace roll-up design
 01f6075 docs(state): decision-log entry for simple-tab layering
 8948ed8 fix(simple-tab): constrain height chain so chat scrolls inside the agent card
@@ -191,9 +192,8 @@ f976147 fix(playground): harden simple-tab bubble labels and active-model presel
 bd49bb2 feat(playground): simple tab model dropdown, hidden-select sync, labeled reply bubbles
 c8e178b fix(playground): guard simple-tab Save against double-click and lost name-save failures
 9de9da9 feat(playground): simple tab side panel — skills checklist, persona, toggle, save
-54bacb6 fix(playground): hide chat toolbar/trace in simple mode; use design tokens
 ```
 
 ### Last refresh
 
-2026-06-12T13:33:01Z
+2026-06-12T13:37:45Z
