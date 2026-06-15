@@ -385,12 +385,13 @@ export class PiProvider implements AgentProvider {
               }
             : {}),
           tools: [
-            // fetch_url / web_search ride the agent-browser skill (shown as
-            // "Web Search" in the playground): unchecked means the agent has
-            // no web tools at all, so the checkboxes mean what they say.
-            ...(loadedSkills.skills.some((s) => s.name === 'agent-browser')
-              ? [createFetchTool(), createWebSearchTool()]
-              : []),
+            // fetch_url / web_search are part of the harness's built-in
+            // toolset (surfaced as "Web Use" under "Built in" on the simple
+            // tab) — always available, like bash. Skills layer instructions
+            // on top; they don't gate these base web tools. (Gating them on
+            // agent-browser was illusory anyway: bash can curl regardless.)
+            createFetchTool(),
+            createWebSearchTool(),
             ...createCodingTools(input.cwd),
             ...(bridge.tools as unknown[]),
           ] as ConstructorParameters<typeof AgentHarness>[0]['tools'],

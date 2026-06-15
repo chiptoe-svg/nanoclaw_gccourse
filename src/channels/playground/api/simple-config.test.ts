@@ -212,7 +212,7 @@ describe('humanizeSkillTitle', () => {
 
   it('curated overrides win over humanization', async () => {
     const { humanizeSkillTitle } = await import('./simple-config.js');
-    expect(humanizeSkillTitle('agent-browser')).toBe('Web Search');
+    expect(humanizeSkillTitle('agent-browser')).toBe('Web browser');
     expect(humanizeSkillTitle('pdf-reader')).toBe('PDF-reader');
     expect(humanizeSkillTitle('pdf')).toBe('PDF-read/write');
     expect(humanizeSkillTitle('rag-pdf-ingest')).toBe('PDF-Rag ingest');

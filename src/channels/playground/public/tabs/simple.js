@@ -193,6 +193,24 @@ export function mountSimple(el) {
             </div>
             <div class="simple-panel-body">
               <div class="simple-section-label">Skills <span class="simple-hint">(click ⓘ to learn)</span></div>
+              <div class="simple-skill-row simple-builtin-row">
+                <label title="Comes with the agent — always on, can't be turned off">
+                  <input type="checkbox" checked disabled>
+                  Built in <span class="simple-hint">(always on)</span>
+                </label>
+                <button type="button" class="simple-info-btn simple-builtin-info"
+                        aria-label="About built-in tools">ⓘ</button>
+                <div class="simple-skill-desc" hidden>
+                  Every agent has these from the start — no skill needed:
+                  <ul>
+                    <li>🖥️ <strong>Run commands</strong> (bash) — run scripts, install tools, call APIs</li>
+                    <li>📄 <strong>Read &amp; write files</strong> in its workspace</li>
+                    <li>🔎 <strong>Search files</strong> (grep / find)</li>
+                    <li>🌐 <strong>Web Use</strong> — fetch &amp; read web pages, and search the web</li>
+                  </ul>
+                  Skills below add <em>instructions</em> on top of these.
+                </div>
+              </div>
               <div id="simple-skills"></div>
               <div class="simple-section-label">Personality</div>
               <textarea id="simple-persona" rows="6"></textarea>
@@ -211,6 +229,16 @@ export function mountSimple(el) {
   mountChat(el.querySelector('.simple-chat-host'));
   adoptTracePanel(wrapper); // after mountChat: handlers wired, references captured
   wireTraceRollup(wrapper);
+
+  // "Built in" row is static (not a real skill) — wire its ⓘ to expand the
+  // tool list. Skill rows wire their own ⓘ in renderSkillRows.
+  const builtinInfo = wrapper.querySelector('.simple-builtin-info');
+  if (builtinInfo) {
+    const desc = builtinInfo.parentElement.querySelector('.simple-skill-desc');
+    builtinInfo.addEventListener('click', () => {
+      desc.hidden = !desc.hidden;
+    });
+  }
   // The chat toolbar (with its Clear button) is display:none on this tab —
   // the topbar button delegates to the same wired handler.
   el.querySelector('#simple-clear-chat').addEventListener('click', () => {

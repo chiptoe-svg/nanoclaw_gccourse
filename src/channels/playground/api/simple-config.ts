@@ -50,7 +50,9 @@ export interface SimpleConfigResponse {
  * the beginner panel (instructor-curated; everything else is humanized).
  */
 const SKILL_TITLE_OVERRIDES: Record<string, string> = {
-  'agent-browser': 'Web Search',
+  // Full interactive browser (open/click/fill/screenshot) — distinct from the
+  // built-in fetch_url/web_search ("Web Use"), which every agent already has.
+  'agent-browser': 'Web browser',
   'pdf-reader': 'PDF-reader',
   pdf: 'PDF-read/write',
   'rag-pdf-ingest': 'PDF-Rag ingest',

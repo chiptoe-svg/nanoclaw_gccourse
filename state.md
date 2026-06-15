@@ -164,20 +164,25 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `main`
-- **Last tag:** `phase-c-complete-2026-05-28` (169 commits ahead)
+- **Last tag:** `phase-c-complete-2026-05-28` (170 commits ahead)
 
 ### Working tree
 
 ```
-## main...origin/main [ahead 29]
+## main...origin/main [ahead 30]
  M config/playground-seats.json
-M  container/agent-runner/src/index.ts
+M  container/agent-runner/src/providers/pi.ts
+M  src/channels/playground/api/simple-config.test.ts
+M  src/channels/playground/api/simple-config.ts
+M  src/channels/playground/public/style.css
+M  src/channels/playground/public/tabs/simple.js
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+c68dbf9 fix(agent-runner): compose per-group persona into the system prompt
 b17dbc3 fix(simple): don't auto-roll the trace panel on agent toggle
 3f30ff0 feat(simple): switch toggle, FirstName+Bot default name, trace-first default
 cd10ab6 feat(pi): gate skills and web tools on the enabled-skill set
@@ -192,9 +197,8 @@ a8fa515 fix(playground): model window is the base layer; agent card lays on top
 9af4a05 fix(playground): restore the card-over-strip layering hint
 27536c3 fix(playground): use-agent toggle keeps the window's exact shape
 58a3687 feat(playground): real skill tooltips + clear-chat button
-52df527 feat(playground): unsaved-changes indicator on the simple tab
 ```
 
 ### Last refresh
 
-2026-06-15T16:00:00Z
+2026-06-15T16:09:30Z

@@ -1851,6 +1851,29 @@ select.model-changed {
   color: #4a5a96;
 }
 
+/* "Built in" row — always-on harness tools. Sits above the toggleable skill
+   grid, full width, slightly muted so it reads as fixed/non-editable. */
+.simple-builtin-row {
+  white-space: normal;
+  padding-bottom: 6px;
+  margin-bottom: 4px;
+  border-bottom: 1px dashed var(--border);
+}
+.simple-builtin-row > label {
+  color: #667;
+  font-weight: 600;
+}
+.simple-builtin-row input[type="checkbox"] {
+  accent-color: #2e7d46; /* match the agent toggle's green */
+}
+.simple-builtin-row .simple-skill-desc ul {
+  margin: 6px 0 4px;
+  padding-left: 18px;
+}
+.simple-builtin-row .simple-skill-desc li {
+  margin: 2px 0;
+}
+
 /* Unsaved-changes ("dirty") state — classes set by updateDirtyUi (simple.js). */
 .simple-skill-row.simple-pending {
   background: #fff3d6;
