@@ -164,20 +164,21 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `main`
-- **Last tag:** `phase-c-complete-2026-05-28` (168 commits ahead)
+- **Last tag:** `phase-c-complete-2026-05-28` (169 commits ahead)
 
 ### Working tree
 
 ```
-## main...origin/main [ahead 28]
+## main...origin/main [ahead 29]
  M config/playground-seats.json
-M  src/channels/playground/public/tabs/simple.js
+M  container/agent-runner/src/index.ts
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+b17dbc3 fix(simple): don't auto-roll the trace panel on agent toggle
 3f30ff0 feat(simple): switch toggle, FirstName+Bot default name, trace-first default
 cd10ab6 feat(pi): gate skills and web tools on the enabled-skill set
 3c26bf4 feat(playground): friendlier model-only wording
@@ -192,9 +193,8 @@ a8fa515 fix(playground): model window is the base layer; agent card lays on top
 27536c3 fix(playground): use-agent toggle keeps the window's exact shape
 58a3687 feat(playground): real skill tooltips + clear-chat button
 52df527 feat(playground): unsaved-changes indicator on the simple tab
-ca265ca feat(playground): weather skill + 2-col shortlist + skill source viewer
 ```
 
 ### Last refresh
 
-2026-06-15T15:35:09Z
+2026-06-15T16:00:00Z
