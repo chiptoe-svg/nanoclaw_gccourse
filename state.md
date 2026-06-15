@@ -164,14 +164,13 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `main`
-- **Last tag:** `phase-c-complete-2026-05-28` (167 commits ahead)
+- **Last tag:** `phase-c-complete-2026-05-28` (168 commits ahead)
 
 ### Working tree
 
 ```
-## main...origin/main [ahead 27]
+## main...origin/main [ahead 28]
  M config/playground-seats.json
-M  src/channels/playground/public/style.css
 M  src/channels/playground/public/tabs/simple.js
 ?? .codegraph/
 ```
@@ -179,6 +178,7 @@ M  src/channels/playground/public/tabs/simple.js
 ### Recent commits (last 15)
 
 ```
+3f30ff0 feat(simple): switch toggle, FirstName+Bot default name, trace-first default
 cd10ab6 feat(pi): gate skills and web tools on the enabled-skill set
 3c26bf4 feat(playground): friendlier model-only wording
 f1ba19f feat(playground): base model window matches the trace window's look
@@ -193,9 +193,8 @@ a8fa515 fix(playground): model window is the base layer; agent card lays on top
 58a3687 feat(playground): real skill tooltips + clear-chat button
 52df527 feat(playground): unsaved-changes indicator on the simple tab
 ca265ca feat(playground): weather skill + 2-col shortlist + skill source viewer
-eb31efc feat(playground): demo model menu — friendly names + group-prefixed labels
 ```
 
 ### Last refresh
 
-2026-06-15T15:32:52Z
+2026-06-15T15:35:09Z

@@ -235,18 +235,15 @@ export function initPanel(wrapper, folder) {
   // What the agent actually has — refreshed on load and on every save.
   const baseline = { skills: new Set(), persona: '' };
 
-  toggleEl.addEventListener('change', () => {
-    applyUseAgentToggle(wrapper, toggleEl.checked);
-    // ON → unroll the panel so skills/personality are editable; OFF → roll it
-    // back up so the live trace is what shows underneath.
-    applyTraceRollup(wrapper, !toggleEl.checked);
-  });
+  // The agent toggle only flips agent/direct mode. Trace roll-up is left to
+  // the user — the panel stays however they last set it (chevron / strip).
+  toggleEl.addEventListener('change', () => applyUseAgentToggle(wrapper, toggleEl.checked));
   skillsHost.addEventListener('change', () => updateDirtyUi(wrapper, baseline));
   personaEl.addEventListener('input', () => updateDirtyUi(wrapper, baseline));
 
   // Default page state: start by talking to the raw model (agent OFF), with
-  // the panel rolled up so the trace is visible underneath. Flipping the
-  // toggle on (handler above) unrolls the panel to reveal the agent's setup.
+  // the panel rolled up so the trace is visible underneath. The panel stays
+  // rolled up until the user opens it (chevron / strip).
   toggleEl.checked = false;
   applyUseAgentToggle(wrapper, false);
   applyTraceRollup(wrapper, true);
