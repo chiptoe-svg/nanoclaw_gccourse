@@ -60,6 +60,9 @@ const SKILL_TITLE_OVERRIDES: Record<string, string> = {
   'pdf-reader': 'PDF-reader',
   pdf: 'PDF-read/write',
   'rag-pdf-ingest': 'PDF-Rag ingest',
+  // Image skills: vision = look at the picture; metadata = file facts.
+  'image-vision': 'Image vision',
+  'image-metadata': 'Image info',
 };
 
 /** `image-gen` → "Image gen". Kebab/snake → spaces, first letter capitalized. */

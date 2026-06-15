@@ -164,20 +164,26 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `main`
-- **Last tag:** `phase-c-complete-2026-05-28` (175 commits ahead)
+- **Last tag:** `phase-c-complete-2026-05-28` (176 commits ahead)
 
 ### Working tree
 
 ```
-## main...origin/main [ahead 35]
+## main...origin/main [ahead 36]
  M config/playground-seats.json
-M  container/agent-runner/src/formatter.ts
+A  container/skills/image-metadata/SKILL.md
+A  container/skills/image-metadata/scripts/metadata.py
+A  container/skills/image-vision/SKILL.md
+A  container/skills/image-vision/scripts/describe.py
+A  plans/image-skills.md
+M  src/channels/playground/api/simple-config.ts
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+1c76d15 fix(agent-runner): surface uploaded image paths to the agent
 62d1def feat(simple): "Start over" resets agent memory + trace, not just the window
 81b4af8 fix(agent-runner): strip stray message tags from folded trailing text
 6b79f3e fix(agent-runner): deliver trailing text models leave outside <message>
@@ -192,9 +198,8 @@ f1ba19f feat(playground): base model window matches the trace window's look
 8e42bbb fix(playground): base-layer windows sit flat — no drop shadow
 3e57b64 feat(playground): trace window gets the base-layer treatment + bigger rollup glyph
 c3f4008 feat(playground): fixed-height simple panel matching the chat card
-faa2bed fix(playground): agent toggle reads as a layer landing, not a morph
 ```
 
 ### Last refresh
 
-2026-06-15T21:13:01Z
+2026-06-15T21:20:52Z
