@@ -164,24 +164,24 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `main`
-- **Last tag:** `phase-c-complete-2026-05-28` (170 commits ahead)
+- **Last tag:** `phase-c-complete-2026-05-28` (171 commits ahead)
 
 ### Working tree
 
 ```
-## main...origin/main [ahead 30]
+## main...origin/main [ahead 31]
  M config/playground-seats.json
-M  container/agent-runner/src/providers/pi.ts
-M  src/channels/playground/api/simple-config.test.ts
-M  src/channels/playground/api/simple-config.ts
-M  src/channels/playground/public/style.css
-M  src/channels/playground/public/tabs/simple.js
+M  container/agent-runner/src/db/connection.ts
+M  container/agent-runner/src/db/messages-in.ts
+M  container/agent-runner/src/db/messages-out.ts
+M  container/agent-runner/src/db/session-state.ts
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+3ab3567 feat(simple): "Built in" tools row; web tools always-on; relabel agent-browser
 c68dbf9 fix(agent-runner): compose per-group persona into the system prompt
 b17dbc3 fix(simple): don't auto-roll the trace panel on agent toggle
 3f30ff0 feat(simple): switch toggle, FirstName+Bot default name, trace-first default
@@ -196,9 +196,8 @@ fb84887 fix(playground): base chat window matches the strip's footprint exactly
 a8fa515 fix(playground): model window is the base layer; agent card lays on top
 9af4a05 fix(playground): restore the card-over-strip layering hint
 27536c3 fix(playground): use-agent toggle keeps the window's exact shape
-58a3687 feat(playground): real skill tooltips + clear-chat button
 ```
 
 ### Last refresh
 
-2026-06-15T16:09:30Z
+2026-06-15T16:33:13Z
