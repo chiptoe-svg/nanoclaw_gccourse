@@ -170,7 +170,7 @@ export function mountSimple(el) {
       <div class="simple-topbar">
         <label>model <select id="simple-model-sel"></select></label>
         <button type="button" id="simple-clear-chat" class="btn btn-ghost"
-                title="Clear the chat window — your agent still remembers the conversation">clear chat</button>
+                title="Clear this chat and reset your agent's memory — a fresh start">start over</button>
       </div>
       <div class="simple-layout">
         <div class="simple-stack">
@@ -239,10 +239,21 @@ export function mountSimple(el) {
       desc.hidden = !desc.hidden;
     });
   }
-  // The chat toolbar (with its Clear button) is display:none on this tab —
-  // the topbar button delegates to the same wired handler.
+  // "Start over" — unlike the advanced tab's window-only Clear, the simple
+  // (teaching) tab resets everything: the chat window, the trace, AND the
+  // agent's conversation memory. A fresh slate matches the beginner mental
+  // model and stops a poisoned conversation from sticking (see /api/simple-reset).
   el.querySelector('#simple-clear-chat').addEventListener('click', () => {
-    el.querySelector('#chat-clear')?.click();
+    el.querySelector('#chat-clear')?.click(); // window watermark
+    el.querySelector('#trace-clear-btn')?.click(); // trace panel
+    fetch('/api/simple-reset', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ folder }),
+    }).catch(() => {
+      /* best-effort — window/trace are cleared regardless */
+    });
   });
 
   initPanel(wrapper, folder);

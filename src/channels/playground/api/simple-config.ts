@@ -21,6 +21,10 @@ import { readSlotConfig } from '../../../default-participant-slot.js';
 import { getModelCatalog } from '../../../model-catalog.js';
 import type { ApiResult } from './me.js';
 import { killGroupContainer } from './agent-library-handlers.js';
+import { getActiveSessions } from '../../../db/sessions.js';
+import { isContainerRunning, killContainer } from '../../../container-runner.js';
+import { openOutboundDbRw } from '../../../session-manager.js';
+import { log } from '../../../log.js';
 
 const SKILLS_DIR = path.join(CONTAINER_DIR, 'skills');
 const LIBRARY_CACHE_DIR = path.join(DATA_DIR, 'playground', 'library-cache');
@@ -221,6 +225,51 @@ export function handleSimpleRestart(draftFolder: string): ApiResult<{ ok: true }
     const group = getAgentGroupByFolder(draftFolder);
     if (!group) return { status: 404, body: { error: `Agent group not found: ${draftFolder}` } };
     killGroupContainer(draftFolder, 'simple tab save');
+    return { status: 200, body: { ok: true } };
+  } catch (err) {
+    return { status: 500, body: { error: (err as Error).message } };
+  }
+}
+
+/**
+ * POST /api/simple-reset — the simple tab's "Start over". Wipes the agent's
+ * conversation memory (the per-provider `continuation:*` rows in
+ * session_state) so the next message begins a fresh thread. The window/trace
+ * are cleared client-side; this is the server half that makes the agent
+ * actually forget.
+ *
+ * The continuation lives in the container-owned outbound.db, so we must be
+ * the sole writer when we delete: clear AFTER the container's process closes
+ * (killContainer's onExit) to avoid racing a cross-mount write. If no
+ * container is running, clear immediately.
+ */
+export function handleSimpleReset(draftFolder: string): ApiResult<{ ok: true }> {
+  try {
+    const group = getAgentGroupByFolder(draftFolder);
+    if (!group) return { status: 404, body: { error: `Agent group not found: ${draftFolder}` } };
+
+    const clearContinuation = (sessionId: string): void => {
+      try {
+        const db = openOutboundDbRw(group.id, sessionId);
+        try {
+          db.prepare("DELETE FROM session_state WHERE key LIKE 'continuation:%'").run();
+        } finally {
+          db.close();
+        }
+      } catch (err) {
+        // Missing table / unreadable DB → nothing to reset. Log, don't fail.
+        log.warn('simple-reset: could not clear continuation', { sessionId, err: (err as Error).message });
+      }
+    };
+
+    for (const s of getActiveSessions()) {
+      if (s.agent_group_id !== group.id) continue;
+      if (isContainerRunning(s.id)) {
+        killContainer(s.id, 'simple tab reset', () => clearContinuation(s.id));
+      } else {
+        clearContinuation(s.id);
+      }
+    }
     return { status: 200, body: { ok: true } };
   } catch (err) {
     return { status: 500, body: { error: (err as Error).message } };
