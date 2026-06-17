@@ -58,7 +58,7 @@ check_node() {
     NODE_PATH_FOUND=$(command -v node)
     local major
     major=$(echo "$NODE_VERSION" | cut -d. -f1)
-    if [ "$major" -ge 20 ] 2>/dev/null; then
+    if [ "$major" -ge 20 ] && [ "$major" -lt 26 ] 2>/dev/null; then
       NODE_OK="true"
     fi
     log "Node $NODE_VERSION at $NODE_PATH_FOUND (major=$major, ok=$NODE_OK)"
@@ -184,8 +184,8 @@ detect_platform
 
 check_node
 if [ "$NODE_OK" = "false" ]; then
-  log "Node missing or too old — running setup/install-node.sh"
-  echo "Node not found — installing via setup/install-node.sh"
+  log "Node missing or unsupported (need >=20 <26) — running setup/install-node.sh"
+  echo "Node not found or unsupported version — installing Node 22 via setup/install-node.sh"
   if bash "$PROJECT_ROOT/setup/install-node.sh" 2>&1 | tee -a "$LOG_FILE"; then
     hash -r 2>/dev/null || true
     check_node

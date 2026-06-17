@@ -422,6 +422,16 @@ html, body {
   list-style: none;
   margin: 0;
 }
+/* Mode-split transcripts: each chat mode shows only its own conversation.
+   Direct-mode entries are tagged .from-direct at creation (chat.js); the
+   .direct-view class on the log/trace nodes follows the mode toggle. The
+   trace's empty-state placeholder stays visible in both views. */
+.chat-log.direct-view > li:not(.from-direct),
+.chat-log:not(.direct-view) > li.from-direct,
+.trace-log.direct-view > li:not(.from-direct):not(.trace-empty),
+.trace-log:not(.direct-view) > li.from-direct {
+  display: none;
+}
 .msg {
   margin-bottom: 10px;
   padding: 8px 12px;
@@ -512,6 +522,10 @@ html, body {
 .mode-btn:hover:not(.active) { background: #f0f0f0; }
 .bubble-direct { border-left: 3px solid #4a90e2; }
 .bubble-meta { font-size: 11px; color: #777; margin-top: 4px; font-family: ui-monospace, monospace; }
+/* On the simple tab the per-reply model/token/cost footer is redundant — the
+   trace panel already shows model + tokens + cost. Hide it here only; the
+   advanced Chat tab keeps the footer. */
+.simple-mode .bubble-meta { display: none; }
 .reasoning-label { display: inline-flex; align-items: center; gap: 4px; }
 .reasoning-badge { display: inline-block; background: #e8edf5; color: #3a5b8a; font-size: 10px; padding: 1px 5px; border-radius: 3px; font-family: ui-monospace, monospace; }
 .trace-event { padding: 6px 8px; margin-bottom: 4px; border-left: 3px solid #ccc; background: #f8f8f8; border-radius: 2px; font-size: 11px; }
@@ -1658,9 +1672,10 @@ select.model-changed {
 /* ── "My Agent" simple tab ── */
 
 /* Hide the chat tab's advanced chrome — the side panel drives the hidden
-   controls programmatically (see tabs/simple.js header comment). */
+   controls programmatically (see tabs/simple.js header comment). The trace
+   panel is NOT hidden: it is re-parented into .simple-trace-host
+   (adoptTracePanel) and shown/hidden by the roll-up rules below. */
 .simple-mode .chat-toolbar { display: none; }
-.simple-mode .trace-panel { display: none; }
 
 /* Constrain the height chain so the chat column flexes within the agent
    card and #chat-log scrolls internally (same :not([hidden]) guard as
@@ -1689,6 +1704,9 @@ select.model-changed {
   background: var(--surface-alt);
   font-size: 13px;
 }
+#simple-clear-chat {
+  margin-left: auto;
+}
 
 .simple-layout {
   display: flex;
@@ -1705,13 +1723,25 @@ select.model-changed {
   display: flex;
   flex-direction: column;
 }
-.simple-panel {
+.simple-side-stack {
   flex: 1;
   min-width: 220px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0; /* lets .simple-trace-host shrink/scroll within .simple-layout */
+}
+.simple-panel {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 12px;
-  align-self: flex-start;
+  /* Fixed height: fill the side stack so the panel's bottom edge lines up
+     with the agent card's (the trace strip below mirrors the model strip).
+     Content scales to fit (persona textarea flexes) — the panel never
+     resizes with content. */
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto; /* basis auto, NOT 0% — trace-open sets flex-grow: 0 and the panel must fall back to content height (the header), not collapse to nothing */
+  min-height: 0;
 }
 
 .simple-panel-header {
@@ -1724,9 +1754,48 @@ select.model-changed {
 .simple-toggle {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   white-space: nowrap;
   font-weight: 600;
+  cursor: pointer;
+}
+/* The "Use agent" control is a large iOS-style switch: the native checkbox
+   IS the track, ::before is the knob. Green when the agent is engaged. The
+   #simple-use-agent id / checkbox contract is unchanged (pinned by tests). */
+.simple-toggle input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  flex: none;
+  width: 48px;
+  height: 28px;
+  margin: 0;
+  border-radius: 14px;
+  background: #c2c7d0;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+.simple-toggle input[type="checkbox"]::before {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  transition: transform 0.2s ease;
+}
+.simple-toggle input[type="checkbox"]:checked {
+  background: #2e7d46;
+}
+.simple-toggle input[type="checkbox"]:checked::before {
+  transform: translateX(20px);
+}
+.simple-toggle input[type="checkbox"]:focus-visible {
+  outline: 2px solid #4b82e8;
+  outline-offset: 2px;
 }
 .simple-name-input {
   flex: 1;
@@ -1744,8 +1813,18 @@ select.model-changed {
   font-size: 12px;
 }
 
+#simple-skills {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 10px;
+  /* Room for the pending ⏳ on the right column's longest row — without this
+     the ⓘ gets pushed past .simple-panel-body's overflow:hidden edge. */
+  padding-right: 16px;
+}
 .simple-skill-row {
   margin: 3px 0;
+  min-width: 0; /* let long titles shrink inside the grid cell */
+  white-space: nowrap; /* keep the ⓘ beside the title; overflow rides the column gap */
 }
 .simple-info-btn {
   border: none;
@@ -1763,11 +1842,79 @@ select.model-changed {
   margin: 4px 0;
   color: #445;
   font-size: 12px;
+  white-space: normal; /* prose wraps even though the row itself is nowrap */
+}
+.simple-skill-view {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  color: #4a5a96;
+}
+
+/* "Built in" row — always-on harness tools. Sits above the toggleable skill
+   grid, full width, slightly muted so it reads as fixed/non-editable. */
+.simple-builtin-row {
+  white-space: normal;
+  padding-bottom: 6px;
+  margin-bottom: 4px;
+  border-bottom: 1px dashed var(--border);
+}
+.simple-builtin-row > label {
+  color: #667;
+  font-weight: 600;
+}
+.simple-builtin-row input[type="checkbox"] {
+  accent-color: #2e7d46; /* match the agent toggle's green */
+}
+.simple-builtin-row .simple-skill-desc ul {
+  margin: 6px 0 4px;
+  padding-left: 18px;
+}
+.simple-builtin-row .simple-skill-desc li {
+  margin: 2px 0;
+}
+
+/* Unsaved-changes ("dirty") state — classes set by updateDirtyUi (simple.js). */
+.simple-skill-row.simple-pending {
+  background: #fff3d6;
+  border-radius: 4px;
+  position: relative;
+}
+/* ⏳ sits just past the cell's right edge (in the grid padding / column gap) so it
+   never pushes the ⓘ button into .simple-panel-body's overflow:hidden clip. */
+.simple-skill-row.simple-pending::after {
+  content: '⏳';
+  font-size: 11px;
+  position: absolute;
+  right: -15px;
+  top: 1px;
+}
+#simple-save.btn-attention {
+  background: #e8920a;
+  border-color: #c97f08;
+  animation: simple-save-pulse 1.6s ease-in-out infinite;
+}
+@keyframes simple-save-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(232, 146, 10, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(232, 146, 10, 0);
+  }
+}
+.simple-save-status.simple-dirty-hint {
+  color: #b36b00;
+  font-weight: 600;
 }
 
 #simple-persona {
   width: 100%;
   box-sizing: border-box;
+  /* Scales to fill the fixed-height panel (see .simple-panel-body). */
+  flex: 1;
+  min-height: 60px;
+  resize: none;
 }
 #simple-save {
   margin-top: 10px;
@@ -1815,15 +1962,18 @@ select.model-changed {
   margin-bottom: 2px;
 }
 
-/* ── Layering: the agent card rides above the model layer ──
-   The left column is a stack: agent card (slim header + chat) on top,
-   a thin strip of the model layer peeking out beneath. Toggling the
-   agent off adds .agent-off to .simple-mode (applyUseAgentToggle):
-   the green framing drains away, the strip collapses, and the chat
-   sits flat on the exposed model card. Accent hexes are the deliberate
-   bubble accent families (see the bubble rules above), not tokens.
-   Note: border-style (solid↔dashed) doesn't interpolate — the color
-   and shadow transitions carry the animation. */
+/* ── Layering: the model chat window is the base; the agent lays on top ──
+   OFF is the self-standing state: one solid blue-family window (fully
+   usable, not disabled) filling the whole stack. Toggling the agent ON
+   (applyUseAgentToggle removes .agent-off) lays the green agent card on
+   top of it: the card covers all but the base window's bottom sliver,
+   which peeks out as the inset model strip ("⚡ model — underneath",
+   mirroring the panel/trace-strip pairing on the right). The base
+   window's bottom edge never moves: in OFF the card extends down by the
+   strip's exact footprint (padding-bottom) while the strip collapses —
+   the two cancel, so the input row stays pinned too. Accent hexes are
+   the deliberate bubble accent families (see the bubble rules above),
+   not tokens. */
 .simple-stack {
   flex: 2.2;
   min-width: 0;
@@ -1840,7 +1990,24 @@ select.model-changed {
   background: #fdfffe;
   box-shadow: 0 3px 10px rgba(46, 125, 70, 0.18);
   overflow: hidden; /* clean rounded corners; chat modals live in #modal-root, so nothing is clipped */
-  transition: border-color 0.3s ease, box-shadow 0.3s ease, background-color 0.3s ease;
+  /* No geometry/color transitions — the two states are different LAYERS,
+     not one morphing box. Toggling swaps the animation name below, which
+     restarts the matching entrance: ON = the agent card lands on top of
+     the chat window (settling scale + shadow); OFF = the card lifts away
+     and the base window fades back in whole. */
+  animation: simple-agent-land 0.3s ease;
+}
+@keyframes simple-agent-land {
+  from {
+    opacity: 0;
+    transform: scale(1.02);
+    box-shadow: 0 14px 30px rgba(46, 125, 70, 0.35);
+  }
+}
+@keyframes simple-window-reveal {
+  from {
+    opacity: 0;
+  }
 }
 .simple-card-header {
   font-size: 11px;
@@ -1849,7 +2016,6 @@ select.model-changed {
   padding: 4px 10px;
   border-bottom: 1px solid #bfe3c9;
   min-height: 1em;
-  transition: color 0.3s ease, border-color 0.3s ease;
 }
 .simple-model-strip {
   font-size: 11px;
@@ -1858,11 +2024,10 @@ select.model-changed {
   border: 1px solid var(--border);
   border-top: none;
   border-radius: 0 0 8px 8px;
-  margin: 0 10px; /* narrower than the card — reads as the layer underneath */
+  margin: 0 10px; /* narrower than the card — reads as the layer underneath (mirrors .simple-trace-strip) */
   padding: 3px 10px;
   overflow: hidden;
   max-height: 2em;
-  transition: max-height 0.3s ease, padding 0.3s ease, opacity 0.3s ease;
 }
 
 /* Panel fused to the agent card: same elevation, same green framing. */
@@ -1870,20 +2035,32 @@ select.model-changed {
   border-color: #bfe3c9;
   background: #fdfffe;
   box-shadow: 0 3px 10px rgba(46, 125, 70, 0.18);
+  /* Color transitions serve the agent ON/OFF gray-out only. The trace
+     roll-up is a layer swap, not a morph: geometry snaps and the entrance
+     keyframes carry the motion (same logic as the agent card / model
+     window on the left). */
   transition: border-color 0.3s ease, box-shadow 0.3s ease, background-color 0.3s ease;
+  animation: simple-agent-land 0.3s ease;
 }
 
-/* OFF — the agent layer retracts: chat flattens onto the model card
-   (gray, dashed — the bubble-direct family), the strip disappears
-   (you're ON the model layer now), the panel sinks and grays. */
+/* OFF — the agent card lifts away, revealing the base window whole. Its
+   footprint is exactly the strip's: same 10px horizontal inset, same bottom
+   edge (strip collapses + card pads down by the strip's rendered height —
+   they cancel, so the bottom-left corner and the input row never move).
+   Neutral gray stroke + surface, matching the trace window — base layers
+   share one look. Fully usable, NOT disabled; the blue header text keeps
+   the model-accent identity. */
 .simple-mode.agent-off .simple-agent-card {
-  border: 1px dashed #aab4d4;
-  background: transparent;
-  box-shadow: none;
+  margin: 0 10px; /* the base window = the layer the strip peeks from */
+  border-color: var(--border);
+  background: #fafafa;
+  box-shadow: none; /* base layer sits flat on the surface — drop shadows belong to the agent windows on top */
+  padding-bottom: 22px; /* = .simple-model-strip rendered height (max-height: 2em at 11px) */
+  animation: simple-window-reveal 0.3s ease;
 }
 .simple-mode.agent-off .simple-card-header {
   color: #4a5a96;
-  border-bottom: 1px dashed #aab4d4;
+  border-bottom-color: var(--border);
 }
 .simple-mode.agent-off .simple-model-strip {
   max-height: 0;
@@ -1898,11 +2075,94 @@ select.model-changed {
   box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.08);
 }
 
+/* ── Trace roll-up: the panel rides above the trace ──
+   Mirrors the left column's layering metaphor on the right: the panel is
+   the agent's surface; a peek strip teaches that the trace machinery is
+   underneath. .trace-open on .simple-mode (applyTraceRollup) collapses the
+   panel body + strip and expands .simple-trace-host, which holds the chat
+   tab's re-parented .trace-panel (adoptTracePanel — same live node, so the
+   existing .trace-* rules apply untouched). Works in both agent ON and OFF
+   modes; the strip stays neutral gray (no .agent-off collapse — unlike the
+   model strip, the trace exists in both modes). */
+.simple-panel-body {
+  /* Body fills the fixed-height panel; the persona textarea (flex: 1)
+     absorbs the slack. Collapse (.trace-open max-height: 0) snaps — no
+     transition; the trace window's reveal carries the motion. */
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.simple-rollup-btn {
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--text-faint);
+  font-size: 17px;
+  line-height: 1; /* don't let the bigger glyph grow the header row */
+  padding: 0 2px;
+}
+.simple-rollup-btn:hover { color: var(--text-muted); }
+.simple-rollup-btn:focus-visible { outline: 2px solid #4b82e8; outline-offset: 2px; }
+.simple-trace-strip {
+  font-size: 11px;
+  color: var(--text-faint);
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-top: none;
+  border-radius: 0 0 8px 8px;
+  margin: 0 10px; /* narrower than the panel — reads as the layer underneath */
+  padding: 3px 10px;
+  overflow: hidden;
+  max-height: 2em;
+  cursor: pointer;
+}
+.simple-trace-host {
+  display: none;
+}
+.simple-mode.trace-open .simple-panel-body {
+  max-height: 0;
+}
+.simple-mode.trace-open .simple-panel {
+  padding-bottom: 0;
+  flex-grow: 0; /* roll up to header height; the trace window takes the column */
+  animation: none; /* closing trace flips this back to simple-agent-land, restarting the entrance */
+}
+.simple-mode.trace-open .simple-trace-strip {
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  opacity: 0;
+  border-width: 0;
+}
+.simple-mode.trace-open .simple-trace-host {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0; /* height chain: host → .trace-panel (flex:1) → .trace-log (overflow-y: auto) */
+  /* Same logic as the model chat window: a self-standing base window, inset
+     to the strip's exact footprint (10px sides) and extending down through
+     the collapsed strip's edge — outline continuous with the peek strip. */
+  margin: 8px 10px 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden; /* clean rounded corners over the square trace panel */
+  background: #fafafa; /* matches .trace-panel so the rounded frame reads as one surface */
+  /* No drop shadow: base layer sits flat on the surface — shadows belong to the agent windows on top */
+  animation: simple-window-reveal 0.3s ease; /* restarts on every open (display: none → flex) */
+}
+
 @media (prefers-reduced-motion: reduce) {
   .simple-agent-card,
+  .simple-mode.agent-off .simple-agent-card,
   .simple-card-header,
   .simple-model-strip,
-  .simple-mode .simple-panel {
+  .simple-mode .simple-panel,
+  .simple-panel-body,
+  .simple-trace-strip,
+  .simple-mode.trace-open .simple-trace-host {
     transition: none;
+    animation: none;
   }
 }

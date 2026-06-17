@@ -15,7 +15,10 @@
  * `null` for installScript means setup tells the user to install
  * manually rather than trying to auto-install.
  */
-import { execSync } from 'child_process';
+import { execSync, spawnSync } from 'child_process';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 
 import type { HeadlessOpts, SpawnArgs, AiCodingCli } from './types.js';
 
@@ -53,6 +56,48 @@ function handoff(prompt: string): SpawnArgs {
   };
 }
 
+/**
+ * Wire nanoclaw's project skills into ~/.codex/skills/ and add the
+ * codegraph MCP server to ~/.codex/config.toml.
+ *
+ * Skills: per-file symlinks from ~/.codex/skills/<name> → <projectRoot>/.claude/skills/<name>.
+ * Per-file (not a directory symlink) so skills a Codex user adds land in
+ * ~/.codex/skills/ directly rather than flowing back into .claude/skills/.
+ *
+ * CodeGraph: appends [mcp_servers.codegraph] only if the codegraph binary
+ * is on PATH and the section is not already present.
+ *
+ * Both operations are idempotent.
+ */
+function prepareEnvironment(projectRoot: string): void {
+  const codexSkillsDir = path.join(os.homedir(), '.codex', 'skills');
+  const nanoclaWSkillsDir = path.join(projectRoot, '.claude', 'skills');
+
+  if (fs.existsSync(nanoclaWSkillsDir)) {
+    fs.mkdirSync(codexSkillsDir, { recursive: true });
+    for (const entry of fs.readdirSync(nanoclaWSkillsDir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const dest = path.join(codexSkillsDir, entry.name);
+      if (fs.existsSync(dest)) continue;
+      fs.symlinkSync(path.join(nanoclaWSkillsDir, entry.name), dest);
+    }
+  }
+
+  const codexConfigPath = path.join(os.homedir(), '.codex', 'config.toml');
+  let hasCodegraph = false;
+  if (fs.existsSync(codexConfigPath)) {
+    hasCodegraph = fs.readFileSync(codexConfigPath, 'utf-8').includes('[mcp_servers.codegraph]');
+  }
+  if (!hasCodegraph) {
+    const probe = spawnSync('which', ['codegraph'], { stdio: 'ignore' });
+    if (probe.status === 0) {
+      const block = '\n[mcp_servers.codegraph]\ncommand = "codegraph"\nargs = ["serve", "--mcp"]\n';
+      fs.appendFileSync(codexConfigPath, block);
+    }
+    // codegraph not installed — skip; user can add it later
+  }
+}
+
 export const codexCli: AiCodingCli = {
   name: 'codex',
   displayName: 'OpenAI Codex',
@@ -62,4 +107,5 @@ export const codexCli: AiCodingCli = {
   installScript: null,
   headless,
   handoff,
+  prepareEnvironment,
 };

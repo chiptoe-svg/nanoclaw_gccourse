@@ -112,9 +112,10 @@ describe('getNodeVersion', () => {
 // --- getNodeMajorVersion ---
 
 describe('getNodeMajorVersion', () => {
-  it('returns at least 20', () => {
+  it('returns a supported version (>=20 <26)', () => {
     const major = getNodeMajorVersion();
     expect(major).not.toBeNull();
     expect(major!).toBeGreaterThanOrEqual(20);
+    expect(major!).toBeLessThan(26);
   });
 });

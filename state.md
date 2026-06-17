@@ -8,7 +8,7 @@
 
 ## Goal
 
-NanoClaw is a self-hosted personal-Claude assistant. The Clemson install (Mac Studio at `130.127.162.180:3002`) pairs per-person agents over a shared messaging surface with a playground UI for chat and admin. **As of 2026-06-07 the classroom is a PILOT/test with pilot users — breakable, not live production** (the prior "production, not dev" framing is paused until the owner says otherwise; no real FERPA data expected during the pilot).
+NanoClaw is a self-hosted personal-Claude assistant. The Clemson install (Mac Studio at `gcworkflow.clemson.edu:3002`) pairs per-person agents over a shared messaging surface with a playground UI for chat and admin. **As of 2026-06-07 the classroom is a PILOT/test with pilot users — breakable, not live production** (the prior "production, not dev" framing is paused until the owner says otherwise; no real FERPA data expected during the pilot).
 
 **Direction (revised 2026-06-08):** this is a **group-agent platform**, not a classroom app — controlled, individuated agent access for a defined set of people, with "classroom" as one of ~5 scenarios (department, agent-optimization, +2 coming). **Model: ONE codebase + in-tree scenario profiles** under `src/scenarios/<name>/`, selected by config. This supersedes both prior attempts: lean-trunk+branch-install (too much sync ceremony) and fold-into-classroom-app (too narrow). Each scenario's code is tiny (~90% of "classroom" code is the general platform), so in-tree profiles beat branch-install ceremony. Separate installs run the same repo with different scenario config + data; platform features reach all installs on `git pull`. See `plans/group-agent-platform.md`. (The earlier `controlled-access` branch-extraction plan and the `classroom` sibling branch + `/add-classroom*` skills are superseded; branch/skills slated for retirement.)
 
@@ -40,7 +40,7 @@ DBs, image tags, and bot tokens are isolated — restart/rebuild one does NOT to
 Append-only. Drained by the human, not by `refresh-state`.
 
 - **Wire the platform to the scenario contract (Phase 2 proper).** — DONE 2026-06-09 (branch `scenario-contract-wiring`, commits `7606cf0`..`8e894cd`; plan `docs/superpowers/plans/2026-06-09-scenario-contract-wiring.md`). Generic contract-driven pair consumer + provisioning persona via `roleProfile('user')`; three classroom consumers deleted; `memberName()` added; verified by an `industryai_seminar` integration test. Turned out narrower than the ~30-file estimate — Phase 1 had already moved the pair consumers into the profile.
-- **⚠️ REVERT BEFORE GO-LIVE: playground is in insecure no-auth demo mode (set 2026-06-09).** For pre-launch campus testing, the playground runs with `PLAYGROUND_AUTH_BYPASS=1` + `PLAYGROUND_BIND_HOST=127.0.0.1`, fronted by a `caddy reverse-proxy --from :8088 --to 127.0.0.1:3002` (nohup, NOT durable across reboot) so `http://130.127.162.180:8088/?seat=owner|user_01|user_02|user_03` opens with no login on the Clemson network. This exposes the OWNER (admin) seat with no auth — fine for the breakable pilot, NOT for go-live. **To revert:** `pkill -f 'caddy reverse-proxy --from :8088'`; set `PLAYGROUND_AUTH_BYPASS=0` + `PLAYGROUND_BIND_HOST=0.0.0.0` in `.env`; `launchctl kickstart -k gui/$(id -u)/com.nanoclaw-v2-581fefa4`. The hardening guard (refuses bypass on non-loopback bind) is intact — this routes around it via the proxy, by design per the guard's own message.
+- **⚠️ REVERT BEFORE GO-LIVE: playground is in insecure no-auth demo mode (set 2026-06-09).** For pre-launch campus testing, the playground runs with `PLAYGROUND_AUTH_BYPASS=1` + `PLAYGROUND_BIND_HOST=127.0.0.1`, fronted by a `caddy reverse-proxy --from :8088 --to 127.0.0.1:3002` (nohup, NOT durable across reboot) so `http://gcworkflow.clemson.edu:8088/?seat=owner|user_01|user_02|user_03` opens with no login on the Clemson network. This exposes the OWNER (admin) seat with no auth — fine for the breakable pilot, NOT for go-live. **To revert:** `pkill -f 'caddy reverse-proxy --from :8088'`; set `PLAYGROUND_AUTH_BYPASS=0` + `PLAYGROUND_BIND_HOST=0.0.0.0` in `.env`; `launchctl kickstart -k gui/$(id -u)/com.nanoclaw-v2-581fefa4`. The hardening guard (refuses bypass on non-loopback bind) is intact — this routes around it via the proxy, by design per the guard's own message.
 - **Phase 4 (later):** retire the `classroom` sibling branch + `/add-classroom*` skills (superseded by in-tree scenarios).
 - **Web search: enable Brave (optional) — needs a key.** Brave is greyed in the owner card until `WEB_SEARCH_API_KEY` is set in `.env` (then restart the host). SearXNG is the live default and needs no key. Do NOT auto-extract the Brave key from the personal install's vault — the owner pastes it or authorizes the pull.
 - **Web search: SearXNG bridge-IP coupling.** SearXNG is bound to the Apple-container bridge gateway `192.168.64.1:8888` and `SEARXNG_URL`/the `docker run -p` both hardcode that IP. If the bridge IP ever changes (it's stable in practice — `detectHostGateway()` reads `bridge100`), update both the `-p` bind and `.env` `SEARXNG_URL`. Tracked in `~/.dev-ports.yaml` under `searxng`.
@@ -111,6 +111,7 @@ Pointers, not duplications. Read the relevant one when you're going deep.
 
 Append-only, newest first. One line per decision: *what + 1-line why*. Prune (move to archive) when older than ~6 months.
 
+- **2026-06-12** — **Simple tab trace roll-up: panel rolls up to reveal the live trace.** The My Agent tab's side panel now rolls up (chevron in the panel header, `aria-expanded`; or clicking the new `🔍 trace — underneath` peek strip) via a `.trace-open` class on the wrapper, collapsing the panel body + strip (max-height 0.3s + reduced-motion guard) to reveal the Chat tab's trace panel on the same plane as the chat — the **live `.trace-panel` that `mountChat` already builds is re-parented** into a new `.simple-trace-host` (`adoptTracePanel`, simple.js) instead of duplicating trace logic; the old `.simple-mode .trace-panel{display:none}` hide rule is gone. Enabler: chat.js trace-log lookups changed to **capture-once at wiring time** (wireChatForm/wireTraceClear aligned with wireSse) so a moved node keeps working — zero Chat-tab behavior change. Works in both agent ON/OFF modes (comparing bare-model vs agent traces is the pedagogical point); default rolled-down every load, no persistence, no drag-resize. Right column became `.simple-side-stack` (owns column sizing; panel lost `flex:1`/`min-width`/`align-self`). Live-verified 9-point matrix incl. same-plane geometry (host bottom == layout bottom), live agent + direct traces, Clear regression, internal trace-log scroll. Spec: docs/superpowers/specs/2026-06-12-simple-tab-trace-rollup-design.md.
 - **2026-06-12** — **Simple tab layering: agent above the model.** The My Agent tab now renders agent mode as an elevated green card (slim `🤖 <name>` header) with a model strip peeking beneath (`⚡ <model> — underneath`), panel fused at the same elevation; toggling the agent off animates the layer away (`.agent-off` class on the wrapper, pure CSS, ~300ms + reduced-motion guard) onto a flat gray dashed model card with a sunken panel. `setLayerLabels` rides the existing `applySelection`/`saveName`/toggle paths. Verification also fixed the simple tab's height chain (`#tab-simple:not([hidden])` flex guard, mirroring `#tab-chat`) so `#chat-log` scrolls inside the card instead of growing the page. No chat.js changes. Spec: docs/superpowers/specs/2026-06-11-simple-tab-layering-design.md.
 - **2026-06-11** — **"My Agent" simple beginner tab.** New `simple` playground tab: embedded real chat (`mountChat` unchanged, `.simple-mode` CSS hides advanced chrome) + side panel (Use-agent toggle driving the hidden mode buttons, editable agent name, template-curated skill checklist with ⓘ descriptions, persona, Save→restart) + left model dropdown fed by the default-participant template's `allowed_models`. Three new endpoints: `GET /api/simple-config`, `PUT /api/drafts/:folder/name` (writes `assistant_name` + group name), `POST /api/simple-restart` (exported `killGroupContainer`). Agent replies green/labeled, model-only replies blue-gray/dashed via CSS vars. Tab strip auto-hides when a student has exactly one visible tab. Instructor curates via the template slot + `tabsVisibleToStudents`. Spec: docs/superpowers/specs/2026-06-11-simple-my-agent-tab-design.md.
 - **2026-06-11** — **Cost governance (alert-only) + scenario-aware Status roster shipped + deployed + live-verified** (branch `cost-governance`, `ae94cff`..`9d0d490`; spec/plan `docs/superpowers/{specs,plans}/2026-06-11-cost-governance.*`). Gives the owner per-agent **monthly budgets with at-a-glance ok/approaching/over badges** (ALERT-ONLY — no blocking; the credential-proxy enforce path was the declined option). New `api/cost-budgets.ts`: `config/cost-budgets.json` `{defaultMonthlyUsd, warnFraction(0.8), perAgent:{[folder]:usd}}` (read/write the `class-controls.json` pattern; `!Array.isArray` guards on `perAgent` in BOTH read + POST-validate), pure `evaluateBudget(cost,budget,warn)` → `none`(null budget)/`ok`/`approaching`(≥budget·warn)/`over`(≥budget). **`GET /api/budgets`** (owner-gated) is **scenario-agnostic** — rows = `getAllAgentGroups()` ∩ `roleForFolder(folder)!==null` (members only → `_default_participant` template drops out), labeled via `roleProfile(role).label`/`memberName`, model/provider from `getContainerConfig`, `costUsdThisMonth` from `aggregateAgentUsage(g.id).thisMonth.costUsd`. **`POST /api/budgets`** validates (≥0/null, warnFraction (0,1], perAgent object-not-array) → `writeCostBudgets`. **Status tab became the fleet roster** (`public/tabs/status.js`): Role + Spend/Budget columns merged from `/api/budgets` (30s poll, separate from the 5s health poll to keep the DB cost-scan off the fast loop), badge, per-agent budget via `prompt()`-based Set button (survives the 5s re-render — an inline `<input>` got wiped), install-wide default$/warn% editor, **Add-a-participant relocated here from Home** (`POST /api/admin/students` → scenario-aware `provisionMember`). **Home cleanup** (`home.js`): removed the classroom `class-config` roster + add-student cards (superseded by the scenario roster — the seminar's `class-config` was empty so the old Home card showed "No student agents"); KEPT the per-user own-usage card (students' only cost view — they never see owner-only Status) + config cards. Boundaries: no enforcement, no notifications (UI badge only), calendar-month only, no charts. Final opus review APPROVED-WITH-NITS (lone nit moot — budgets⊆status). Host 1206 tests green, build clean. **Live-verified:** `GET /api/budgets?seat=owner_01` returned the seminar roster (Organizer + 3 Participants, costs computed, template excluded). Deployed via host restart of `com.nanoclaw-v2-581fefa4`; tab JS deploys on browser refresh. (Completes the 3 picked gap items: Live trace cards + Status/Health + Cost governance.)
@@ -162,38 +163,51 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 
 ### Branch
 
-- **Current:** `simple-tab-layering`
-- **Last tag:** `phase-c-complete-2026-05-28` (139 commits ahead)
+- **Current:** `main`
+- **Last tag:** `phase-c-complete-2026-05-28` (177 commits ahead)
 
 ### Working tree
 
 ```
-## simple-tab-layering
+## main...origin/main [ahead 37]
  M config/playground-seats.json
-M  state.md
+ M container/CLAUDE.md
+ M container/skills/make-website/SKILL.md
+M  package.json
+M  setup.sh
+M  setup/auto.ts
+M  setup/container.ts
+M  setup/lib/ai-coding-cli/codex.ts
+M  setup/lib/ai-coding-cli/types.ts
+M  setup/peer-cleanup.ts
+M  setup/platform.test.ts
+M  setup/service.ts
+ M src/channels/playground/public/tabs/skills.js
+M  src/container-runtime.ts
+ M state.md
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
-8948ed8 fix(simple-tab): constrain height chain so chat scrolls inside the agent card
-64c2527 feat(simple-tab): layer labels track model change and rename
-5159c81 feat(simple-tab): agent-card stack DOM + layering CSS
-d87aa3f feat(simple-tab): layer labels + .agent-off toggle class
-4d0b2e4 docs(plan): simple-tab layering implementation plan
-63c32d0 docs(spec): agent-above-model layering for the simple tab
-2262642 test(simple-tab): cover Save flow and model-change PUT in happy-dom
-c587b09 docs(state): decision-log entry for the My Agent simple tab
-f976147 fix(playground): harden simple-tab bubble labels and active-model preselect
-bd49bb2 feat(playground): simple tab model dropdown, hidden-select sync, labeled reply bubbles
-c8e178b fix(playground): guard simple-tab Save against double-click and lost name-save failures
-9de9da9 feat(playground): simple tab side panel — skills checklist, persona, toggle, save
-54bacb6 fix(playground): hide chat toolbar/trace in simple mode; use design tokens
-4064a8e chore(playground): undo collateral prettier reformat of public assets — keep diffs minimal
-986f42c feat(playground): My Agent simple tab skeleton — registration, layout, embedded chat, CSS hiding
+eea9795 feat(skills): image-vision + image-metadata container skills
+1c76d15 fix(agent-runner): surface uploaded image paths to the agent
+62d1def feat(simple): "Start over" resets agent memory + trace, not just the window
+81b4af8 fix(agent-runner): strip stray message tags from folded trailing text
+6b79f3e fix(agent-runner): deliver trailing text models leave outside <message>
+91a2b79 fix(agent-runner): retry transient readonly-DB writes instead of crashing
+3ab3567 feat(simple): "Built in" tools row; web tools always-on; relabel agent-browser
+c68dbf9 fix(agent-runner): compose per-group persona into the system prompt
+b17dbc3 fix(simple): don't auto-roll the trace panel on agent toggle
+3f30ff0 feat(simple): switch toggle, FirstName+Bot default name, trace-first default
+cd10ab6 feat(pi): gate skills and web tools on the enabled-skill set
+3c26bf4 feat(playground): friendlier model-only wording
+f1ba19f feat(playground): base model window matches the trace window's look
+8e42bbb fix(playground): base-layer windows sit flat — no drop shadow
+3e57b64 feat(playground): trace window gets the base-layer treatment + bigger rollup glyph
 ```
 
 ### Last refresh
 
-2026-06-12T12:29:18Z
+2026-06-17T15:27:26Z

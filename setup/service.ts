@@ -4,7 +4,7 @@
  *
  * Fixes: Root→system systemd, WSL nohup fallback, no `|| true` swallowing errors.
  */
-import { execSync } from 'child_process';
+import { execSync, spawnSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -127,13 +127,22 @@ function setupLaunchd(
   // Per-checkout service label so multiple NanoClaw installs can coexist
   // without clobbering each other's plist.
   const label = getLaunchdLabel(projectRoot);
-  const plistPath = path.join(
-    homeDir,
-    'Library',
-    'LaunchAgents',
-    `${label}.plist`,
-  );
-  fs.mkdirSync(path.dirname(plistPath), { recursive: true });
+  const userName = os.userInfo().username;
+
+  // Install as a system LaunchDaemon (/Library/LaunchDaemons/) so the
+  // service starts at boot regardless of which user is logged in. This
+  // supports Mac Studio setups where a student account may be active via
+  // Fast User Switching while NanoClaw runs under the admin account.
+  // UserName runs the process as the installing user despite daemon context.
+  const plistPath = path.join('/Library', 'LaunchDaemons', `${label}.plist`);
+
+  // Include the node binary's parent directory first so child processes
+  // (e.g. container spawns) inherit the correct runtime. On Apple Silicon
+  // this is /opt/homebrew/bin; on Intel Macs it's /usr/local/bin.
+  const nodeDir = path.dirname(nodePath);
+  const envPath = [nodeDir, '/usr/local/bin', '/usr/bin', '/bin', path.join(homeDir, '.local', 'bin')]
+    .filter((v, i, arr) => arr.indexOf(v) === i)
+    .join(':');
 
   const plist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -141,6 +150,8 @@ function setupLaunchd(
 <dict>
     <key>Label</key>
     <string>${label}</string>
+    <key>UserName</key>
+    <string>${userName}</string>
     <key>ProgramArguments</key>
     <array>
         <string>${nodePath}</string>
@@ -155,7 +166,7 @@ function setupLaunchd(
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
-        <string>/usr/local/bin:/usr/bin:/bin:${homeDir}/.local/bin</string>
+        <string>${envPath}</string>
         <key>HOME</key>
         <string>${homeDir}</string>
     </dict>
@@ -166,46 +177,67 @@ function setupLaunchd(
 </dict>
 </plist>`;
 
-  fs.writeFileSync(plistPath, plist);
-  log.info('Wrote launchd plist', { plistPath });
+  // Write to a temp file then sudo install into LaunchDaemons with correct
+  // root:wheel ownership. `install` handles copy + ownership atomically.
+  const tmpPlist = path.join(os.tmpdir(), `${label}.plist`);
+  fs.writeFileSync(tmpPlist, plist);
+  log.info('Installing launchd daemon plist', { plistPath, userName });
 
-  // Unload first to force launchd to drop any cached plist and re-read from
-  // disk. Bare `launchctl load` on an already-loaded plist errors with
-  // "already loaded" and keeps the ORIGINAL plist's ProgramArguments /
-  // WorkingDirectory in memory — even if the file on disk changed. That
-  // bit us when the plist target shifted between installs: kickstart kept
-  // relaunching the old binary and the CLI socket landed in the wrong dir.
-  // unload succeeds whether or not the service was previously loaded; the
-  // failure case is "Could not find specified service" which is harmless.
-  try {
-    execSync(`launchctl unload ${JSON.stringify(plistPath)}`, {
-      stdio: 'ignore',
+  const installResult = spawnSync(
+    'sudo',
+    ['install', '-m', '644', '-o', 'root', '-g', 'wheel', tmpPlist, plistPath],
+    { stdio: ['inherit', 'ignore', 'inherit'] },
+  );
+  try { fs.unlinkSync(tmpPlist); } catch { /* best-effort cleanup */ }
+
+  if (installResult.status !== 0) {
+    log.error('Failed to install LaunchDaemon plist');
+    emitStatus('SETUP_SERVICE', {
+      SERVICE_TYPE: 'launchd-daemon',
+      SERVICE_LABEL: label,
+      NODE_PATH: nodePath,
+      PROJECT_PATH: projectRoot,
+      STATUS: 'failed',
+      ERROR: 'plist_install_failed',
+      LOG: 'logs/setup.log',
     });
-    log.info('launchctl unload succeeded');
-  } catch {
-    log.info('launchctl unload noop (plist was not previously loaded)');
+    process.exit(1);
+  }
+  log.info('Installed launchd daemon plist', { plistPath });
+
+  // Unload any existing instance. Try both contexts for idempotency:
+  // - gui domain: old LaunchAgent from a previous setup run
+  // - system domain: existing LaunchDaemon being refreshed
+  const uid = os.userInfo().uid;
+  spawnSync('launchctl', ['bootout', `gui/${uid}/${label}`], { stdio: 'ignore' });
+  spawnSync('sudo', ['launchctl', 'bootout', `system/${label}`], { stdio: 'ignore' });
+
+  // Remove old LaunchAgent plist if present (migration: user agent → system daemon)
+  const agentPlist = path.join(homeDir, 'Library', 'LaunchAgents', `${label}.plist`);
+  if (fs.existsSync(agentPlist)) {
+    fs.unlinkSync(agentPlist);
+    log.info('Removed old LaunchAgent plist', { agentPlist });
   }
 
-  try {
-    execSync(`launchctl load ${JSON.stringify(plistPath)}`, {
-      stdio: 'ignore',
-    });
-    log.info('launchctl load succeeded');
-  } catch (err) {
-    log.error('launchctl load failed', { err });
+  // Bootstrap the system daemon
+  const bootstrapResult = spawnSync(
+    'sudo',
+    ['launchctl', 'bootstrap', 'system', plistPath],
+    { stdio: ['inherit', 'ignore', 'inherit'] },
+  );
+  if (bootstrapResult.status !== 0) {
+    log.error('launchctl bootstrap failed');
+  } else {
+    log.info('launchctl bootstrap succeeded');
   }
 
   // Verify
   let serviceLoaded = false;
-  try {
-    const output = execSync('launchctl list', { encoding: 'utf-8' });
-    serviceLoaded = output.includes(label);
-  } catch {
-    // launchctl list failed
-  }
+  const check = spawnSync('sudo', ['launchctl', 'list', label], { stdio: 'pipe' });
+  serviceLoaded = check.status === 0;
 
   emitStatus('SETUP_SERVICE', {
-    SERVICE_TYPE: 'launchd',
+    SERVICE_TYPE: 'launchd-daemon',
     SERVICE_LABEL: label,
     NODE_PATH: nodePath,
     PROJECT_PATH: projectRoot,

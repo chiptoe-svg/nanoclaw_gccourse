@@ -9,7 +9,7 @@
  * providers is therefore lossless: each provider's last thread stays
  * on file and resumes cleanly if the user flips back.
  */
-import { getOutboundDb } from './connection.js';
+import { getOutboundDb, withReadonlyRetry } from './connection.js';
 
 const LEGACY_KEY = 'sdk_session_id';
 
@@ -25,13 +25,15 @@ function getValue(key: string): string | undefined {
 }
 
 function setValue(key: string, value: string): void {
-  getOutboundDb()
-    .prepare('INSERT OR REPLACE INTO session_state (key, value, updated_at) VALUES (?, ?, ?)')
-    .run(key, value, new Date().toISOString());
+  withReadonlyRetry(() =>
+    getOutboundDb()
+      .prepare('INSERT OR REPLACE INTO session_state (key, value, updated_at) VALUES (?, ?, ?)')
+      .run(key, value, new Date().toISOString()),
+  );
 }
 
 function deleteValue(key: string): void {
-  getOutboundDb().prepare('DELETE FROM session_state WHERE key = ?').run(key);
+  withReadonlyRetry(() => getOutboundDb().prepare('DELETE FROM session_state WHERE key = ?').run(key));
 }
 
 /**

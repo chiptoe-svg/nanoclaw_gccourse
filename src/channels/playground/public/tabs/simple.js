@@ -2,8 +2,10 @@
  * "My Agent" — the beginner tab. One chat window + one side panel.
  *
  * The chat is the REAL chat tab embedded unchanged (mountChat) inside a
- * `.simple-mode` wrapper; scoped CSS hides the advanced chrome (toolbar,
- * trace panel). The panel drives chat.js's hidden controls programmatically:
+ * `.simple-mode` wrapper; scoped CSS hides the advanced chrome (toolbar).
+ * The trace panel is re-parented into the side stack (adoptTracePanel) after
+ * mountChat so chat.js's captured element references keep working. The panel
+ * drives chat.js's hidden controls programmatically:
  *   - Use-agent toggle → clicks the hidden #mode-agent / #mode-direct
  *   - model dropdown   → PUT active-model + silently sync the hidden
  *     #provider-sel / #model-sel (NO change event — chat.js's own change
@@ -42,6 +44,14 @@ export function renderSkillRows(container, skills) {
     desc.className = 'simple-skill-desc';
     desc.hidden = true;
     desc.textContent = s.description || '';
+    // Peek inside the skill — file list + source in a new tab (skill-view.html).
+    const view = document.createElement('a');
+    view.className = 'simple-skill-view';
+    view.href = `skill-view.html?skill=${encodeURIComponent(s.name)}`;
+    view.target = '_blank';
+    view.rel = 'noopener';
+    view.textContent = "See what's inside (the actual files) ↗";
+    desc.appendChild(view);
 
     info.addEventListener('click', () => {
       const wasHidden = desc.hidden;
@@ -64,11 +74,46 @@ export function checkedSkills(container) {
 }
 
 /**
+ * Unsaved-changes indicator. Compares the panel's current state against
+ * `baseline` (what the agent actually has: skills enabled at last
+ * load/save + persona text) and lights up everything between the change
+ * and the Save button: changed skill rows get .simple-pending (yellow +
+ * ⏳), the button gets .btn-attention, and the status line explains.
+ * Returns whether anything is dirty. Name is excluded — it saves itself
+ * on blur; the model dropdown saves instantly.
+ */
+export function updateDirtyUi(wrapper, baseline) {
+  const skillsHost = wrapper.querySelector('#simple-skills');
+  const personaEl = wrapper.querySelector('#simple-persona');
+  const saveBtn = wrapper.querySelector('#simple-save');
+  const statusEl = wrapper.querySelector('#simple-save-status');
+
+  let dirty = false;
+  for (const cb of skillsHost.querySelectorAll('input[type="checkbox"]')) {
+    const pending = cb.checked !== baseline.skills.has(cb.dataset.skill);
+    cb.closest('.simple-skill-row').classList.toggle('simple-pending', pending);
+    if (pending) dirty = true;
+  }
+  if (personaEl.value !== baseline.persona) dirty = true;
+
+  saveBtn.classList.toggle('btn-attention', dirty);
+  const wasHint = statusEl.classList.contains('simple-dirty-hint');
+  statusEl.classList.toggle('simple-dirty-hint', dirty);
+  if (dirty) {
+    statusEl.textContent = "Unsaved changes — your agent doesn't have these yet.";
+  } else if (wasHint) {
+    statusEl.textContent = ''; // changes were undone by hand — drop the stale hint
+  }
+  return dirty;
+}
+
+/**
  * Flip between agent and direct-model chat by clicking the embedded chat's
  * hidden mode buttons (chat.js's setMode handles the rest). OFF also grays
  * the panel body — you can't edit an agent you're not talking to — and adds
  * .agent-off to the wrapper, which drives the layering CSS (the agent card
- * flattens onto the model layer; see the layering block in style.css).
+ * lifts away, revealing the base model window whole; see the layering
+ * block in style.css).
  */
 export function applyUseAgentToggle(wrapper, useAgent) {
   const btn = wrapper.querySelector(useAgent ? '#mode-agent' : '#mode-direct');
@@ -80,6 +125,43 @@ export function applyUseAgentToggle(wrapper, useAgent) {
   setLayerLabels(wrapper, (nameEl && nameEl.value.trim()) || 'Your agent', currentModelLabel(wrapper) || 'model');
 }
 
+/**
+ * Move the embedded chat's live trace panel into the side stack's
+ * .simple-trace-host. chat.js wires ALL trace rendering against element
+ * references captured at wiring time (see wireSse/wireChatForm/
+ * wireTraceClear), so the moved node — same node, not a copy — keeps
+ * receiving SSE events, direct-mode turns, and Clear clicks. Must run
+ * after mountChat.
+ */
+export function adoptTracePanel(wrapper) {
+  const host = wrapper.querySelector('.simple-trace-host');
+  const panel = wrapper.querySelector('.simple-chat-host .trace-panel');
+  if (host && panel) host.appendChild(panel);
+}
+
+/**
+ * Roll the panel body up (open=true: body + peek strip collapse, the trace
+ * underneath expands to the chat's bottom edge) or back down. All visuals
+ * are CSS keyed off .trace-open — same pattern as .agent-off.
+ */
+export function applyTraceRollup(wrapper, open) {
+  wrapper.classList.toggle('trace-open', open);
+  const btn = wrapper.querySelector('.simple-rollup-btn');
+  if (btn) {
+    btn.setAttribute('aria-expanded', String(open));
+    btn.textContent = open ? '▾' : '▴';
+    btn.title = open ? 'Hide trace' : 'Show trace';
+  }
+}
+
+/** Chevron toggles; clicking the peek strip only ever opens. */
+export function wireTraceRollup(wrapper) {
+  const btn = wrapper.querySelector('.simple-rollup-btn');
+  const strip = wrapper.querySelector('.simple-trace-strip');
+  if (btn) btn.addEventListener('click', () => applyTraceRollup(wrapper, !wrapper.classList.contains('trace-open')));
+  if (strip) strip.addEventListener('click', () => applyTraceRollup(wrapper, true));
+}
+
 export function mountSimple(el) {
   const folder = window.__pg.agent.folder;
 
@@ -87,6 +169,8 @@ export function mountSimple(el) {
     <div class="simple-mode">
       <div class="simple-topbar">
         <label>model <select id="simple-model-sel"></select></label>
+        <button type="button" id="simple-clear-chat" class="btn btn-ghost"
+                title="Clear this chat and reset your agent's memory — a fresh start">start over</button>
       </div>
       <div class="simple-layout">
         <div class="simple-stack">
@@ -96,30 +180,81 @@ export function mountSimple(el) {
           </div>
           <div class="simple-model-strip"></div>
         </div>
-        <aside class="simple-panel">
-          <div class="simple-panel-header">
-            <label class="simple-toggle" title="Off = talk to the raw model — no skills, no personality">
-              <input type="checkbox" id="simple-use-agent" checked>
-              <span>Use agent</span>
-            </label>
-            <input id="simple-agent-name" class="simple-name-input" maxlength="40"
-                   title="Your agent's name — click to edit" aria-label="Agent name">
-          </div>
-          <div class="simple-panel-body">
-            <div class="simple-section-label">Skills <span class="simple-hint">(click ⓘ to learn)</span></div>
-            <div id="simple-skills"></div>
-            <div class="simple-section-label">Personality</div>
-            <textarea id="simple-persona" rows="6"></textarea>
-            <button id="simple-save" class="btn btn-primary" type="button">Save my agent</button>
-            <div id="simple-save-status" class="simple-save-status" role="status"></div>
-          </div>
-        </aside>
+        <div class="simple-side-stack">
+          <aside class="simple-panel">
+            <div class="simple-panel-header">
+              <label class="simple-toggle" title="Off = talk to the raw model — no skills, no personality">
+                <input type="checkbox" id="simple-use-agent">
+                <span>Use agent</span>
+              </label>
+              <input id="simple-agent-name" class="simple-name-input" maxlength="40"
+                     title="Your agent's name — click to edit" aria-label="Agent name">
+              <button type="button" class="simple-rollup-btn" aria-expanded="false" title="Show trace">▴</button>
+            </div>
+            <div class="simple-panel-body">
+              <div class="simple-section-label">Skills <span class="simple-hint">(click ⓘ to learn)</span></div>
+              <div class="simple-skill-row simple-builtin-row">
+                <label title="Comes with the agent — always on, can't be turned off">
+                  <input type="checkbox" checked disabled>
+                  Built in <span class="simple-hint">(always on)</span>
+                </label>
+                <button type="button" class="simple-info-btn simple-builtin-info"
+                        aria-label="About built-in tools">ⓘ</button>
+                <div class="simple-skill-desc" hidden>
+                  Every agent has these from the start — no skill needed:
+                  <ul>
+                    <li>🖥️ <strong>Run commands</strong> (bash) — run scripts, install tools, call APIs</li>
+                    <li>📄 <strong>Read &amp; write files</strong> in its workspace</li>
+                    <li>🔎 <strong>Search files</strong> (grep / find)</li>
+                    <li>🌐 <strong>Web Use</strong> — fetch &amp; read web pages, and search the web</li>
+                  </ul>
+                  Skills below add <em>instructions</em> on top of these.
+                </div>
+              </div>
+              <div id="simple-skills"></div>
+              <div class="simple-section-label">Personality</div>
+              <textarea id="simple-persona" rows="6"></textarea>
+              <button id="simple-save" class="btn btn-primary" type="button">Save my agent</button>
+              <div id="simple-save-status" class="simple-save-status" role="status"></div>
+            </div>
+          </aside>
+          <div class="simple-trace-strip">🔍 trace — underneath</div>
+          <div class="simple-trace-host"></div>
+        </div>
       </div>
     </div>
   `;
 
   const wrapper = el.querySelector('.simple-mode');
   mountChat(el.querySelector('.simple-chat-host'));
+  adoptTracePanel(wrapper); // after mountChat: handlers wired, references captured
+  wireTraceRollup(wrapper);
+
+  // "Built in" row is static (not a real skill) — wire its ⓘ to expand the
+  // tool list. Skill rows wire their own ⓘ in renderSkillRows.
+  const builtinInfo = wrapper.querySelector('.simple-builtin-info');
+  if (builtinInfo) {
+    const desc = builtinInfo.parentElement.querySelector('.simple-skill-desc');
+    builtinInfo.addEventListener('click', () => {
+      desc.hidden = !desc.hidden;
+    });
+  }
+  // "Start over" — unlike the advanced tab's window-only Clear, the simple
+  // (teaching) tab resets everything: the chat window, the trace, AND the
+  // agent's conversation memory. A fresh slate matches the beginner mental
+  // model and stops a poisoned conversation from sticking (see /api/simple-reset).
+  el.querySelector('#simple-clear-chat').addEventListener('click', () => {
+    el.querySelector('#chat-clear')?.click(); // window watermark
+    el.querySelector('#trace-clear-btn')?.click(); // trace panel
+    fetch('/api/simple-reset', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ folder }),
+    }).catch(() => {
+      /* best-effort — window/trace are cleared regardless */
+    });
+  });
 
   initPanel(wrapper, folder);
 }
@@ -136,8 +271,21 @@ export function initPanel(wrapper, folder) {
   const toggleEl = wrapper.querySelector('#simple-use-agent');
 
   let lastSavedName = '';
+  // What the agent actually has — refreshed on load and on every save.
+  const baseline = { skills: new Set(), persona: '' };
 
+  // The agent toggle only flips agent/direct mode. Trace roll-up is left to
+  // the user — the panel stays however they last set it (chevron / strip).
   toggleEl.addEventListener('change', () => applyUseAgentToggle(wrapper, toggleEl.checked));
+  skillsHost.addEventListener('change', () => updateDirtyUi(wrapper, baseline));
+  personaEl.addEventListener('input', () => updateDirtyUi(wrapper, baseline));
+
+  // Default page state: start by talking to the raw model (agent OFF), with
+  // the panel rolled up so the trace is visible underneath. The panel stays
+  // rolled up until the user opens it (chevron / strip).
+  toggleEl.checked = false;
+  applyUseAgentToggle(wrapper, false);
+  applyTraceRollup(wrapper, true);
 
   // Load config + persona in parallel; render the panel when both land.
   Promise.all([
@@ -154,10 +302,21 @@ export function initPanel(wrapper, folder) {
         return;
       }
       lastSavedName = config.agentName || '';
-      nameInput.value = lastSavedName;
+      // Suggest "<FirstName>Bot" (e.g. "John Doe" → "JohnBot") while the name
+      // is still the un-personalized seat label; leave a student's chosen name
+      // alone. Only for "First Last"-style labels, and never double-suffix a
+      // name that already ends in "Bot" (e.g. the owner's "InstructorBot").
+      const seatLabel = ((window.__pg && window.__pg.agent && window.__pg.agent.name) || '').trim();
+      const firstName = /\s/.test(seatLabel) ? seatLabel.split(/\s+/)[0] : '';
+      const suggestedName = firstName && !/bot$/i.test(firstName) ? `${firstName}Bot` : '';
+      nameInput.value = suggestedName && lastSavedName === seatLabel ? suggestedName : lastSavedName;
       renderSkillRows(skillsHost, config.skills);
       personaEl.value = persona.text || '';
+      baseline.skills = new Set(config.skills.filter((s) => s.enabled).map((s) => s.name));
+      baseline.persona = personaEl.value;
       initModelDropdown(wrapper, folder, config); // Task 7
+      // Persist the suggested name so the agent's real identity matches the UI.
+      if (nameInput.value !== lastSavedName) saveName();
     })
     .catch(() => {
       statusEl.textContent = "Couldn't load your agent's setup — refresh to retry.";
@@ -219,6 +378,11 @@ export function initPanel(wrapper, folder) {
         body: JSON.stringify({ folder }),
       });
       if (!skillsRes.ok || !personaRes.ok || !nameOk || !restartRes.ok) throw new Error('save failed');
+      // Saved state IS the new baseline — clear the pending highlights first,
+      // then write the confirmation (updateDirtyUi blanks a stale hint).
+      baseline.skills = new Set(checkedSkills(skillsHost));
+      baseline.persona = personaEl.value;
+      updateDirtyUi(wrapper, baseline);
       statusEl.textContent = 'Saved! Your agent will use this from its next reply.';
     } catch {
       statusEl.textContent = "Couldn't save — try again.";
@@ -261,8 +425,9 @@ export function setBubbleLabels(wrapper, agentName, modelLabel) {
 }
 
 /**
- * Layering chrome text — the slim header on the agent card and the model
- * strip peeking out beneath it. The header names whichever layer you're
+ * Layering chrome text — the slim header on the card and the model strip
+ * peeking out beneath it (the strip is CSS-collapsed in .agent-off, when
+ * the base window stands alone). The header names whichever layer you're
  * talking to (agent ON → the agent; .agent-off → the bare model).
  */
 export function setLayerLabels(wrapper, agentName, modelLabel) {
@@ -271,7 +436,7 @@ export function setLayerLabels(wrapper, agentName, modelLabel) {
   if (strip) strip.textContent = `⚡ ${modelLabel} — underneath`;
   if (header) {
     header.textContent = wrapper.classList.contains('agent-off')
-      ? `⚡ ${modelLabel} — model only`
+      ? `⚡ ${modelLabel}`
       : `🤖 ${agentName}`;
   }
 }
@@ -291,8 +456,15 @@ function currentModelLabel(wrapper) {
 export function initModelDropdown(wrapper, folder, config) {
   const sel = wrapper.querySelector('#simple-model-sel');
   sel.innerHTML = '';
+  // Label each option "<Group> <model>" (e.g. "OpenAI gpt-5.5", "Local Gemma
+  // 12B") — the group displayName minus any parenthetical, looked up via the
+  // model's provider in PROVIDER_GROUPS.
+  const prefixFor = (provider) => {
+    const g = PROVIDER_GROUPS.find((g) => g.memberModelProviders.includes(provider));
+    return g ? `${g.displayName.replace(/\s*\(.*\)$/, '')} ` : '';
+  };
   for (const m of config.models) {
-    const opt = new Option(m.displayName, m.id);
+    const opt = new Option(`${prefixFor(m.provider)}${m.displayName}`, m.id);
     opt.dataset.provider = m.provider;
     sel.add(opt);
   }

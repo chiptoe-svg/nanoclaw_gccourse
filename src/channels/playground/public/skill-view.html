@@ -1,0 +1,153 @@
+<!doctype html>
+<!--
+  Read-only skill source viewer — opened in a new tab from the My Agent
+  panel's skill descriptions ("See what's inside ↗"). Shows every file a
+  skill ships (SKILL.md, scripts, …) so students can see that a skill is
+  just instructions + code.
+
+  Data comes from the existing library file API (auth-gated like the rest
+  of the playground): /api/skills/library/<category>/<name>/files and
+  …/file?path=. The skill's category isn't in the URL, so we probe the
+  likely homes in order: built-in (container/skills), then the Anthropic
+  library cache categories.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Skill source</title>
+  <link rel="icon" href="favicon.png" />
+  <style>
+    :root { --border: #d8dce8; --accent: #4a5a96; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, sans-serif;
+      color: #223;
+      background: #f4f6fb;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      padding: 10px 16px;
+      background: #fff;
+      border-bottom: 1px solid var(--border);
+    }
+    header h1 { margin: 0; font-size: 16px; }
+    header .sub { color: #667; font-size: 12px; margin-top: 2px; }
+    main { flex: 1; display: flex; min-height: 0; }
+    nav {
+      width: 230px;
+      flex: none;
+      overflow-y: auto;
+      border-right: 1px solid var(--border);
+      background: #fff;
+      padding: 8px 0;
+    }
+    nav button {
+      display: block;
+      width: 100%;
+      text-align: left;
+      border: none;
+      background: none;
+      cursor: pointer;
+      font: 12px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace;
+      padding: 2px 14px;
+      color: #334;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    nav button:hover { background: #eef1f8; }
+    nav button.active { background: #e3e9f7; color: var(--accent); font-weight: 600; }
+    nav .dir { padding: 2px 14px; font: 12px/1.7 ui-monospace, Menlo, monospace; color: #99a; }
+    section { flex: 1; overflow: auto; padding: 12px 16px; }
+    pre {
+      margin: 0;
+      font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .err { color: #a33; padding: 16px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1 id="title">Skill source</h1>
+    <div class="sub">Read-only view of everything this skill ships — instructions (SKILL.md) plus any scripts it runs.</div>
+  </header>
+  <main>
+    <nav id="files"></nav>
+    <section><pre id="content">Loading…</pre></section>
+  </main>
+  <script>
+    const skill = new URLSearchParams(location.search).get('skill') || '';
+    const titleEl = document.getElementById('title');
+    const filesEl = document.getElementById('files');
+    const contentEl = document.getElementById('content');
+    const enc = encodeURIComponent;
+
+    function fail(msg) {
+      filesEl.remove();
+      contentEl.textContent = '';
+      contentEl.insertAdjacentHTML('beforebegin', '<div class="err"></div>');
+      document.querySelector('.err').textContent = msg;
+    }
+
+    async function getJson(url) {
+      const r = await fetch(url, { credentials: 'same-origin' });
+      if (!r.ok) return null;
+      return r.json();
+    }
+
+    /* The URL only carries the skill name; probe its likely homes in order. */
+    async function findCategory(name) {
+      for (const cat of ['built-in', 'skills', 'template', 'spec']) {
+        const data = await getJson(`/api/skills/library/${enc(cat)}/${enc(name)}/files`);
+        if (data && Array.isArray(data.files) && data.files.length > 0) return cat;
+      }
+      return null;
+    }
+
+    async function showFile(cat, rel, btn) {
+      for (const b of filesEl.querySelectorAll('button')) b.classList.remove('active');
+      if (btn) btn.classList.add('active');
+      contentEl.textContent = 'Loading…';
+      const data = await getJson(`/api/skills/library/${enc(cat)}/${enc(skill)}/file?path=${enc(rel)}`);
+      contentEl.textContent = data && typeof data.text === 'string' ? data.text : '(could not read file)';
+    }
+
+    async function init() {
+      if (!skill || !/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(skill)) return fail('No skill specified.');
+      document.title = `${skill} — skill source`;
+      titleEl.textContent = `🧩 ${skill}`;
+      const cat = await findCategory(skill);
+      if (!cat) return fail(`Could not find files for skill "${skill}".`);
+      const data = await getJson(`/api/skills/library/${enc(cat)}/${enc(skill)}/files`);
+      let firstBtn = null;
+      let skillMdBtn = null;
+      for (const f of data.files) {
+        if (f.isDir) {
+          const d = document.createElement('div');
+          d.className = 'dir';
+          d.textContent = `${f.path}/`;
+          filesEl.appendChild(d);
+          continue;
+        }
+        const b = document.createElement('button');
+        b.textContent = f.path;
+        b.addEventListener('click', () => showFile(cat, f.path, b));
+        filesEl.appendChild(b);
+        if (!firstBtn) firstBtn = b;
+        if (f.path === 'SKILL.md') skillMdBtn = b;
+      }
+      const open = skillMdBtn || firstBtn;
+      if (open) open.click();
+      else contentEl.textContent = '(no files)';
+    }
+
+    init();
+  </script>
+</body>
+</html>

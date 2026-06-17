@@ -4,16 +4,21 @@ import path from 'path';
 
 const TMP = '/tmp/nanoclaw-test-simple-config';
 const SKILLS = path.join(TMP, 'container', 'skills');
+const LIBRARY_CACHE = path.join(TMP, 'data', 'playground', 'library-cache');
 
-// CONTAINER_DIR is read at module load by simple-config.ts, so the config
-// mock must be in place before the dynamic import in each test.
+// CONTAINER_DIR / DATA_DIR are read at module load by simple-config.ts, so
+// the config mock must be in place before the dynamic import in each test.
 vi.mock('../../../config.js', async () => {
   const actual = await vi.importActual<typeof import('../../../config.js')>('../../../config.js');
-  return { ...actual, CONTAINER_DIR: path.join('/tmp/nanoclaw-test-simple-config', 'container') };
+  return {
+    ...actual,
+    CONTAINER_DIR: path.join('/tmp/nanoclaw-test-simple-config', 'container'),
+    DATA_DIR: path.join('/tmp/nanoclaw-test-simple-config', 'data'),
+  };
 });
 
-function writeSkill(name: string, md: string | null) {
-  const dir = path.join(SKILLS, name);
+function writeSkill(name: string, md: string | null, root: string = SKILLS) {
+  const dir = path.join(root, name);
   fs.mkdirSync(dir, { recursive: true });
   if (md !== null) fs.writeFileSync(path.join(dir, 'SKILL.md'), md);
 }
@@ -27,7 +32,7 @@ beforeEach(() => {
     'image-gen',
     '---\ndescription: Create pictures, logos, and illustrations. Saves them as files.\n---\n# Image gen\n',
   );
-  writeSkill('pdf-reader', '# PDF Reader\nNo frontmatter here.\n');
+  writeSkill('pdf-reader', '# PDF Reader\n\nExtract text from PDF files. Also gets metadata.\n');
   writeSkill('wiki', '---\ndescription: Browse and edit the course wiki\n---\n# Wiki\n');
 });
 
@@ -68,8 +73,9 @@ describe('handleGetSimpleConfig', () => {
       },
       {
         name: 'pdf-reader',
-        title: 'Pdf reader',
-        description: 'Pdf reader',
+        title: 'PDF-reader',
+        // no frontmatter — first sentence of the first body paragraph
+        description: 'Extract text from PDF files.',
         enabled: false,
       },
     ]);
@@ -160,6 +166,26 @@ describe('handleGetSimpleConfig', () => {
     expect(body.skills[0]!.description).toBe('Onecli gateway');
   });
 
+  it('reads descriptions from the library cache for non-built-in skills', async () => {
+    writeSkill(
+      'pdf',
+      '---\ndescription: Do anything with PDF files. Merge, split, rotate.\n---\n# PDF\n',
+      path.join(LIBRARY_CACHE, 'skills'),
+    );
+    vi.doMock('../../../db/agent-groups.js', () => ({ getAgentGroupByFolder: () => GROUP }));
+    vi.doMock('../../../container-config.js', () => ({
+      materializeContainerJson: () => ({ skills: [] }),
+    }));
+    vi.doMock('../../../default-participant-slot.js', () => ({
+      readSlotConfig: () => ({ skills: ['pdf'], allowed_models: [] }),
+    }));
+    vi.doMock('../../../model-catalog.js', () => ({ getModelCatalog: () => [] }));
+    const { handleGetSimpleConfig } = await import('./simple-config.js');
+    const r = handleGetSimpleConfig('user_01');
+    const body = r.body as { skills: { description: string }[] };
+    expect(body.skills[0]!.description).toBe('Do anything with PDF files.');
+  });
+
   it('returns models: [] and activeModel: null for a group with no model configured', async () => {
     vi.doMock('../../../db/agent-groups.js', () => ({ getAgentGroupByFolder: () => GROUP }));
     vi.doMock('../../../container-config.js', () => ({
@@ -181,8 +207,15 @@ describe('humanizeSkillTitle', () => {
   it('kebab → spaced, first letter capitalized', async () => {
     const { humanizeSkillTitle } = await import('./simple-config.js');
     expect(humanizeSkillTitle('image-gen')).toBe('Image gen');
-    expect(humanizeSkillTitle('rag-pdf-ingest')).toBe('Rag pdf ingest');
     expect(humanizeSkillTitle('wiki')).toBe('Wiki');
+  });
+
+  it('curated overrides win over humanization', async () => {
+    const { humanizeSkillTitle } = await import('./simple-config.js');
+    expect(humanizeSkillTitle('agent-browser')).toBe('Web browser');
+    expect(humanizeSkillTitle('pdf-reader')).toBe('PDF-reader');
+    expect(humanizeSkillTitle('pdf')).toBe('PDF-read/write');
+    expect(humanizeSkillTitle('rag-pdf-ingest')).toBe('PDF-Rag ingest');
   });
 });
 
