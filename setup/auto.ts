@@ -159,6 +159,8 @@ async function main(): Promise<void> {
   }
 
   if (!skip.has('container')) {
+    const containerRuntime = await pickContainerRuntime();
+
     p.log.message(brandBody(dimWrap('Your assistant lives in its own sandbox. It can only see what you explicitly share.', 4)));
     p.log.message(
       brandBody(
@@ -172,15 +174,23 @@ async function main(): Promise<void> {
       running: "Preparing your assistant's sandbox…",
       done: 'Sandbox ready.',
       failed: "Couldn't prepare the sandbox.",
-    });
+    }, ['--runtime', containerRuntime]);
     if (!res.ok) {
       const err = res.terminal?.fields.ERROR;
       if (err === 'runtime_not_available') {
-        await fail(
-          'container',
-          "Docker isn't available.",
-          'Install Docker Desktop (or start it if already installed), then retry.',
-        );
+        if (containerRuntime === 'apple-container') {
+          await fail(
+            'container',
+            "Apple Container isn't available.",
+            'Install it with `brew install container`, start it with `container system start`, then retry.',
+          );
+        } else {
+          await fail(
+            'container',
+            "Docker isn't available.",
+            'Install Docker Desktop (or start it if already installed), then retry.',
+          );
+        }
       }
       if (err === 'docker_group_not_active') {
         await fail(
@@ -192,7 +202,9 @@ async function main(): Promise<void> {
       await fail(
         'container',
         "Couldn't build the sandbox.",
-        'If Docker has a stale cache, try: `docker builder prune -f`, then retry.',
+        containerRuntime === 'apple-container'
+          ? 'Check `container system status`, then retry.'
+          : 'If Docker has a stale cache, try: `docker builder prune -f`, then retry.',
       );
     }
     maybeReexecUnderSg();
@@ -1250,9 +1262,63 @@ async function pickAiCodingCli(opts: { force?: boolean } = {}): Promise<void> {
   setupLog.userInput('setup_cli', `${chosen.name} (picked)`);
 }
 
+/**
+ * Pick the container runtime and persist to .env as NANOCLAW_CONTAINER_RUNTIME.
+ *
+ * On Apple Silicon macOS both runtimes may be available — prompt the user with
+ * Apple Container as the default. On Linux or Intel macOS only Docker is
+ * supported; skip the prompt and return 'docker'.
+ *
+ * Re-runs respect an existing NANOCLAW_CONTAINER_RUNTIME value in .env.
+ */
+async function pickContainerRuntime(): Promise<'apple-container' | 'docker'> {
+  const isAppleSilicon = os.platform() === 'darwin' && os.arch() === 'arm64';
+  if (!isAppleSilicon) return 'docker';
+
+  const { commandExists } = await import('./platform.js');
+
+  const appleInstalled = commandExists('container');
+  const dockerInstalled = commandExists('docker');
+
+  // If only one runtime is present, use it silently.
+  if (appleInstalled && !dockerInstalled) return 'apple-container';
+  if (dockerInstalled && !appleInstalled) return 'docker';
+
+  // Check for a prior choice in .env.
+  const envPath = path.join(process.cwd(), '.env');
+  const existing = fs.existsSync(envPath)
+    ? (fs.readFileSync(envPath, 'utf-8').match(/^NANOCLAW_CONTAINER_RUNTIME=(.+)$/m)?.[1].trim() ?? '')
+    : '';
+  if (existing === 'apple-container' || existing === 'docker') return existing;
+
+  // Both installed (or neither) — prompt. Default to Apple Container.
+  const pick = ensureAnswer(
+    await brightSelect<'apple-container' | 'docker'>({
+      message: 'Which container runtime should agents use?',
+      options: [
+        {
+          value: 'apple-container',
+          label: 'Apple Container',
+          hint: 'macOS-native, recommended on Apple Silicon',
+        },
+        {
+          value: 'docker',
+          label: 'Docker',
+          hint: 'Docker Desktop or Docker Engine',
+        },
+      ],
+      initialValue: 'apple-container',
+    }),
+  ) as 'apple-container' | 'docker';
+
+  setupLog.userInput('container_runtime', pick);
+  return pick;
+}
+
 function persistAiCodingCli(cli: AiCodingCli): void {
   process.env.NANOCLAW_AI_CODING_CLI = cli.name;
   writeEnvLine('NANOCLAW_AI_CODING_CLI', cli.name);
+  cli.prepareEnvironment?.(process.cwd());
 }
 
 function writeEnvLine(key: string, value: string): void {

@@ -57,54 +57,76 @@ export function cleanupUnhealthyPeers(projectRoot: string = process.cwd()): Peer
 
 function cleanupLaunchdPeers(projectRoot: string): PeerCleanupResult {
   const ownLabel = getLaunchdLabel(projectRoot);
-  const agentsDir = path.join(os.homedir(), 'Library', 'LaunchAgents');
   const result: PeerCleanupResult = { checked: [], unloaded: [], failures: [] };
+  const uid = process.getuid?.() ?? os.userInfo().uid;
 
-  let plists: string[];
-  try {
-    plists = fs
-      .readdirSync(agentsDir)
-      .filter((f) => /^com\.nanoclaw.*\.plist$/.test(f))
-      .map((f) => path.join(agentsDir, f));
-  } catch {
-    return result;
-  }
+  // Scan both LaunchAgents (user-domain, legacy) and LaunchDaemons (system-domain, current).
+  const scanDirs: Array<{ dir: string; domain: 'gui' | 'system' }> = [
+    { dir: path.join(os.homedir(), 'Library', 'LaunchAgents'), domain: 'gui' },
+    { dir: '/Library/LaunchDaemons', domain: 'system' },
+  ];
 
-  const uid = process.getuid?.() ?? 0;
-
-  for (const plistPath of plists) {
-    const label = path.basename(plistPath, '.plist');
-    if (label === ownLabel) continue;
-
-    const status = probeLaunchdPeer(label, plistPath, uid);
-    if (!status) continue;
-    result.checked.push(status);
-
-    if (!status.unhealthy) continue;
-
+  for (const { dir, domain } of scanDirs) {
+    let plists: string[];
     try {
-      execFileSync('launchctl', ['unload', plistPath], { stdio: 'pipe' });
-      log.info('Unloaded unhealthy peer launchd service', {
-        label,
-        state: status.state,
-        runs: status.runs,
-        plistPath,
-      });
-      result.unloaded.push(status);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      log.warn('Failed to unload peer launchd service', { label, err: message });
-      result.failures.push({ label, err: message });
+      plists = fs
+        .readdirSync(dir)
+        .filter((f) => /^com\.nanoclaw.*\.plist$/.test(f))
+        .map((f) => path.join(dir, f));
+    } catch {
+      continue;
+    }
+
+    for (const plistPath of plists) {
+      const label = path.basename(plistPath, '.plist');
+      if (label === ownLabel) continue;
+
+      const status = probeLaunchdPeer(label, plistPath, uid, domain);
+      if (!status) continue;
+      result.checked.push(status);
+
+      if (!status.unhealthy) continue;
+
+      try {
+        if (domain === 'system') {
+          execFileSync('sudo', ['launchctl', 'bootout', `system/${label}`], { stdio: 'pipe' });
+        } else {
+          execFileSync('launchctl', ['bootout', `gui/${uid}/${label}`], { stdio: 'pipe' });
+        }
+        log.info('Unloaded unhealthy peer launchd service', {
+          label,
+          domain,
+          state: status.state,
+          runs: status.runs,
+          plistPath,
+        });
+        result.unloaded.push(status);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        log.warn('Failed to unload peer launchd service', { label, domain, err: message });
+        result.failures.push({ label, err: message });
+      }
     }
   }
 
   return result;
 }
 
-function probeLaunchdPeer(label: string, plistPath: string, uid: number): PeerStatus | null {
+function probeLaunchdPeer(
+  label: string,
+  plistPath: string,
+  uid: number,
+  domain: 'gui' | 'system' = 'gui',
+): PeerStatus | null {
+  const domainTarget = domain === 'system' ? `system/${label}` : `gui/${uid}/${label}`;
+  const args = domain === 'system'
+    ? ['sudo', 'launchctl', 'print', domainTarget]
+    : ['launchctl', 'print', domainTarget];
+  const [cmd, ...cmdArgs] = args;
+
   let output: string;
   try {
-    output = execFileSync('launchctl', ['print', `gui/${uid}/${label}`], {
+    output = execFileSync(cmd, cmdArgs, {
       stdio: ['ignore', 'pipe', 'pipe'],
       encoding: 'utf-8',
     });

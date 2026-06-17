@@ -8,7 +8,7 @@
 
 ## Goal
 
-NanoClaw is a self-hosted personal-Claude assistant. The Clemson install (Mac Studio at `130.127.162.180:3002`) pairs per-person agents over a shared messaging surface with a playground UI for chat and admin. **As of 2026-06-07 the classroom is a PILOT/test with pilot users — breakable, not live production** (the prior "production, not dev" framing is paused until the owner says otherwise; no real FERPA data expected during the pilot).
+NanoClaw is a self-hosted personal-Claude assistant. The Clemson install (Mac Studio at `gcworkflow.clemson.edu:3002`) pairs per-person agents over a shared messaging surface with a playground UI for chat and admin. **As of 2026-06-07 the classroom is a PILOT/test with pilot users — breakable, not live production** (the prior "production, not dev" framing is paused until the owner says otherwise; no real FERPA data expected during the pilot).
 
 **Direction (revised 2026-06-08):** this is a **group-agent platform**, not a classroom app — controlled, individuated agent access for a defined set of people, with "classroom" as one of ~5 scenarios (department, agent-optimization, +2 coming). **Model: ONE codebase + in-tree scenario profiles** under `src/scenarios/<name>/`, selected by config. This supersedes both prior attempts: lean-trunk+branch-install (too much sync ceremony) and fold-into-classroom-app (too narrow). Each scenario's code is tiny (~90% of "classroom" code is the general platform), so in-tree profiles beat branch-install ceremony. Separate installs run the same repo with different scenario config + data; platform features reach all installs on `git pull`. See `plans/group-agent-platform.md`. (The earlier `controlled-access` branch-extraction plan and the `classroom` sibling branch + `/add-classroom*` skills are superseded; branch/skills slated for retirement.)
 
@@ -40,7 +40,7 @@ DBs, image tags, and bot tokens are isolated — restart/rebuild one does NOT to
 Append-only. Drained by the human, not by `refresh-state`.
 
 - **Wire the platform to the scenario contract (Phase 2 proper).** — DONE 2026-06-09 (branch `scenario-contract-wiring`, commits `7606cf0`..`8e894cd`; plan `docs/superpowers/plans/2026-06-09-scenario-contract-wiring.md`). Generic contract-driven pair consumer + provisioning persona via `roleProfile('user')`; three classroom consumers deleted; `memberName()` added; verified by an `industryai_seminar` integration test. Turned out narrower than the ~30-file estimate — Phase 1 had already moved the pair consumers into the profile.
-- **⚠️ REVERT BEFORE GO-LIVE: playground is in insecure no-auth demo mode (set 2026-06-09).** For pre-launch campus testing, the playground runs with `PLAYGROUND_AUTH_BYPASS=1` + `PLAYGROUND_BIND_HOST=127.0.0.1`, fronted by a `caddy reverse-proxy --from :8088 --to 127.0.0.1:3002` (nohup, NOT durable across reboot) so `http://130.127.162.180:8088/?seat=owner|user_01|user_02|user_03` opens with no login on the Clemson network. This exposes the OWNER (admin) seat with no auth — fine for the breakable pilot, NOT for go-live. **To revert:** `pkill -f 'caddy reverse-proxy --from :8088'`; set `PLAYGROUND_AUTH_BYPASS=0` + `PLAYGROUND_BIND_HOST=0.0.0.0` in `.env`; `launchctl kickstart -k gui/$(id -u)/com.nanoclaw-v2-581fefa4`. The hardening guard (refuses bypass on non-loopback bind) is intact — this routes around it via the proxy, by design per the guard's own message.
+- **⚠️ REVERT BEFORE GO-LIVE: playground is in insecure no-auth demo mode (set 2026-06-09).** For pre-launch campus testing, the playground runs with `PLAYGROUND_AUTH_BYPASS=1` + `PLAYGROUND_BIND_HOST=127.0.0.1`, fronted by a `caddy reverse-proxy --from :8088 --to 127.0.0.1:3002` (nohup, NOT durable across reboot) so `http://gcworkflow.clemson.edu:8088/?seat=owner|user_01|user_02|user_03` opens with no login on the Clemson network. This exposes the OWNER (admin) seat with no auth — fine for the breakable pilot, NOT for go-live. **To revert:** `pkill -f 'caddy reverse-proxy --from :8088'`; set `PLAYGROUND_AUTH_BYPASS=0` + `PLAYGROUND_BIND_HOST=0.0.0.0` in `.env`; `launchctl kickstart -k gui/$(id -u)/com.nanoclaw-v2-581fefa4`. The hardening guard (refuses bypass on non-loopback bind) is intact — this routes around it via the proxy, by design per the guard's own message.
 - **Phase 4 (later):** retire the `classroom` sibling branch + `/add-classroom*` skills (superseded by in-tree scenarios).
 - **Web search: enable Brave (optional) — needs a key.** Brave is greyed in the owner card until `WEB_SEARCH_API_KEY` is set in `.env` (then restart the host). SearXNG is the live default and needs no key. Do NOT auto-extract the Brave key from the personal install's vault — the owner pastes it or authorizes the pull.
 - **Web search: SearXNG bridge-IP coupling.** SearXNG is bound to the Apple-container bridge gateway `192.168.64.1:8888` and `SEARXNG_URL`/the `docker run -p` both hardcode that IP. If the bridge IP ever changes (it's stable in practice — `detectHostGateway()` reads `bridge100`), update both the `-p` bind and `.env` `SEARXNG_URL`. Tracked in `~/.dev-ports.yaml` under `searxng`.
@@ -164,25 +164,34 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `main`
-- **Last tag:** `phase-c-complete-2026-05-28` (176 commits ahead)
+- **Last tag:** `phase-c-complete-2026-05-28` (177 commits ahead)
 
 ### Working tree
 
 ```
-## main...origin/main [ahead 36]
+## main...origin/main [ahead 37]
  M config/playground-seats.json
-A  container/skills/image-metadata/SKILL.md
-A  container/skills/image-metadata/scripts/metadata.py
-A  container/skills/image-vision/SKILL.md
-A  container/skills/image-vision/scripts/describe.py
-A  plans/image-skills.md
-M  src/channels/playground/api/simple-config.ts
+ M container/CLAUDE.md
+ M container/skills/make-website/SKILL.md
+M  package.json
+M  setup.sh
+M  setup/auto.ts
+M  setup/container.ts
+M  setup/lib/ai-coding-cli/codex.ts
+M  setup/lib/ai-coding-cli/types.ts
+M  setup/peer-cleanup.ts
+M  setup/platform.test.ts
+M  setup/service.ts
+ M src/channels/playground/public/tabs/skills.js
+M  src/container-runtime.ts
+ M state.md
 ?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
+eea9795 feat(skills): image-vision + image-metadata container skills
 1c76d15 fix(agent-runner): surface uploaded image paths to the agent
 62d1def feat(simple): "Start over" resets agent memory + trace, not just the window
 81b4af8 fix(agent-runner): strip stray message tags from folded trailing text
@@ -197,9 +206,8 @@ cd10ab6 feat(pi): gate skills and web tools on the enabled-skill set
 f1ba19f feat(playground): base model window matches the trace window's look
 8e42bbb fix(playground): base-layer windows sit flat — no drop shadow
 3e57b64 feat(playground): trace window gets the base-layer treatment + bigger rollup glyph
-c3f4008 feat(playground): fixed-height simple panel matching the chat card
 ```
 
 ### Last refresh
 
-2026-06-15T21:20:52Z
+2026-06-17T15:27:26Z
