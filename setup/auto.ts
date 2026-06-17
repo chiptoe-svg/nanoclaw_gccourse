@@ -411,13 +411,18 @@ async function main(): Promise<void> {
 
   if (!skip.has('cli-agent')) {
     await resolveDisplayName();
+    const defaultAgentProvider =
+      (process.env.NANOCLAW_DEFAULT_AGENT_PROVIDER as string | undefined) ??
+      (readEnvKey('NANOCLAW_DEFAULT_AGENT_PROVIDER') as string | null) ??
+      'anthropic';
+    const providerArg = defaultAgentProvider !== 'anthropic' ? ['--model-provider', defaultAgentProvider] : [];
     const res = await runQuietStep(
       'cli-agent',
       {
         running: 'Bringing your assistant online…',
         done: 'Assistant wired up.',
       },
-      ['--display-name', displayName!, '--agent-name', CLI_AGENT_NAME, '--folder', '_ping-test'],
+      ['--display-name', displayName!, '--agent-name', CLI_AGENT_NAME, '--folder', '_ping-test', ...providerArg],
     );
     if (!res.ok) {
       await fail(
@@ -481,7 +486,7 @@ async function main(): Promise<void> {
           const createRes = await runQuietChild(
             'create-terminal-agent',
             'pnpm',
-            ['exec', 'tsx', 'scripts/init-cli-agent.ts', '--display-name', displayName!, '--agent-name', terminalAgentName],
+            ['exec', 'tsx', 'scripts/init-cli-agent.ts', '--display-name', displayName!, '--agent-name', terminalAgentName, ...providerArg],
             { running: `Creating ${terminalAgentName}…`, done: `${terminalAgentName} is ready.` },
           );
           if (!createRes.ok) {
@@ -853,30 +858,67 @@ function appendEnvLine(line: string): void {
 
 // ─── native auth step (writes credential to .env) ───────────────────────
 // For users on the native credential proxy path (NANOCLAW_CREDENTIAL_MODE=native).
-// Mirrors the OneCLI auth step's UX (subscription / OAuth / API key / skip)
-// but writes the credential to .env where the credential proxy reads it
-// at runtime, instead of storing in OneCLI's vault.
+// First picks the agent AI provider (Anthropic or OpenAI), then collects the
+// matching credential and writes it to .env where the credential proxy reads it.
+// Provider choice is persisted as NANOCLAW_DEFAULT_AGENT_PROVIDER so re-runs skip
+// the prompt.
 async function runNativeAuthStep(): Promise<void> {
-  // Already-configured short-circuit.
+  // ── 1. Agent provider selection ──────────────────────────────────────────
+  // Persisted to .env so re-runs skip the prompt. Defaults to 'anthropic'.
+  let agentProvider =
+    (process.env.NANOCLAW_DEFAULT_AGENT_PROVIDER as string | undefined) ??
+    (readEnvKey('NANOCLAW_DEFAULT_AGENT_PROVIDER') as string | null) ??
+    '';
+
+  if (!agentProvider) {
+    agentProvider = ensureAnswer(
+      await brightSelect<string>({
+        message: 'Which AI provider will your agents use?',
+        options: [
+          {
+            value: 'anthropic',
+            label: 'Anthropic (Claude)',
+            hint: 'API key or Claude Code subscription — console.anthropic.com',
+          },
+          {
+            value: 'openai-platform',
+            label: 'OpenAI',
+            hint: 'API key from platform.openai.com',
+          },
+        ],
+        initialValue: 'anthropic',
+      }),
+    ) as string;
+    appendEnvLine(`NANOCLAW_DEFAULT_AGENT_PROVIDER=${agentProvider}`);
+    process.env.NANOCLAW_DEFAULT_AGENT_PROVIDER = agentProvider;
+    setupLog.userInput('agent_provider', agentProvider);
+    phEmit('agent_provider_chosen', { provider: agentProvider });
+  }
+
+  // ── 2a. OpenAI path ───────────────────────────────────────────────────────
+  if (agentProvider === 'openai-platform') {
+    if (readEnvKey('OPENAI_PLATFORM_API_KEY')) {
+      p.log.success(brandBody('Your OpenAI credential is already in .env.'));
+      setupLog.step('auth', 'skipped', 0, { REASON: 'env-already-present' });
+      return;
+    }
+    const key = ensureAnswer(
+      await p.password({
+        message: 'Paste your OpenAI API key (sk-…):',
+        validate: (v) => (v && v.trim().length > 10 ? undefined : 'Looks too short.'),
+      }),
+    );
+    appendEnvLine(`OPENAI_PLATFORM_API_KEY=${key.trim()}`);
+    p.log.success(brandBody('Wrote OPENAI_PLATFORM_API_KEY to .env.'));
+    setupLog.step('auth', 'ok', 0, { METHOD: 'openai-platform-api-key' });
+    return;
+  }
+
+  // ── 2b. Anthropic path ────────────────────────────────────────────────────
   if (readEnvKey('ANTHROPIC_API_KEY') || readEnvKey('CLAUDE_CODE_OAUTH_TOKEN') || readEnvKey('ANTHROPIC_AUTH_TOKEN')) {
     p.log.success(brandBody('Your Claude credential is already in .env.'));
     setupLog.step('auth', 'skipped', 0, { REASON: 'env-already-present' });
     return;
-  }
-
-  // When Codex (or another non-Claude coding CLI) is the setup helper, make it
-  // clear that this credential is for the NanoClaw AGENTS — it has nothing to
-  // do with the Codex CLI chosen above. The agents talk to Anthropic's API by
-  // default, which requires a Claude credential even if you edit code with Codex.
-  if (process.env.NANOCLAW_AI_CODING_CLI && process.env.NANOCLAW_AI_CODING_CLI !== 'claude') {
-    p.log.message(
-      brandBody(
-        dimWrap(
-          `Your coding tool is ${process.env.NANOCLAW_AI_CODING_CLI}, but your NanoClaw agents talk to Claude (Anthropic) by default and need a separate credential. This is for the agents — not for ${process.env.NANOCLAW_AI_CODING_CLI}.`,
-          4,
-        ),
-      ),
-    );
   }
 
   // Pre-flight probe: detect which methods are available right now so the

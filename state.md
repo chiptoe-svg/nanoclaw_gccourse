@@ -164,16 +164,18 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `main`
-- **Last tag:** `phase-c-complete-2026-05-28` (178 commits ahead)
+- **Last tag:** `phase-c-complete-2026-05-28` (179 commits ahead)
 
 ### Working tree
 
 ```
-## main...origin/main
+## main...origin/main [ahead 1]
  M config/playground-seats.json
  M container/CLAUDE.md
  M container/skills/make-website/SKILL.md
+M  scripts/init-cli-agent.ts
 M  setup/auto.ts
+M  setup/cli-agent.ts
  M src/channels/playground/public/tabs/skills.js
 ?? .codegraph/
 ```
@@ -181,6 +183,7 @@ M  setup/auto.ts
 ### Recent commits (last 15)
 
 ```
+4b762fb3 fix(setup): add ensureAppleContainerReady + Codex auth clarification
 ce65b3c6 feat(setup): Apple Container + Codex support; LaunchDaemon; Node <26 cap
 eea9795e feat(skills): image-vision + image-metadata container skills
 1c76d15f fix(agent-runner): surface uploaded image paths to the agent
@@ -195,9 +198,8 @@ b17dbc3c fix(simple): don't auto-roll the trace panel on agent toggle
 cd10ab69 feat(pi): gate skills and web tools on the enabled-skill set
 3c26bf45 feat(playground): friendlier model-only wording
 f1ba19fe feat(playground): base model window matches the trace window's look
-8e42bbb2 fix(playground): base-layer windows sit flat — no drop shadow
 ```
 
 ### Last refresh
 
-2026-06-17T15:50:31Z
+2026-06-17T15:59:37Z

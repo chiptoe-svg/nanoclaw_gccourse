@@ -20,10 +20,12 @@ function parseArgs(args: string[]): {
   displayName: string;
   agentName?: string;
   folder?: string;
+  modelProvider?: string;
 } {
   let displayName: string | undefined;
   let agentName: string | undefined;
   let folder: string | undefined;
+  let modelProvider: string | undefined;
 
   for (let i = 0; i < args.length; i++) {
     const key = args[i];
@@ -39,6 +41,10 @@ function parseArgs(args: string[]): {
         break;
       case '--folder':
         folder = val;
+        i++;
+        break;
+      case '--model-provider':
+        modelProvider = val;
         i++;
         break;
     }
@@ -57,7 +63,7 @@ function parseArgs(args: string[]): {
 }
 
 export async function run(args: string[]): Promise<void> {
-  const { displayName, agentName, folder } = parseArgs(args);
+  const { displayName, agentName, folder, modelProvider } = parseArgs(args);
 
   const projectRoot = process.cwd();
   const script = path.join(projectRoot, 'scripts', 'init-cli-agent.ts');
@@ -65,6 +71,7 @@ export async function run(args: string[]): Promise<void> {
   const scriptArgs = ['exec', 'tsx', script, '--display-name', displayName];
   if (agentName) scriptArgs.push('--agent-name', agentName);
   if (folder) scriptArgs.push('--folder', folder);
+  if (modelProvider) scriptArgs.push('--model-provider', modelProvider);
 
   log.info('Invoking init-cli-agent', { displayName, agentName });
 
