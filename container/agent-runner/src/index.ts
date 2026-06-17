@@ -45,6 +45,27 @@ function log(msg: string): void {
 
 const CWD = '/workspace/agent';
 
+// Canonical per-group persona file, in precedence order. AGENTS.md is the
+// cross-tool standard (the playground "Personality" box writes it); the
+// legacy CLAUDE.local.md is the fallback until the rest of the plumbing
+// migrates. First one that exists with content wins — we do NOT concat the
+// two (the legacy file is the old name for the same thing, not a second
+// layer). Read here, in the provider-agnostic layer, so every provider gets
+// it identically via systemContext.instructions.
+const PERSONA_FILES = ['AGENTS.md', 'CLAUDE.local.md'];
+
+function readPersona(dir: string): string {
+  for (const name of PERSONA_FILES) {
+    try {
+      const text = fs.readFileSync(path.join(dir, name), 'utf8').trim();
+      if (text) return text;
+    } catch {
+      /* missing/unreadable — try the next candidate */
+    }
+  }
+  return '';
+}
+
 async function main(): Promise<void> {
   const config = loadConfig();
 
@@ -56,13 +77,17 @@ async function main(): Promise<void> {
 
   log(`Starting v2 agent-runner (provider: ${providerName})`);
 
-  // Runtime-generated system-prompt addendum: agent identity (name) plus
-  // the live destinations map. Everything else (capabilities, per-module
-  // instructions, per-channel formatting) is loaded by Claude Code from
-  // /workspace/agent/CLAUDE.md — the composed entry imports the shared
-  // base (/app/CLAUDE.md) and each enabled module's fragment. Per-group
-  // memory lives in /workspace/agent/CLAUDE.local.md (auto-loaded).
-  const instructions = buildSystemPromptAddendum(config.assistantName || undefined);
+  // System prompt = runtime addendum (agent identity + live destinations map)
+  // plus the per-group persona. The persona is composed in HERE, the
+  // provider-agnostic layer, rather than via any provider's own
+  // AGENTS.md/CLAUDE.md auto-loader: nanoclaw drives several providers and
+  // they differ in whether/how they discover project docs (pi, for one,
+  // isn't run through its file loader at all). Folding the persona into
+  // systemContext.instructions means every provider receives the identical
+  // final prompt through the one channel they all consume.
+  const addendum = buildSystemPromptAddendum(config.assistantName || undefined);
+  const persona = readPersona(CWD);
+  const instructions = persona ? `${addendum}\n\n---\n\n${persona}` : addendum;
 
   // Discover additional directories mounted at /workspace/extra/*
   const additionalDirectories: string[] = [];

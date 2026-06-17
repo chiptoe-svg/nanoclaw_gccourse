@@ -4,7 +4,7 @@
  * Writes to outbound.db (container-owned).
  * The host polls this DB (read-only) for undelivered messages.
  */
-import { getInboundDb, getOutboundDb } from './connection.js';
+import { getInboundDb, getOutboundDb, withReadonlyRetry } from './connection.js';
 
 export interface MessageOutRow {
   id: string;
@@ -49,42 +49,47 @@ export interface WriteMessageOut {
  * the agent's "edit message #5" could resolve to the wrong row.
  */
 export function writeMessageOut(msg: WriteMessageOut): number {
-  const outbound = getOutboundDb();
-  const inbound = getInboundDb();
+  // Whole body in the retry: re-fetch getOutboundDb() each attempt (the cached
+  // handle is dropped on a transient readonly), and recompute the seq from the
+  // reopened connection so it stays correct across a retry.
+  return withReadonlyRetry(() => {
+    const outbound = getOutboundDb();
+    const inbound = getInboundDb();
 
-  // Read max seq from both DBs to maintain global ordering.
-  // Safe: each side only reads the other DB, never writes to it.
-  const maxOut = (outbound.prepare('SELECT COALESCE(MAX(seq), 0) AS m FROM messages_out').get() as { m: number }).m;
-  const maxIn = (inbound.prepare('SELECT COALESCE(MAX(seq), 0) AS m FROM messages_in').get() as { m: number }).m;
-  const max = Math.max(maxOut, maxIn);
-  const nextSeq = max % 2 === 0 ? max + 1 : max + 2; // next odd
+    // Read max seq from both DBs to maintain global ordering.
+    // Safe: each side only reads the other DB, never writes to it.
+    const maxOut = (outbound.prepare('SELECT COALESCE(MAX(seq), 0) AS m FROM messages_out').get() as { m: number }).m;
+    const maxIn = (inbound.prepare('SELECT COALESCE(MAX(seq), 0) AS m FROM messages_in').get() as { m: number }).m;
+    const max = Math.max(maxOut, maxIn);
+    const nextSeq = max % 2 === 0 ? max + 1 : max + 2; // next odd
 
-  // bun:sqlite requires named parameters to be passed with the prefix character
-  // in the JS object keys (better-sqlite3 auto-stripped it, bun:sqlite does not).
-  outbound
-    .prepare(
-      `INSERT INTO messages_out (id, seq, in_reply_to, timestamp, deliver_after, recurrence, kind, platform_id, channel_type, thread_id, content, tokens_in, tokens_out, latency_ms, provider, model)
+    // bun:sqlite requires named parameters to be passed with the prefix character
+    // in the JS object keys (better-sqlite3 auto-stripped it, bun:sqlite does not).
+    outbound
+      .prepare(
+        `INSERT INTO messages_out (id, seq, in_reply_to, timestamp, deliver_after, recurrence, kind, platform_id, channel_type, thread_id, content, tokens_in, tokens_out, latency_ms, provider, model)
      VALUES ($id, $seq, $in_reply_to, datetime('now'), $deliver_after, $recurrence, $kind, $platform_id, $channel_type, $thread_id, $content, $tokens_in, $tokens_out, $latency_ms, $provider, $model)`,
-    )
-    .run({
-      $id: msg.id,
-      $seq: nextSeq,
-      $in_reply_to: msg.in_reply_to ?? null,
-      $deliver_after: msg.deliver_after ?? null,
-      $recurrence: msg.recurrence ?? null,
-      $kind: msg.kind,
-      $platform_id: msg.platform_id ?? null,
-      $channel_type: msg.channel_type ?? null,
-      $thread_id: msg.thread_id ?? null,
-      $content: msg.content,
-      $tokens_in: msg.tokens_in ?? null,
-      $tokens_out: msg.tokens_out ?? null,
-      $latency_ms: msg.latency_ms ?? null,
-      $provider: msg.provider ?? null,
-      $model: msg.model ?? null,
-    });
+      )
+      .run({
+        $id: msg.id,
+        $seq: nextSeq,
+        $in_reply_to: msg.in_reply_to ?? null,
+        $deliver_after: msg.deliver_after ?? null,
+        $recurrence: msg.recurrence ?? null,
+        $kind: msg.kind,
+        $platform_id: msg.platform_id ?? null,
+        $channel_type: msg.channel_type ?? null,
+        $thread_id: msg.thread_id ?? null,
+        $content: msg.content,
+        $tokens_in: msg.tokens_in ?? null,
+        $tokens_out: msg.tokens_out ?? null,
+        $latency_ms: msg.latency_ms ?? null,
+        $provider: msg.provider ?? null,
+        $model: msg.model ?? null,
+      });
 
-  return nextSeq;
+    return nextSeq;
+  });
 }
 
 /**

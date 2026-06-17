@@ -33,6 +33,52 @@ let _heartbeatPath: string = DEFAULT_HEARTBEAT_PATH;
 let _testMode = false;
 
 /**
+ * SQLite raises "attempt to write a readonly database" when it cannot create
+ * its rollback journal next to the DB file (journal_mode=DELETE writes
+ * `outbound.db-journal` in the same dir on every write transaction). On the
+ * Apple Container / virtiofs bind mount that holds /workspace, the dir is
+ * occasionally not write-ready for a brief moment right after a container
+ * (re)spawn — the file isn't actually read-only, the mount just hasn't
+ * settled. Without a retry the agent-runner treats this as fatal and the
+ * whole turn is lost; the host then respawns and usually succeeds, which is
+ * the "really slow / sometimes no answer" failure mode. Retry briefly so a
+ * transient window is invisible.
+ */
+function isReadonlyError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /readonly database|SQLITE_READONLY/i.test(msg);
+}
+
+const READONLY_RETRY_ATTEMPTS = 20;
+const READONLY_RETRY_DELAY_MS = 150; // ~3s max before giving up
+
+/**
+ * Run an outbound-DB write, retrying on the transient readonly error above.
+ * Pass a thunk that re-fetches `getOutboundDb()` internally (don't capture the
+ * handle outside) — on each retry the cached connection is dropped so the
+ * next getOutboundDb() reopens against the settled mount.
+ */
+export function withReadonlyRetry<T>(fn: () => T): T {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < READONLY_RETRY_ATTEMPTS; attempt++) {
+    try {
+      return fn();
+    } catch (err) {
+      if (!isReadonlyError(err)) throw err;
+      lastErr = err;
+      try {
+        _outbound?.close();
+      } catch {
+        /* ignore — reopening anyway */
+      }
+      _outbound = null;
+      if (attempt < READONLY_RETRY_ATTEMPTS - 1) Bun.sleepSync(READONLY_RETRY_DELAY_MS);
+    }
+  }
+  throw lastErr;
+}
+
+/**
  * Avoid all cached db reads; open inbound.db read-only with mmap and page cache disabled.
  *
  * Use this (not getInboundDb) for readers that need to see host-written rows
@@ -76,43 +122,58 @@ export function getInboundDb(): Database {
 
 /** Outbound DB — container owns this file (sole writer). */
 export function getOutboundDb(): Database {
-  if (!_outbound) {
-    _outbound = new Database(DEFAULT_OUTBOUND_PATH);
-    _outbound.exec('PRAGMA journal_mode = DELETE');
-    _outbound.exec('PRAGMA busy_timeout = 5000');
-    _outbound.exec('PRAGMA foreign_keys = ON');
-    // Lightweight forward-compat: session_state was added after the initial
-    // v2 schema, so older session DBs don't have it. Create it on demand
-    // instead of requiring a formal migration pass. Also handle the case
-    // where an earlier revision of this table existed without updated_at —
-    // ALTER TABLE to add any missing columns.
-    _outbound.exec(`
-      CREATE TABLE IF NOT EXISTS session_state (
-        key        TEXT PRIMARY KEY,
-        value      TEXT NOT NULL,
-        updated_at TEXT NOT NULL
+  if (_outbound) return _outbound;
+  // Opening + the PRAGMA/CREATE-TABLE init all WRITE (they need the journal),
+  // so the open itself can hit the transient readonly window after a respawn.
+  // Retry until the mount is write-ready instead of crashing the runner.
+  withReadonlyRetry(() => {
+    const db = new Database(DEFAULT_OUTBOUND_PATH);
+    try {
+      db.exec('PRAGMA journal_mode = DELETE');
+      db.exec('PRAGMA busy_timeout = 5000');
+      db.exec('PRAGMA foreign_keys = ON');
+      // Lightweight forward-compat: session_state was added after the initial
+      // v2 schema, so older session DBs don't have it. Create it on demand
+      // instead of requiring a formal migration pass. Also handle the case
+      // where an earlier revision of this table existed without updated_at —
+      // ALTER TABLE to add any missing columns.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS session_state (
+          key        TEXT PRIMARY KEY,
+          value      TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+      `);
+      const cols = new Set(
+        (db.prepare("PRAGMA table_info('session_state')").all() as Array<{ name: string }>).map((c) => c.name),
       );
-    `);
-    const cols = new Set(
-      (_outbound.prepare("PRAGMA table_info('session_state')").all() as Array<{ name: string }>).map((c) => c.name),
-    );
-    if (!cols.has('updated_at')) {
-      _outbound.exec(`ALTER TABLE session_state ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''`);
+      if (!cols.has('updated_at')) {
+        db.exec(`ALTER TABLE session_state ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''`);
+      }
+      // container_state: tracks the current tool in flight (if any) so the host
+      // sweep can widen its stuck tolerance when Bash is running with a user-
+      // declared long timeout. Forward-compat for older outbound.db files.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS container_state (
+          id                       INTEGER PRIMARY KEY CHECK (id = 1),
+          current_tool             TEXT,
+          tool_declared_timeout_ms INTEGER,
+          tool_started_at          TEXT,
+          updated_at               TEXT NOT NULL
+        );
+      `);
+    } catch (err) {
+      // Don't leak a half-open handle between retries.
+      try {
+        db.close();
+      } catch {
+        /* ignore */
+      }
+      throw err;
     }
-    // container_state: tracks the current tool in flight (if any) so the host
-    // sweep can widen its stuck tolerance when Bash is running with a user-
-    // declared long timeout. Forward-compat for older outbound.db files.
-    _outbound.exec(`
-      CREATE TABLE IF NOT EXISTS container_state (
-        id                       INTEGER PRIMARY KEY CHECK (id = 1),
-        current_tool             TEXT,
-        tool_declared_timeout_ms INTEGER,
-        tool_started_at          TEXT,
-        updated_at               TEXT NOT NULL
-      );
-    `);
-  }
-  return _outbound;
+    _outbound = db;
+  });
+  return _outbound!;
 }
 
 /**
@@ -122,33 +183,37 @@ export function getOutboundDb(): Database {
  */
 export function setContainerToolInFlight(tool: string, declaredTimeoutMs: number | null): void {
   const now = new Date().toISOString();
-  getOutboundDb()
-    .prepare(
-      `INSERT INTO container_state (id, current_tool, tool_declared_timeout_ms, tool_started_at, updated_at)
+  withReadonlyRetry(() =>
+    getOutboundDb()
+      .prepare(
+        `INSERT INTO container_state (id, current_tool, tool_declared_timeout_ms, tool_started_at, updated_at)
        VALUES (1, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
          current_tool = excluded.current_tool,
          tool_declared_timeout_ms = excluded.tool_declared_timeout_ms,
          tool_started_at = excluded.tool_started_at,
          updated_at = excluded.updated_at`,
-    )
-    .run(tool, declaredTimeoutMs, now, now);
+      )
+      .run(tool, declaredTimeoutMs, now, now),
+  );
 }
 
 /** Clear the in-flight tool — called on PostToolUse / PostToolUseFailure. */
 export function clearContainerToolInFlight(): void {
   const now = new Date().toISOString();
-  getOutboundDb()
-    .prepare(
-      `INSERT INTO container_state (id, current_tool, tool_declared_timeout_ms, tool_started_at, updated_at)
+  withReadonlyRetry(() =>
+    getOutboundDb()
+      .prepare(
+        `INSERT INTO container_state (id, current_tool, tool_declared_timeout_ms, tool_started_at, updated_at)
        VALUES (1, NULL, NULL, NULL, ?)
        ON CONFLICT(id) DO UPDATE SET
          current_tool = NULL,
          tool_declared_timeout_ms = NULL,
          tool_started_at = NULL,
          updated_at = excluded.updated_at`,
-    )
-    .run(now);
+      )
+      .run(now),
+  );
 }
 
 /**
@@ -176,7 +241,7 @@ export function touchHeartbeat(): void {
  * Clearing them lets the new container re-process those messages.
  */
 export function clearStaleProcessingAcks(): void {
-  getOutboundDb().prepare("DELETE FROM processing_ack WHERE status = 'processing'").run();
+  withReadonlyRetry(() => getOutboundDb().prepare("DELETE FROM processing_ack WHERE status = 'processing'").run());
 }
 
 /** For tests — creates in-memory DBs with the session schemas. */

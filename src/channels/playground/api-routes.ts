@@ -146,7 +146,12 @@ import {
   handleLogout,
   handleLogoutAll,
 } from './api/me.js';
-import { handleGetSimpleConfig, handlePutAgentName, handleSimpleRestart } from './api/simple-config.js';
+import {
+  handleGetSimpleConfig,
+  handlePutAgentName,
+  handleSimpleRestart,
+  handleSimpleReset,
+} from './api/simple-config.js';
 import { pushToAll, registerSseClient } from './sse.js';
 
 export async function route(
@@ -697,6 +702,20 @@ export async function route(
       if (!decision.allow) return send(res, 403, { error: decision.reason || 'Forbidden' });
     }
     const r = handleSimpleRestart(folder);
+    return send(res, r.status, r.body);
+  }
+
+  // POST /api/simple-reset — "Start over": wipe the agent's conversation
+  // memory so the next message begins fresh (simple tab only).
+  if (method === 'POST' && url.pathname === '/api/simple-reset') {
+    const body = await readJsonBody(req);
+    const folder = typeof body.folder === 'string' ? body.folder : '';
+    if (!folder) return send(res, 400, { error: 'folder (string) required' });
+    {
+      const decision = checkDraftMutation(folder, 'skills_put', session.userId);
+      if (!decision.allow) return send(res, 403, { error: decision.reason || 'Forbidden' });
+    }
+    const r = handleSimpleReset(folder);
     return send(res, r.status, r.body);
   }
 

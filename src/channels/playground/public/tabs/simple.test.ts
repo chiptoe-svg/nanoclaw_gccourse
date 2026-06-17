@@ -9,6 +9,9 @@ import {
   setLayerLabels,
   initPanel,
   initModelDropdown,
+  adoptTracePanel,
+  wireTraceRollup,
+  updateDirtyUi,
 } from './simple.js';
 
 const SKILLS = [
@@ -171,6 +174,48 @@ function okJson(body: unknown) {
   return Promise.resolve({ ok: true, json: async () => body } as Response);
 }
 
+describe('updateDirtyUi', () => {
+  function dirtyWrapper() {
+    const wrapper = buildPanelWrapper();
+    renderSkillRows(wrapper.querySelector('#simple-skills')!, SKILLS);
+    return wrapper;
+  }
+
+  it('marks changed skill rows pending and lights the Save button', () => {
+    const wrapper = dirtyWrapper();
+    const baseline = { skills: new Set(['image-gen']), persona: '' };
+    expect(updateDirtyUi(wrapper, baseline)).toBe(false);
+
+    // Toggle pdf-reader on — its row goes pending, image-gen's doesn't.
+    const boxes = wrapper.querySelectorAll<HTMLInputElement>('input[data-skill]');
+    boxes[1]!.checked = true;
+    expect(updateDirtyUi(wrapper, baseline)).toBe(true);
+    const rows = wrapper.querySelectorAll('.simple-skill-row');
+    expect(rows[0]!.classList.contains('simple-pending')).toBe(false);
+    expect(rows[1]!.classList.contains('simple-pending')).toBe(true);
+    const saveBtn = wrapper.querySelector('#simple-save')!;
+    const status = wrapper.querySelector('#simple-save-status')!;
+    expect(saveBtn.classList.contains('btn-attention')).toBe(true);
+    expect(status.textContent).toContain('Unsaved changes');
+
+    // Toggle it back off — everything clears, stale hint blanked.
+    boxes[1]!.checked = false;
+    expect(updateDirtyUi(wrapper, baseline)).toBe(false);
+    expect(rows[1]!.classList.contains('simple-pending')).toBe(false);
+    expect(saveBtn.classList.contains('btn-attention')).toBe(false);
+    expect(status.textContent).toBe('');
+  });
+
+  it('persona edits count as dirty without marking any skill row', () => {
+    const wrapper = dirtyWrapper();
+    const baseline = { skills: new Set(['image-gen']), persona: 'original' };
+    (wrapper.querySelector('#simple-persona') as HTMLTextAreaElement).value = 'edited';
+    expect(updateDirtyUi(wrapper, baseline)).toBe(true);
+    expect(wrapper.querySelectorAll('.simple-pending').length).toBe(0);
+    expect(wrapper.querySelector('#simple-save')!.classList.contains('btn-attention')).toBe(true);
+  });
+});
+
 describe('initPanel — Save flow', () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -298,10 +343,65 @@ describe('initModelDropdown — model change', () => {
     expect((wrapper.querySelector('#provider-sel') as HTMLSelectElement).value).toBe('openai');
     expect((wrapper.querySelector('#model-sel') as HTMLSelectElement).value).toBe('gpt-5.5');
 
-    // Layer labels track the dropdown: strip shows the new model,
-    // ON-state header shows the agent name.
-    expect(wrapper.querySelector('.simple-model-strip')!.textContent).toBe('⚡ GPT-5.5 — underneath');
+    // Layer labels track the dropdown (group-prefixed option label): strip
+    // shows the new model, ON-state header shows the agent name.
+    expect(wrapper.querySelector('.simple-model-strip')!.textContent).toBe('⚡ OpenAI GPT-5.5 — underneath');
     expect(wrapper.querySelector('.simple-card-header')!.textContent).toBe('🤖 TestBot');
+  });
+});
+
+describe('trace roll-up', () => {
+  function rollupWrapper() {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'simple-mode';
+    wrapper.innerHTML = `
+      <div class="simple-chat-host">
+        <aside class="trace-panel"><ul id="trace-log"></ul></aside>
+      </div>
+      <button type="button" class="simple-rollup-btn" aria-expanded="false" title="Show trace">▴</button>
+      <div class="simple-trace-strip">🔍 trace — underneath</div>
+      <div class="simple-trace-host"></div>
+    `;
+    return wrapper;
+  }
+
+  it('adoptTracePanel moves the SAME trace-panel node into the side host', () => {
+    const wrapper = rollupWrapper();
+    const panel = wrapper.querySelector('.trace-panel')!;
+    const log = wrapper.querySelector('#trace-log')!;
+    adoptTracePanel(wrapper);
+    // Same node, not a copy — chat.js's captured references must survive.
+    expect(wrapper.querySelector('.simple-trace-host .trace-panel')).toBe(panel);
+    expect(wrapper.querySelector('.simple-trace-host #trace-log')).toBe(log);
+    expect(wrapper.querySelector('.simple-chat-host .trace-panel')).toBeNull();
+  });
+
+  it('chevron click toggles .trace-open, aria-expanded, glyph, and title', () => {
+    const wrapper = rollupWrapper();
+    wireTraceRollup(wrapper);
+    const btn = wrapper.querySelector('.simple-rollup-btn') as HTMLButtonElement;
+
+    btn.click();
+    expect(wrapper.classList.contains('trace-open')).toBe(true);
+    expect(btn.getAttribute('aria-expanded')).toBe('true');
+    expect(btn.textContent).toBe('▾');
+    expect(btn.title).toBe('Hide trace');
+
+    btn.click();
+    expect(wrapper.classList.contains('trace-open')).toBe(false);
+    expect(btn.getAttribute('aria-expanded')).toBe('false');
+    expect(btn.textContent).toBe('▴');
+    expect(btn.title).toBe('Show trace');
+  });
+
+  it('clicking the peek strip rolls up (opens only, never toggles closed)', () => {
+    const wrapper = rollupWrapper();
+    wireTraceRollup(wrapper);
+    const strip = wrapper.querySelector('.simple-trace-strip') as HTMLElement;
+    strip.click();
+    expect(wrapper.classList.contains('trace-open')).toBe(true);
+    strip.click(); // strip is CSS-collapsed when open, but must not toggle closed either way
+    expect(wrapper.classList.contains('trace-open')).toBe(true);
   });
 });
 
@@ -332,7 +432,8 @@ describe('setLayerLabels / applyUseAgentToggle layering', () => {
     const wrapper = layeredWrapper();
     wrapper.classList.add('agent-off');
     setLayerLabels(wrapper, 'JaneBot', 'GPT-5.5');
-    expect(wrapper.querySelector('.simple-card-header')!.textContent).toBe('⚡ GPT-5.5 — model only');
+    expect(wrapper.querySelector('.simple-card-header')!.textContent).toBe('⚡ GPT-5.5');
+    // The strip is CSS-collapsed in OFF mode; its text always names the model.
     expect(wrapper.querySelector('.simple-model-strip')!.textContent).toBe('⚡ GPT-5.5 — underneath');
   });
 
@@ -340,7 +441,7 @@ describe('setLayerLabels / applyUseAgentToggle layering', () => {
     const wrapper = layeredWrapper();
     applyUseAgentToggle(wrapper, false);
     expect(wrapper.classList.contains('agent-off')).toBe(true);
-    expect(wrapper.querySelector('.simple-card-header')!.textContent).toBe('⚡ GPT-5.5 — model only');
+    expect(wrapper.querySelector('.simple-card-header')!.textContent).toBe('⚡ GPT-5.5');
 
     applyUseAgentToggle(wrapper, true);
     expect(wrapper.classList.contains('agent-off')).toBe(false);

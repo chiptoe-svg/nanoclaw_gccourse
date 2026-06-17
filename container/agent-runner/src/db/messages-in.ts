@@ -8,7 +8,7 @@
  * processing_ack. The host reads processing_ack to sync message lifecycle.
  */
 import { getConfig } from '../config.js';
-import { openInboundDb, getOutboundDb } from './connection.js';
+import { openInboundDb, getOutboundDb, withReadonlyRetry } from './connection.js';
 
 // Cache whether inbound.db has the on_wake column (added by the host
 // in v2.0.47+). The container opens inbound.db read-only, so it can't
@@ -104,34 +104,40 @@ export function getPendingMessages(isFirstPoll = false): MessageInRow[] {
 /** Mark messages as processing — writes to processing_ack in outbound.db. */
 export function markProcessing(ids: string[]): void {
   if (ids.length === 0) return;
-  const db = getOutboundDb();
-  const stmt = db.prepare(
-    "INSERT OR REPLACE INTO processing_ack (message_id, status, status_changed) VALUES (?, 'processing', datetime('now'))",
-  );
-  db.transaction(() => {
-    for (const id of ids) stmt.run(id);
-  })();
+  withReadonlyRetry(() => {
+    const db = getOutboundDb();
+    const stmt = db.prepare(
+      "INSERT OR REPLACE INTO processing_ack (message_id, status, status_changed) VALUES (?, 'processing', datetime('now'))",
+    );
+    db.transaction(() => {
+      for (const id of ids) stmt.run(id);
+    })();
+  });
 }
 
 /** Mark messages as completed — updates processing_ack in outbound.db. */
 export function markCompleted(ids: string[]): void {
   if (ids.length === 0) return;
-  const db = getOutboundDb();
-  const stmt = db.prepare(
-    "INSERT OR REPLACE INTO processing_ack (message_id, status, status_changed) VALUES (?, 'completed', datetime('now'))",
-  );
-  db.transaction(() => {
-    for (const id of ids) stmt.run(id);
-  })();
+  withReadonlyRetry(() => {
+    const db = getOutboundDb();
+    const stmt = db.prepare(
+      "INSERT OR REPLACE INTO processing_ack (message_id, status, status_changed) VALUES (?, 'completed', datetime('now'))",
+    );
+    db.transaction(() => {
+      for (const id of ids) stmt.run(id);
+    })();
+  });
 }
 
 /** Mark a single message as failed — writes to processing_ack in outbound.db. */
 export function markFailed(id: string): void {
-  getOutboundDb()
-    .prepare(
-      "INSERT OR REPLACE INTO processing_ack (message_id, status, status_changed) VALUES (?, 'failed', datetime('now'))",
-    )
-    .run(id);
+  withReadonlyRetry(() =>
+    getOutboundDb()
+      .prepare(
+        "INSERT OR REPLACE INTO processing_ack (message_id, status, status_changed) VALUES (?, 'failed', datetime('now'))",
+      )
+      .run(id),
+  );
 }
 
 /** Get a message by ID (read from inbound.db). */

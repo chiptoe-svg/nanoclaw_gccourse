@@ -81,4 +81,15 @@ export interface AiCodingCli {
    * an opening message; the agent then runs interactively.
    */
   handoff(prompt: string): SpawnArgs;
+
+  /**
+   * Optional one-time environment prep run after this CLI is selected.
+   * Called by `persistAiCodingCli` when the choice is first persisted
+   * (or re-persisted under --reconfigure-cli). Idempotent — must be safe
+   * to call multiple times.
+   *
+   * Use for things like wiring project skills into the CLI's global
+   * skill directory, or adding MCP server entries to its config file.
+   */
+  prepareEnvironment?(projectRoot: string): void;
 }

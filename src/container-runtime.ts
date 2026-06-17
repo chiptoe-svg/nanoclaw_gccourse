@@ -4,15 +4,22 @@
  *
  * Runtime: Apple Container (macOS-only). For Docker, see git history.
  */
-import { execSync } from 'child_process';
+import { execSync, spawnSync } from 'child_process';
 import os from 'os';
 
 import { INSTALL_SLUG } from './config.js';
 import { readEnvFile } from './env.js';
 import { log } from './log.js';
 
-/** The container runtime binary name. */
-export const CONTAINER_RUNTIME_BIN = 'container';
+/**
+ * The container runtime binary name.
+ * Reads NANOCLAW_CONTAINER_RUNTIME from env; defaults to 'container' (Apple Container).
+ * Set to 'docker' for Linux installs or macOS installs that prefer Docker.
+ */
+export const CONTAINER_RUNTIME_BIN: string =
+  process.env.NANOCLAW_CONTAINER_RUNTIME ??
+  readEnvFile(['NANOCLAW_CONTAINER_RUNTIME']).NANOCLAW_CONTAINER_RUNTIME ??
+  'container';
 
 /**
  * IP address containers use to reach the host machine.
@@ -63,16 +70,21 @@ export function stopContainer(name: string): void {
 
 /** Ensure the container runtime is running, starting it if needed. */
 export function ensureContainerRuntimeRunning(): void {
+  if (CONTAINER_RUNTIME_BIN === 'docker') {
+    ensureDockerRunning();
+  } else {
+    ensureAppleContainerRunning();
+  }
+}
+
+function ensureAppleContainerRunning(): void {
   try {
-    execSync(`${CONTAINER_RUNTIME_BIN} system status`, { stdio: 'pipe' });
+    execSync('container system status', { stdio: 'pipe' });
     log.debug('Container runtime already running');
   } catch {
     log.info('Starting container runtime');
     try {
-      execSync(`${CONTAINER_RUNTIME_BIN} system start`, {
-        stdio: 'pipe',
-        timeout: 30000,
-      });
+      execSync('container system start', { stdio: 'pipe', timeout: 30000 });
       log.info('Container runtime started');
     } catch (err) {
       log.error('Failed to start container runtime', { err });
@@ -84,11 +96,40 @@ export function ensureContainerRuntimeRunning(): void {
       console.error('║  2. Run: container system start                                ║');
       console.error('║  3. Restart NanoClaw                                           ║');
       console.error('╚════════════════════════════════════════════════════════════════╝\n');
-      throw new Error('Container runtime is required but failed to start', {
-        cause: err,
-      });
+      throw new Error('Container runtime is required but failed to start', { cause: err });
     }
   }
+}
+
+function ensureDockerRunning(): void {
+  const probe = spawnSync('docker', ['info'], { stdio: 'pipe' });
+  if (probe.status === 0) {
+    log.debug('Docker already running');
+    return;
+  }
+  // Try to start. On macOS open Docker Desktop; on Linux use systemctl.
+  if (os.platform() === 'darwin') {
+    spawnSync('open', ['-a', 'Docker'], { stdio: 'ignore' });
+  } else {
+    spawnSync('sudo', ['systemctl', 'start', 'docker'], { stdio: 'pipe' });
+  }
+  // Poll up to 30s (15 × 2s)
+  for (let i = 0; i < 15; i++) {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 2000);
+    if (spawnSync('docker', ['info'], { stdio: 'pipe' }).status === 0) {
+      log.info('Docker started');
+      return;
+    }
+  }
+  log.error('Docker did not become ready within 30s');
+  console.error('\n╔════════════════════════════════════════════════════════════════╗');
+  console.error('║  FATAL: Docker failed to start                                 ║');
+  console.error('║                                                                ║');
+  console.error('║  Agents cannot run without a container runtime. To fix:        ║');
+  console.error('║  1. Ensure Docker is installed and start Docker Desktop        ║');
+  console.error('║  2. Restart NanoClaw                                           ║');
+  console.error('╚════════════════════════════════════════════════════════════════╝\n');
+  throw new Error('Container runtime is required but failed to start');
 }
 
 /**

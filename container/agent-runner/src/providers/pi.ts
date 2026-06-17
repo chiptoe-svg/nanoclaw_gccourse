@@ -62,11 +62,18 @@ import { createWebSearchTool } from './pi-tools/web-search.js';
  * Skill dirs in precedence order — pi loads SKILL.md files from each and
  * later entries override earlier on name collision. Classroom doesn't have
  * personal's class.md / agent.md tier system, so we just look in the two
- * standard places: the container image's bundled skills and the per-group
+ * standard places: the per-group enabled-skill dir and the per-group
  * workspace skills.
+ *
+ * `/home/node/.claude/skills` holds the host-synced symlinks for ONLY the
+ * skills enabled in this group's container config (each pointing at
+ * /app/skills/<name> or /workspace/agent/custom-skills/<name>). Loading
+ * from here — not /app/skills directly — is what makes the playground's
+ * skill checkboxes actually gate what the agent knows. loadSkills resolves
+ * symlinks and skips missing dirs.
  */
 function resolveSkillDirs(cwd: string): string[] {
-  return ['/app/skills', `${cwd}/skills`];
+  return ['/home/node/.claude/skills', `${cwd}/skills`];
 }
 
 // Skills whose SKILL.md contains this marker are inlined verbatim into every
@@ -378,6 +385,11 @@ export class PiProvider implements AgentProvider {
               }
             : {}),
           tools: [
+            // fetch_url / web_search are part of the harness's built-in
+            // toolset (surfaced as "Web Use" under "Built in" on the simple
+            // tab) — always available, like bash. Skills layer instructions
+            // on top; they don't gate these base web tools. (Gating them on
+            // agent-browser was illusory anyway: bash can curl regardless.)
             createFetchTool(),
             createWebSearchTool(),
             ...createCodingTools(input.cwd),
