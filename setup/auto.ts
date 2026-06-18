@@ -161,6 +161,15 @@ async function main(): Promise<void> {
   if (!skip.has('container')) {
     const containerRuntime = await pickContainerRuntime();
 
+    // Ensure the runtime is installed and running BEFORE entering the windowed
+    // step — the windowed runner spawns a child with stdin closed, so any
+    // interactive prompt (e.g. Apple Container's kernel-extension sudo) hangs
+    // or fails silently. We handle that here in the parent process where stdin
+    // is a real terminal.
+    if (containerRuntime === 'apple-container') {
+      await ensureAppleContainerReady();
+    }
+
     p.log.message(brandBody(dimWrap('Your assistant lives in its own sandbox. It can only see what you explicitly share.', 4)));
     p.log.message(
       brandBody(
@@ -368,6 +377,7 @@ async function main(): Promise<void> {
   }
 
   if (!skip.has('service')) {
+    await ensureMacSudoForService();
     const res = await runQuietStep('service', {
       running: 'Starting NanoClaw in the background…',
       done: 'NanoClaw is running.',
@@ -402,13 +412,18 @@ async function main(): Promise<void> {
 
   if (!skip.has('cli-agent')) {
     await resolveDisplayName();
+    const defaultAgentProvider =
+      (process.env.NANOCLAW_DEFAULT_AGENT_PROVIDER as string | undefined) ??
+      (readEnvKey('NANOCLAW_DEFAULT_AGENT_PROVIDER') as string | null) ??
+      'anthropic';
+    const providerArg = defaultAgentProvider !== 'anthropic' ? ['--model-provider', defaultAgentProvider] : [];
     const res = await runQuietStep(
       'cli-agent',
       {
         running: 'Bringing your assistant online…',
         done: 'Assistant wired up.',
       },
-      ['--display-name', displayName!, '--agent-name', CLI_AGENT_NAME, '--folder', '_ping-test'],
+      ['--display-name', displayName!, '--agent-name', CLI_AGENT_NAME, '--folder', '_ping-test', ...providerArg],
     );
     if (!res.ok) {
       await fail(
@@ -472,7 +487,7 @@ async function main(): Promise<void> {
           const createRes = await runQuietChild(
             'create-terminal-agent',
             'pnpm',
-            ['exec', 'tsx', 'scripts/init-cli-agent.ts', '--display-name', displayName!, '--agent-name', terminalAgentName],
+            ['exec', 'tsx', 'scripts/init-cli-agent.ts', '--display-name', displayName!, '--agent-name', terminalAgentName, ...providerArg],
             { running: `Creating ${terminalAgentName}…`, done: `${terminalAgentName} is ready.` },
           );
           if (!createRes.ok) {
@@ -844,11 +859,69 @@ function appendEnvLine(line: string): void {
 
 // ─── native auth step (writes credential to .env) ───────────────────────
 // For users on the native credential proxy path (NANOCLAW_CREDENTIAL_MODE=native).
-// Mirrors the OneCLI auth step's UX (subscription / OAuth / API key / skip)
-// but writes the credential to .env where the credential proxy reads it
-// at runtime, instead of storing in OneCLI's vault.
+// First picks the agent AI provider (Anthropic or OpenAI), then collects the
+// matching credential and writes it to .env where the credential proxy reads it.
+// Provider choice is persisted as NANOCLAW_DEFAULT_AGENT_PROVIDER so re-runs skip
+// the prompt.
 async function runNativeAuthStep(): Promise<void> {
-  // Already-configured short-circuit.
+  // ── 1. Agent provider selection ──────────────────────────────────────────
+  // Persisted to .env so re-runs skip the prompt. Inferred from existing keys
+  // when not set (OPENAI_PLATFORM_API_KEY present → openai-platform;
+  // any Anthropic key present → anthropic).
+  let agentProvider =
+    (process.env.NANOCLAW_DEFAULT_AGENT_PROVIDER as string | undefined) ??
+    (readEnvKey('NANOCLAW_DEFAULT_AGENT_PROVIDER') as string | null) ??
+    (readEnvKey('OPENAI_PLATFORM_API_KEY') ? 'openai-platform' : null) ??
+    (readEnvKey('ANTHROPIC_API_KEY') || readEnvKey('CLAUDE_CODE_OAUTH_TOKEN') || readEnvKey('ANTHROPIC_AUTH_TOKEN') ? 'anthropic' : null) ??
+    '';
+
+  if (!agentProvider) {
+    const cliIsCodex =
+      (process.env.NANOCLAW_AI_CODING_CLI ?? readEnvKey('NANOCLAW_AI_CODING_CLI')) === 'codex';
+    agentProvider = ensureAnswer(
+      await brightSelect<string>({
+        message: 'Which AI provider will your agents use?',
+        options: [
+          {
+            value: 'anthropic',
+            label: 'Anthropic (Claude)',
+            hint: 'API key or Claude Code subscription — console.anthropic.com',
+          },
+          {
+            value: 'openai-platform',
+            label: 'OpenAI',
+            hint: 'API key from platform.openai.com',
+          },
+        ],
+        initialValue: cliIsCodex ? 'openai-platform' : 'anthropic',
+      }),
+    ) as string;
+    appendEnvLine(`NANOCLAW_DEFAULT_AGENT_PROVIDER=${agentProvider}`);
+    process.env.NANOCLAW_DEFAULT_AGENT_PROVIDER = agentProvider;
+    setupLog.userInput('agent_provider', agentProvider);
+    phEmit('agent_provider_chosen', { provider: agentProvider });
+  }
+
+  // ── 2a. OpenAI path ───────────────────────────────────────────────────────
+  if (agentProvider === 'openai-platform') {
+    if (readEnvKey('OPENAI_PLATFORM_API_KEY')) {
+      p.log.success(brandBody('Your OpenAI credential is already in .env.'));
+      setupLog.step('auth', 'skipped', 0, { REASON: 'env-already-present' });
+      return;
+    }
+    const key = ensureAnswer(
+      await p.password({
+        message: 'Paste your OpenAI API key (sk-…):',
+        validate: (v) => (v && v.trim().length > 10 ? undefined : 'Looks too short.'),
+      }),
+    );
+    appendEnvLine(`OPENAI_PLATFORM_API_KEY=${key.trim()}`);
+    p.log.success(brandBody('Wrote OPENAI_PLATFORM_API_KEY to .env.'));
+    setupLog.step('auth', 'ok', 0, { METHOD: 'openai-platform-api-key' });
+    return;
+  }
+
+  // ── 2b. Anthropic path ────────────────────────────────────────────────────
   if (readEnvKey('ANTHROPIC_API_KEY') || readEnvKey('CLAUDE_CODE_OAUTH_TOKEN') || readEnvKey('ANTHROPIC_AUTH_TOKEN')) {
     p.log.success(brandBody('Your Claude credential is already in .env.'));
     setupLog.step('auth', 'skipped', 0, { REASON: 'env-already-present' });
@@ -1260,6 +1333,49 @@ async function pickAiCodingCli(opts: { force?: boolean } = {}): Promise<void> {
   if (!chosen) return;
   persistAiCodingCli(chosen);
   setupLog.userInput('setup_cli', `${chosen.name} (picked)`);
+}
+
+/**
+ * Ensure Apple Container is installed and the runtime is running before we
+ * hand off to the windowed container step. Must run in the PARENT process
+ * (setup:auto) where stdin is a real terminal — the windowed runner spawns
+ * children with stdin closed, so kernel-extension prompts would hang there.
+ */
+async function ensureAppleContainerReady(): Promise<void> {
+  const { commandExists } = await import('./platform.js');
+
+  if (!commandExists('container')) {
+    if (!commandExists('brew')) {
+      await fail(
+        'container',
+        'Apple Container not found and Homebrew is not installed.',
+        'Install Apple Container manually from https://developer.apple.com/documentation/virtualization, then retry.',
+      );
+    }
+    p.log.step(brandBody('Installing Apple Container via Homebrew…'));
+    const installRes = spawnSync('brew', ['install', 'container'], { stdio: 'inherit' });
+    if (installRes.status !== 0 || !commandExists('container')) {
+      await fail(
+        'container',
+        "Couldn't install Apple Container.",
+        'Try: brew install container — then retry setup.',
+      );
+    }
+  }
+
+  const running = spawnSync('container', ['system', 'status'], { stdio: 'pipe' }).status === 0;
+  if (!running) {
+    p.log.step(brandBody('Starting Apple Container (may ask for your password to install the kernel extension)…'));
+    const startRes = spawnSync('container', ['system', 'start'], { stdio: 'inherit' });
+    if (startRes.status !== 0) {
+      await fail(
+        'container',
+        "Couldn't start Apple Container.",
+        'Try: container system start — then retry setup.',
+      );
+    }
+    p.log.success(brandBody('Apple Container runtime started.'));
+  }
 }
 
 /**
@@ -1682,6 +1798,25 @@ function maybeReexecUnderSg(): void {
     env: { ...process.env, NANOCLAW_REEXEC_SG: '1', ...(skipList ? { NANOCLAW_SKIP: skipList } : {}) },
   });
   process.exit(res.status ?? 1);
+}
+
+async function ensureMacSudoForService(): Promise<void> {
+  if (process.platform !== 'darwin') return;
+
+  const cached = spawnSync('sudo', ['-n', 'true'], { stdio: 'ignore' });
+  if (cached.status === 0) return;
+
+  p.log.message(brandBody('macOS needs administrator permission to install NanoClaw as a background service.'));
+  p.log.message(brandBody(dimWrap('You may be prompted for your Mac password now; it is handled by sudo, not NanoClaw.', 4)));
+
+  const result = spawnSync('sudo', ['-v'], { stdio: 'inherit' });
+  if (result.status === 0) return;
+
+  await fail(
+    'service',
+    "Couldn't get administrator permission for the background service install.",
+    'Run `sudo -v` in your terminal, then re-run setup.',
+  );
 }
 
 // ─── intro + progression-log init ──────────────────────────────────────

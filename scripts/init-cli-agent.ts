@@ -22,6 +22,7 @@ import path from 'path';
 import { DATA_DIR } from '../src/config.js';
 import { createAgentGroup, getAgentGroupByFolder } from '../src/db/agent-groups.js';
 import { initDb } from '../src/db/connection.js';
+import { ensureContainerConfig, updateContainerConfigScalars } from '../src/db/container-configs.js';
 import {
   createMessagingGroup,
   createMessagingGroupAgent,
@@ -42,12 +43,15 @@ interface Args {
   displayName: string;
   agentName: string;
   folder?: string;
+  /** container_configs.model_provider value (e.g. 'openai-platform'). Null = default (anthropic). */
+  modelProvider?: string;
 }
 
 function parseArgs(argv: string[]): Args {
   let displayName: string | undefined;
   let agentName: string | undefined;
   let folder: string | undefined;
+  let modelProvider: string | undefined;
   for (let i = 0; i < argv.length; i++) {
     const key = argv[i];
     const val = argv[i + 1];
@@ -59,6 +63,9 @@ function parseArgs(argv: string[]): Args {
       i++;
     } else if (key === '--folder') {
       folder = val;
+      i++;
+    } else if (key === '--model-provider') {
+      modelProvider = val;
       i++;
     }
   }
@@ -73,6 +80,7 @@ function parseArgs(argv: string[]): Args {
     displayName,
     agentName: agentName?.trim() || displayName,
     folder,
+    modelProvider,
   };
 }
 
@@ -123,6 +131,13 @@ async function main(): Promise<void> {
       `You are ${args.agentName}, a personal NanoClaw agent for ${args.displayName}. ` +
       'When the user first reaches out, introduce yourself briefly and invite them to chat. Keep replies concise.',
   });
+  // Apply the agent provider chosen during setup. ensureContainerConfig is
+  // idempotent (INSERT OR IGNORE), then we patch model_provider if supplied.
+  ensureContainerConfig(ag.id);
+  if (args.modelProvider) {
+    updateContainerConfigScalars(ag.id, { model_provider: args.modelProvider });
+    console.log(`Set model_provider: ${args.modelProvider}`);
+  }
 
   // 3. CLI messaging group + wiring.
   let cliMg: MessagingGroup | undefined = getMessagingGroupByPlatform(CLI_CHANNEL, CLI_PLATFORM_ID);
