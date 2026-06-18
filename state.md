@@ -164,50 +164,40 @@ Append-only, newest first. One line per decision: *what + 1-line why*. Prune (mo
 ### Branch
 
 - **Current:** `main`
-- **Last tag:** `phase-c-complete-2026-05-28` (177 commits ahead)
+- **Last tag:** `phase-c-complete-2026-05-28` (183 commits ahead)
 
 ### Working tree
 
 ```
-## main...origin/main [ahead 37]
- M config/playground-seats.json
- M container/CLAUDE.md
- M container/skills/make-website/SKILL.md
-M  package.json
-M  setup.sh
+## main...origin/main
+A  plans/setup-service-sudo-prompt.md
 M  setup/auto.ts
-M  setup/container.ts
-M  setup/lib/ai-coding-cli/codex.ts
-M  setup/lib/ai-coding-cli/types.ts
-M  setup/peer-cleanup.ts
-M  setup/platform.test.ts
 M  setup/service.ts
- M src/channels/playground/public/tabs/skills.js
+M  src/admin-handlers/index.ts
+M  src/container-runtime.test.ts
 M  src/container-runtime.ts
- M state.md
-?? .codegraph/
 ```
 
 ### Recent commits (last 15)
 
 ```
-eea9795 feat(skills): image-vision + image-metadata container skills
-1c76d15 fix(agent-runner): surface uploaded image paths to the agent
-62d1def feat(simple): "Start over" resets agent memory + trace, not just the window
-81b4af8 fix(agent-runner): strip stray message tags from folded trailing text
-6b79f3e fix(agent-runner): deliver trailing text models leave outside <message>
-91a2b79 fix(agent-runner): retry transient readonly-DB writes instead of crashing
-3ab3567 feat(simple): "Built in" tools row; web tools always-on; relabel agent-browser
-c68dbf9 fix(agent-runner): compose per-group persona into the system prompt
-b17dbc3 fix(simple): don't auto-roll the trace panel on agent toggle
-3f30ff0 feat(simple): switch toggle, FirstName+Bot default name, trace-first default
-cd10ab6 feat(pi): gate skills and web tools on the enabled-skill set
-3c26bf4 feat(playground): friendlier model-only wording
-f1ba19f feat(playground): base model window matches the trace window's look
-8e42bbb fix(playground): base-layer windows sit flat — no drop shadow
-3e57b64 feat(playground): trace window gets the base-layer treatment + bigger rollup glyph
+01ecb657 fix(setup): Codex skills via on-demand router, not global symlinks
+c7ab8604 fix(setup): default agent provider to OpenAI when CLI is Codex
+14bbd0d5 fix(setup): infer agent provider from existing .env keys on re-run
+ede7ef1f feat(setup): agent provider selection — Anthropic or OpenAI
+4b762fb3 fix(setup): add ensureAppleContainerReady + Codex auth clarification
+ce65b3c6 feat(setup): Apple Container + Codex support; LaunchDaemon; Node <26 cap
+eea9795e feat(skills): image-vision + image-metadata container skills
+1c76d15f fix(agent-runner): surface uploaded image paths to the agent
+62d1def2 feat(simple): "Start over" resets agent memory + trace, not just the window
+81b4af81 fix(agent-runner): strip stray message tags from folded trailing text
+6b79f3e4 fix(agent-runner): deliver trailing text models leave outside <message>
+91a2b79b fix(agent-runner): retry transient readonly-DB writes instead of crashing
+3ab35671 feat(simple): "Built in" tools row; web tools always-on; relabel agent-browser
+c68dbf9e fix(agent-runner): compose per-group persona into the system prompt
+b17dbc3c fix(simple): don't auto-roll the trace panel on agent toggle
 ```
 
 ### Last refresh
 
-2026-06-17T15:27:26Z
+2026-06-17T17:19:36Z
